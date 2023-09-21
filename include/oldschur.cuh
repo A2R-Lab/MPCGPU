@@ -73,6 +73,7 @@ namespace oldschur{
         }
     }
 
+    // TODO: repeated
     template <typename T>
     __device__
     void gato_memcpy(T *dst, T *src, unsigned size_Ts){
