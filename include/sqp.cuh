@@ -16,6 +16,7 @@
 #include "gpu_pcg.cuh"
 #include "qdldl_helper.cuh"
 #include "settings.cuh"
+#include "kkt_ss_dz.cuh"
 
 template <typename T>
 auto sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config& config, T &rho, T rho_reset){
@@ -249,7 +250,7 @@ auto sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_points, 
     //
     for(uint32_t sqpiter = 0; sqpiter < SQP_MAX_ITER; sqpiter++){
         
-        gato_form_kkt<T><<<knot_points, KKT_THREADS, 2 * oldschur::get_kkt_smem_size<T>(state_size, control_size)>>>(
+        gato_form_kkt<T><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
             state_size,
             control_size,
             knot_points,

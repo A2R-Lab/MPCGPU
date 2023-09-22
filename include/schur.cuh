@@ -5,9 +5,11 @@
 #include "glass.cuh"
 #include "rbdfiles/rbd_plant.cuh"
 #include "merit.cuh"
-#include "oldschur.cuh"
+#include "matrix_utils.cuh"
+#include "kkt_ss_dz.cuh"
 #include "integrator.cuh"
 #include "qdldl.h"
+#include "csr.cuh"
 
 template <typename T>
 __global__
@@ -33,7 +35,7 @@ void gato_form_schur_jacobi(uint32_t state_size,
     for(unsigned blockrow=blockIdx.x; blockrow<knot_points; blockrow+=num_blocks){
 
 
-        oldschur::gato_form_schur_jacobi_inner<T>(state_size, control_size, knot_points, d_G, d_C, d_g, d_c, d_S, d_Pinv, d_gamma, rho, s_temp, blockrow);
+        gato_form_schur_jacobi_inner<T>(state_size, control_size, knot_points, d_G, d_C, d_g, d_c, d_S, d_Pinv, d_gamma, rho, s_temp, blockrow);
         // gato_form_schur_jacobi_inner(
         //     state_size,
         //     control_size,
@@ -116,8 +118,8 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             __syncthreads();//----------------------------------------------------------------
 
-            oldschur::add_identity<T>(s_Q0, state_size, rho);
-            oldschur::add_identity<T>(s_QN, state_size, rho);
+            add_identity<T>(s_Q0, state_size, rho);
+            add_identity<T>(s_QN, state_size, rho);
             
             __syncthreads();//----------------------------------------------------------------
             
@@ -128,9 +130,9 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 
             // invert Q_N, Q_0
-            oldschur::loadIdentity<T>( state_size,state_size,s_Q0_i, s_QN_i);
+            loadIdentity<T>( state_size,state_size,s_Q0_i, s_QN_i);
             __syncthreads();//----------------------------------------------------------------
-            oldschur::invertMatrix<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
+            invertMatrix<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
             
             __syncthreads();//----------------------------------------------------------------
 
@@ -140,7 +142,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             
 
             // compute gamma
-            oldschur::mat_vec_prod<T>( state_size, state_size,
+            mat_vec_prod<T>( state_size, state_size,
                 s_Q0_i,                                    
                 s_q0,                                       
                 s_gamma_k 
@@ -154,7 +156,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 
             // compute Q0^{-1}q0
-            oldschur::mat_vec_prod<T>( state_size, state_size,
+            mat_vec_prod<T>( state_size, state_size,
                 s_Q0_i,
                 s_q0,
                 s_Q0
@@ -213,18 +215,18 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             __syncthreads();//----------------------------------------------------------------
 
-            oldschur::add_identity<T>(s_Qk, state_size, rho);
-            oldschur::add_identity<T>(s_Qkp1, state_size, rho);
-            oldschur::add_identity<T>(s_Rk, control_size, rho);
+            add_identity<T>(s_Qk, state_size, rho);
+            add_identity<T>(s_Qkp1, state_size, rho);
+            add_identity<T>(s_Rk, control_size, rho);
             
             // Invert Q, Qp1, R 
-            oldschur::loadIdentity<T>( state_size,state_size,control_size,
+            loadIdentity<T>( state_size,state_size,control_size,
                 s_Qk_i, 
                 s_Qkp1_i, 
                 s_Rk_i
             );
             __syncthreads();//----------------------------------------------------------------
-            oldschur::invertMatrix<T>( state_size,state_size,control_size,state_size,
+            invertMatrix<T>( state_size,state_size,control_size,state_size,
                 s_Qk, 
                 s_Qkp1, 
                 s_Rk, 
@@ -257,7 +259,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // Compute -AQ^{-1} in phi
-            oldschur::mat_mat_prod<T>(
+            mat_mat_prod<T>(
                 s_phi_k,
                 s_Ak,
                 s_Qk_i,
@@ -270,7 +272,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // Compute -BR^{-1} in Qkp1
-            oldschur::mat_mat_prod<T>(
+            mat_mat_prod<T>(
                 s_Qkp1,
                 s_Bk,
                 s_Rk_i,
@@ -283,7 +285,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // compute Q_{k+1}^{-1}q_{k+1} - IntegratorError in gamma
-            oldschur::mat_vec_prod<T>( state_size, state_size,
+            mat_vec_prod<T>( state_size, state_size,
                 s_Qkp1_i,
                 s_qkp1,
                 s_gamma_k
@@ -294,7 +296,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // compute -AQ^{-1}q for gamma         temp storage in extra temp
-            oldschur::mat_vec_prod<T>( state_size, state_size,
+            mat_vec_prod<T>( state_size, state_size,
                 s_phi_k,
                 s_qk,
                 s_extra_temp
@@ -304,7 +306,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
             
             // compute -BR^{-1}r for gamma           temp storage in extra temp + states
-            oldschur::mat_vec_prod<T>( state_size, control_size,
+            mat_vec_prod<T>( state_size, control_size,
                 s_Qkp1,
                 s_rk,
                 s_extra_temp + state_size
@@ -319,7 +321,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // compute AQ^{-1}AT   -   Qkp1^{-1} for theta
-            oldschur::mat_mat_prod<T>(
+            mat_mat_prod<T>(
                 s_theta_k,
                 s_phi_k,
                 s_Ak,
@@ -340,7 +342,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // compute BR^{-1}BT for theta            temp storage in QKp1{-1}
-            oldschur::mat_mat_prod<T>(
+            mat_mat_prod<T>(
                 s_Qkp1_i,
                 s_Qkp1,
                 s_Bk,
@@ -562,7 +564,7 @@ void form_schur(uint32_t state_size, uint32_t control_size, uint32_t knot_points
 template <typename T>
 void compute_dz(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *d_G_dense, T *d_C_dense, T *d_g_val, T *d_lambda, T *d_dz){
     
-    oldschur::compute_dz<<<knot_points, DZ_THREADS, sizeof(T)*(2*state_size*state_size+state_size)>>>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g_val, d_lambda, d_dz);
+    compute_dz_kernel<<<knot_points, DZ_THREADS, sizeof(T)*(2*state_size*state_size+state_size)>>>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g_val, d_lambda, d_dz);
 }
 
 
