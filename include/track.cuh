@@ -21,7 +21,7 @@
 
 
 template <typename T, typename return_type>
-std::tuple<std::vector<toplevel_return_type>, std::vector<pcg_t>, pcg_t> track(uint32_t state_size, uint32_t control_size, uint32_t knot_points, const uint32_t traj_steps, 
+std::tuple<std::vector<toplevel_return_type>, std::vector<pcg_t>, pcg_t> track(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, const uint32_t traj_steps, 
             float timestep, T *d_eePos_traj, T *d_xu_traj, T *d_xs, uint32_t start_state_ind, uint32_t goal_state_ind, uint32_t test_iter, T pcg_exit_tol,
             std::string test_output_prefix){
 

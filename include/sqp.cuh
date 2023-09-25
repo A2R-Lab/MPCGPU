@@ -21,7 +21,7 @@
 
 
 template <typename T>
-auto sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config& config, T &rho, T rho_reset){
+auto sqpSolve(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config& config, T &rho, T rho_reset){
 #if PCG_SOLVE
 	return sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_traj, d_lambda, d_xu, d_dynMem_const, config, rho, rho_reset);
 #else 

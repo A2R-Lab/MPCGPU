@@ -61,3 +61,53 @@ typedef float pcg_t;
 // where to store test results — manually create this directory
 #define SAVE_DATA   0
 #define DATA_DIRECTORY   "/tmp/testresults"
+
+#if PCG_SOLVE
+#else
+#define PCG_SOLVE 1 
+#endif
+
+#if QD_COST
+#else
+#define QD_COST .0001 
+#endif
+
+#if SQP_MAX_TIME_US
+#else
+#define SQP_MAX_TIME_US 2000 
+#endif
+
+#if SIMULATION_PERIOD
+#else
+#define SIMULATION_PERIOD 2000
+#endif
+
+#if RHO_FACTOR
+#else
+#define RHO_FACTOR 1.2 
+#endif
+
+#if RHO_MAX
+#else
+#define RHO_MAX 10 
+#endif
+
+#if KNOT_POINTS
+#else
+#define KNOT_POINTS 32 
+#endif
+
+#if PCG_MAX_ITER
+#else
+#define PCG_MAX_ITER 173 
+#endif
+
+#if R_COST
+#else
+#define R_COST .0001 
+#endif
+
+#if TIME_LINSYS
+#else
+#define TIME_LINSYS 0
+#endif
