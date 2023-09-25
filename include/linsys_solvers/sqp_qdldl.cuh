@@ -13,7 +13,7 @@
 #include <time.h>
 #include "../schur.cuh"
 #include "../merit.cuh"
-#include "../qdldl_helper.cuh"
+#include "qdldl_helper.cuh"
 #include "../settings.cuh"
 #include "../schur_inner.cuh"
 
