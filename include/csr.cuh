@@ -4,7 +4,6 @@
 #include "glass.cuh"
 #include "qdldl.h"
 #include <fstream>
-#include "../GPU-PCG/include/utils.cuh"
 
 void write_device_matrix_to_file(float* d_matrix, int rows, int cols, const char* filename, int filesuffix = 0) {
     

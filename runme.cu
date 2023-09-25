@@ -9,6 +9,7 @@
 #include "include/rbdfiles/rbd_plant.cuh"
 #include "include/settings.cuh"
 #include "include/experiment_helpers.cuh"
+#include "gpu_pcg.cuh"
 
 
 int main(){

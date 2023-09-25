@@ -146,36 +146,10 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<pcg_t>, pcg_t> track(u
 #else
         simulation_time = sqp_solve_time_us;
 #endif
-
-        // std::cout << "simulating for " << simulation_time << " us\nxu:";
-        // float h_temp[21];
-        // gpuErrchk(cudaMemcpy(h_temp, d_xu_old, 21*sizeof(float), cudaMemcpyDeviceToHost));
-        // for(int i = 0; i < 21; i++){
-        //     std::cout << h_temp[i] << " ";
-        // }
-        // std::cout << std::endl << "xs:";
-        // gpuErrchk(cudaMemcpy(h_temp, d_xs, 14*sizeof(float), cudaMemcpyDeviceToHost));
-        // for(int i = 0; i < 14; i++){
-        //     std::cout << h_temp[i] << " ";
-        // }
-        // std::cout << std::endl;
         
-
-
-
 
         // simulate traj for current solve time, offset by previous solve time
         simple_simulate<T>(state_size, control_size, knot_points, d_xs, d_xu_old, d_dynmem, timestep, prev_simulation_time, simulation_time);
-
-        
-        // std::cout << "result\n";
-        // gpuErrchk(cudaMemcpy(h_temp, d_xs, 14*sizeof(float), cudaMemcpyDeviceToHost));
-        // for(int i = 0; i < 14; i++){
-        //     std::cout << h_temp[i] << " ";
-        // }
-        // std::cout << std::endl;
-        // exit(12);
-
 
         // old xu = new xu
         gpuErrchk(cudaMemcpy(d_xu_old, d_xu, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
@@ -294,16 +268,6 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<pcg_t>, pcg_t> track(u
             traj_offset, control_update_step, start_state_ind, goal_state_ind, test_iter, test_output_prefix);
 #endif
     
-#if TIME_LINSYS
-    // std::cout << "\n\nlinear system solve time:" << std::endl;
-    // printStats<double>(&linsys_times);
-#endif
-    // std::cout << "sqp iters" << std::endl;
-    // printStats<uint32_t>(&sqp_iters);
-    // printStats<int>(&pcg_iters);
-    // printStats<double>(&sqp_times);
-    // printStats<float>(&tracking_errors);
-    // std::cout << "control updates: " << control_update_step << "\n";
 
     grid::end_effector_positions_kernel<T><<<1,128>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
     gpuErrchk(cudaMemcpy(h_eePos, d_eePos, 6*sizeof(T), cudaMemcpyDeviceToHost));
@@ -312,7 +276,6 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<pcg_t>, pcg_t> track(u
     for(uint32_t i=0; i < 3; i++){
         cur_tracking_error += abs(h_eePos[i] - h_eePos_goal[i]);
     }
-    // std::cout << "avg tracking error: " << std::accumulate(tracking_errors.begin(), tracking_errors.end(), 0.0f) / traj_steps << " final error: " << cur_tracking_error << "\n\n";
 
     gato_plant::freeDynamicsConstMem<T>(d_dynmem);
 
@@ -322,15 +285,6 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<pcg_t>, pcg_t> track(u
     gpuErrchk(cudaFree(d_xu_old));
 
     gpuErrchk(cudaFree(d_eePos));
-
-
-    // auto ivecAvg = [](const std::vector<uint32_t>& v){
-    //     return std::accumulate(v.begin(), v.end(), 0.0) / v.size();
-    // };
-    
-    // auto tvecAvg = [](const std::vector<T>& v){
-    //     return std::accumulate(v.begin(), v.end(), 0.0) / v.size();
-    // };
 
     #if TIME_LINSYS 
         return std::make_tuple(linsys_times, tracking_errors, cur_tracking_error);

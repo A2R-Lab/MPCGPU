@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include "utils.cuh"
 #include "gpuassert.cuh"
 #include "glass.cuh"
 #include "rbdfiles/rbd_plant.cuh"

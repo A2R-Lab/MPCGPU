@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "../GPU-PCG/include/utils.cuh"
+#include "utils.cuh"
 
     
 
