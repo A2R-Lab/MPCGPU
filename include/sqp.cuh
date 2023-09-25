@@ -16,7 +16,7 @@
 #include "gpu_pcg.cuh"
 #include "qdldl_helper.cuh"
 #include "settings.cuh"
-#include "kkt_ss_dz.cuh"
+#include "schur_inner.cuh"
 
 template <typename T>
 auto sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config& config, T &rho, T rho_reset){

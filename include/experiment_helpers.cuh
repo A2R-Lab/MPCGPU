@@ -162,3 +162,44 @@ std::string printStats(std::vector<T> *data, std::string prefix = "data"){
    
    return ss.str();
 }
+
+std::string create_test_directory() {
+    std::string subdirectoryPath = DATA_DIRECTORY + std::to_string(KNOT_POINTS);
+
+//     try {
+//         std::filesystem::create_directory(subdirectoryPath);
+//         std::cout << "Directory created: " << subdirectoryPath << std::endl;
+//     } catch (const std::filesystem::filesystem_error& e) {
+//         std::cerr << "Error creating directory: " << e.what() << std::endl;
+//     }
+
+    return subdirectoryPath + "/";
+}
+
+template <typename T>
+std::vector<std::vector<T>> readCSVToVecVec(const std::string& filename) {
+    std::vector<std::vector<T>> data;
+    std::ifstream infile(filename);
+
+    if (!infile.is_open()) {
+        std::cerr << "File [ " << filename << " ] could not be opened!\n";
+    } else {
+        std::string line;
+
+
+        while (std::getline(infile, line)) {
+            std::vector<T> row;
+            std::stringstream ss(line);
+            std::string val;
+
+            while (std::getline(ss, val, ',')) {
+                row.push_back(std::stof(val));
+            }
+
+            data.push_back(row);
+        }
+    }
+
+    infile.close();
+    return data;
+}

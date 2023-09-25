@@ -6,7 +6,7 @@
 #include "rbdfiles/rbd_plant.cuh"
 #include "merit.cuh"
 #include "matrix_utils.cuh"
-#include "kkt_ss_dz.cuh"
+#include "schur_inner.cuh"
 #include "integrator.cuh"
 #include "qdldl.h"
 #include "csr.cuh"
@@ -566,45 +566,3 @@ void compute_dz(uint32_t state_size, uint32_t control_size, uint32_t knot_points
     
     compute_dz_kernel<<<knot_points, DZ_THREADS, sizeof(T)*(2*state_size*state_size+state_size)>>>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g_val, d_lambda, d_dz);
 }
-
-
-// void parallel_line_search(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float *d_xs, float *d_xu, float *d_xu_traj, void *d_dynMem_const, float *d_dz, float timestep, float *d_merits_out, float *d_merit_temp)
-// {
-
-//     int alphas = 8;
-    
-//     cudaStream_t streams[alphas];
-//     for(int st = 0; st < alphas; st++){
-//         gpuErrchk(cudaStreamCreate(&streams[st]));
-//     }
-
-
-//     void *ls_merit_kernel = (void *) ls_gato_compute_merit<T>;
-    
-//     float mu = 10.0f;
-
-//     for(int p = 0; p < alphas; p++){
-//         void *kernelArgs[] = {
-//             (void *)&state_size,
-//             (void *)&control_size,
-//             (void *)&knot_points,
-//             (void *)&d_xs,
-//             (void *)&d_xu,
-//             (void *)&d_xu_traj,
-//             (void *)&mu, 
-//             (void *)&timestep,
-//             (void *)&d_dynMem_const,
-//             (void *)&d_dz,
-//             (void *)&p,
-//             (void *)&d_merits_out,
-//             (void *)&d_merit_temp
-//         };
-//         gpuErrchk(cudaLaunchCooperativeKernel(ls_merit_kernel, knot_points, MERIT_THREADS, kernelArgs, get_merit_smem_size<float>(state_size, knot_points), streams[p]));
-//     }
-//     gpuErrchk(cudaPeekAtLastError());
-//     gpuErrchk(cudaDeviceSynchronize());
-
-//     for(int st=0; st < alphas; st++){
-//         gpuErrchk(cudaStreamDestroy(streams[st]));
-//     }
-// }

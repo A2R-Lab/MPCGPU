@@ -6,7 +6,6 @@
 #include "gpuassert.cuh"
 #include "settings.cuh"
 
-
 ///TODO: is tracking error q & qd, also just current state?
 template <typename T>
 __global__
