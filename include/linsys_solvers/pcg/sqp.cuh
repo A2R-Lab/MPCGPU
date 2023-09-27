@@ -11,11 +11,11 @@
 #include <cuda_runtime.h>
 #include <tuple>
 #include <time.h>
-#include "../schur.cuh"
-#include "../merit.cuh"
+#include "schur.cuh"
+#include "merit.cuh"
 #include "gpu_pcg.cuh"
-#include "../settings.cuh"
-#include "../schur_inner.cuh"
+#include "settings.cuh"
+#include "schur_inner.cuh"
 
 template <typename T>
 auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config& config, T &rho, T rho_reset){

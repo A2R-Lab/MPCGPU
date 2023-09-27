@@ -27,9 +27,9 @@
 #define USE_DOUBLES 0
 
 #if USE_DOUBLES
-typedef double pcg_t;
+typedef double linsys_t;
 #else
-typedef float pcg_t;
+typedef float linsys_t;
 #endif
 
 // when enabled ABSOLUTE_QD_PENALTY penalizes qd like controls, rather than penalizing relative distance to precomputed traj
