@@ -121,9 +121,7 @@ void compute_merit(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
                 s_eePos_k_traj[i] = d_eePos_traj[knot*6+i];                            
             }
         }
-        // if(threadIdx.x==0 && blockIdx.x==0){
-        //     printf("block %d with input %f,%f,%f,%f,%f,%f,%f\n", blockIdx.x, s_xux_k[0],s_xux_k[1],s_xux_k[2],s_xux_k[3],s_xux_k[4],s_xux_k[5],s_xux_k[6]);
-        // }
+
         block.sync();
         Jk = gato_plant::trackingcost<T>(state_size, control_size, knot_points, s_xux_k, s_eePos_k_traj, s_temp, d_robotModel);
 

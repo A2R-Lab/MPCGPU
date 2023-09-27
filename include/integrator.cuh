@@ -40,29 +40,6 @@ void exec_integrator_error(uint32_t state_size, T *s_err, T *s_qkp1, T *s_qdkp1,
             new_qkp1 = s_q[ind] + dt*new_qdkp1;
         }
         else {printf("Integrator [%d] not defined. Currently support [0: Euler and 1: Semi-Implicit Euler]",INTEGRATOR_TYPE);}
-        // block.sync();
-        // if(blockIdx.x==0 && threadIdx.x==0){
-        //     printf("position: estimated vs. integrated\n");
-        //     for(int i = 0; i < state_size/2; i++){
-        //         printf("%f %f\n", s_qkp1[i], s_q[i] + dt*s_qd[i]);
-        //     }
-        //     printf("\nvelocity: estimated vs. integrated\n");
-        //     for(int i = 0; i < state_size/2; i++){
-        //         printf("%f %f\n",s_qdkp1[i], s_qd[i] + dt*s_qdd[i]);
-        //     }
-        //     printf("\nqdd\n");
-        //     for(int i = 0; i < state_size / 2; i++){
-        //         printf("%f ", s_qdd[i]);
-        //     }
-        //     printf("\n");
-        //     float sum = 0;
-        //     for(int i = 0; i < state_size/2; i++){
-        //         sum += abs(s_qkp1[i] - (s_q[i] + dt*s_qd[i]));
-        //         sum += abs(s_qdkp1[i] - (s_qd[i] + dt*s_qdd[i]));
-        //     }
-        //     printf("first block constriant violation: %f\n", sum);
-        // }
-        // block.sync();
 
         // wrap angles if needed
         if(ANGLE_WRAP){ printf("ANGLE_WRAP!\n");
@@ -373,21 +350,10 @@ void simple_simulate(uint32_t state_size, uint32_t control_size, uint32_t knot_p
 
 
     for(uint32_t step = 0; step < sim_steps_needed; step++){
-        // float h_temp[21];
-        // std::cout << "sim step: " << step << " sim time " << sim_step_time <<  std::endl;
-
         control_offset = static_cast<uint32_t>((time_offset + step * sim_step_time) / timestep);
         control = &d_xu[control_offset * states_s_controls + state_size];
 
         simple_integrator_kernel<T><<<1,32,simple_integrator_kernel_smem_size>>>(state_size, control_size, d_xs, control, d_dynMem_const, sim_step_time);
-
-        // std::cout << "result\n";
-        // gpuErrchk(cudaMemcpy(h_temp, d_xs, 14*sizeof(float), cudaMemcpyDeviceToHost));
-        // for(int i = 0; i < 14; i++){
-        //     std::cout << h_temp[i] << " ";
-        // }
-        // std::cout << std::endl;
-        // exit(12);
 
     }
 

@@ -253,7 +253,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> t
             for (uint32_t i = 0; i < state_size; i++){
                 std::cout << h_xs[i] << (i < state_size-1 ? " " : "\n");
             }
-    #if TIME_LINSYS
+    #if TIME_LINSYS == 1
             std::cout << "linear system solve time:" << std::endl;
             printStats<double>(&linsys_times);
     #endif // #if TIME_LINSYS
@@ -302,7 +302,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> t
 
     gpuErrchk(cudaFree(d_eePos));
 
-    #if TIME_LINSYS 
+    #if TIME_LINSYS == 1 
         return std::make_tuple(linsys_times, tracking_errors, cur_tracking_error);
     #else
         return std::make_tuple(sqp_iters, tracking_errors, cur_tracking_error);

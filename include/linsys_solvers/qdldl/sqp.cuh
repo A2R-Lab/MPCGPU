@@ -21,8 +21,8 @@ template <typename T>
 auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, T &rho, T rho_reset){
     
     // data storage
-    std::vector<int> pcg_iter_vec;
-    std::vector<bool> pcg_exit_vec;
+    std::vector<int> linsys_iter_vec;
+    std::vector<bool> linsys_exit_vec;
     std::vector<double> linsys_time_vec;
     bool sqp_time_exit = 1;     // for data recording, not a flag
     
@@ -106,7 +106,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     gpuErrchk(cudaMemcpy(d_xs, d_xu,  state_size*sizeof(T), cudaMemcpyDeviceToDevice));
     gpuErrchk(cudaMalloc(&d_merit_news, 8*sizeof(T)));
     gpuErrchk(cudaMalloc(&d_merit_temp, 8*knot_points*sizeof(T)));
-    // pcg iterates
+    // linsys iterates
 
     gpuErrchk(cudaMalloc(&d_merit_initial, sizeof(T)));
     gpuErrchk(cudaMemset(d_merit_initial, 0, sizeof(T)));
@@ -168,7 +168,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
-#if TIME_LINSYS
+#if TIME_LINSYS == 1
     struct timespec linsys_start, linsys_end;
     double linsys_time;
 #endif
@@ -230,7 +230,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
 
-    #if TIME_LINSYS
+    #if TIME_LINSYS == 1
         gpuErrchk(cudaDeviceSynchronize());
         if (sqpTimecheck()){ break; }
         clock_gettime(CLOCK_MONOTONIC, &linsys_start);
@@ -245,7 +245,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
         gpuErrchk(cudaMemcpy(d_lambda, h_lambda, (state_size*knot_points)*sizeof(T), cudaMemcpyHostToDevice));
 
 
-    #if TIME_LINSYS
+    #if TIME_LINSYS == 1
         gpuErrchk(cudaDeviceSynchronize());
         clock_gettime(CLOCK_MONOTONIC, &linsys_end);
         
@@ -403,5 +403,5 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
 
-    return std::make_tuple(pcg_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, pcg_exit_vec);
+    return std::make_tuple(linsys_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, linsys_exit_vec);
 }

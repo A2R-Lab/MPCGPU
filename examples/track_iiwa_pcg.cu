@@ -51,10 +51,6 @@ int main(){
             pcg_exit_vals[2] = 5e-6;
             pcg_exit_vals[3] = 2.5e-6;
             pcg_exit_vals[4] = 1e-6;
-            // pcg_exit_vals[5] = 7.5e-5;
-            // pcg_exit_vals[6] = 5e-5;
-            // pcg_exit_vals[7] = 2.5e-5;
-            // pcg_exit_vals[8] = 1e-5;
         }
         else if(knot_points==64){
             pcg_exit_vals[0] = 5e-5;
@@ -62,10 +58,6 @@ int main(){
             pcg_exit_vals[2] = 5e-5;
             pcg_exit_vals[3] = 2.5e-5;
             pcg_exit_vals[4] = 1e-5;
-            // pcg_exit_vals[5] = 7.5e-4;
-            // pcg_exit_vals[6] = 5e-4;
-            // pcg_exit_vals[7] = 2.5e-4;
-            // pcg_exit_vals[8] = 1e-4;
         }
         else{
             pcg_exit_vals[0] = 1e-5;
@@ -92,10 +84,10 @@ int main(){
             for (uint32_t single_traj_test_iter = 0; single_traj_test_iter < traj_test_iters; single_traj_test_iter++){
 
                 // read in traj
-                snprintf(eePos_traj_file_name, sizeof(eePos_traj_file_name), "testfiles/%d_%d_eepos.traj", start_state, goal_state);
+                snprintf(eePos_traj_file_name, sizeof(eePos_traj_file_name), "examples/testfiles/%d_%d_eepos.traj", start_state, goal_state);
                 std::vector<std::vector<linsys_t>> eePos_traj2d = readCSVToVecVec<linsys_t>(eePos_traj_file_name);
                 
-                snprintf(xu_traj_file_name, sizeof(xu_traj_file_name), "testfiles/%d_%d_traj.csv", start_state, goal_state);
+                snprintf(xu_traj_file_name, sizeof(xu_traj_file_name), "examples/testfiles/%d_%d_traj.csv", start_state, goal_state);
                 std::vector<std::vector<linsys_t>> xu_traj2d = readCSVToVecVec<linsys_t>(xu_traj_file_name);
                 
                 if(eePos_traj2d.size() < knot_points){std::cout << "precomputed traj length < knotpoints, not implemented\n"; continue; }
