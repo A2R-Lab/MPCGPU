@@ -2,11 +2,13 @@
 
 Numerical experiments and the open-source solver from the paper ["MPCGPU: Real-Time Nonlinear Model Predictive Control through Preconditioned Conjugate Gradient on the GPU"](https://arxiv.org/abs/2309.08079) 
 
-### Running examples
+### Building and running examples
 
 ```
-git clone https://github.com/A2R-Lab/MPCGPU.git
-make
+git clone https://github.com/A2R-Lab/MPCGPU
+git submodule update --init --recursive
+make build_qdldl
+make examples
 mkdir /tmp/results
 ./examples/pcg.exe
 ./examples/qdldl.exe

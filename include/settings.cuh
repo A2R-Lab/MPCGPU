@@ -1,12 +1,22 @@
 #pragma once
 
-// #define KNOT_POINTS 32
-    
-#ifndef TIME_LINSYS
-#define TIME_LINSYS 1
+
+
+#ifndef KNOT_POINTS
+#define KNOT_POINTS 32 
 #endif
 
-// prints state while tracking
+// default value is for iiwa arm 
+#ifndef STATE_SIZE
+#define STATE_SIZE  14
+#endif
+
+
+/*******************************************************************************
+ *                           Print Settings                               *
+ *******************************************************************************/
+
+
 #ifndef LIVE_PRINT_PATH
 #define LIVE_PRINT_PATH 0
 #endif 
@@ -15,28 +25,18 @@
 #define LIVE_PRINT_STATS 0
 #endif
 
-#ifndef LIVE_PRINT_STATS
-#define LIVE_PRINT_STATS 0
-#endif
+/*******************************************************************************
+ *                           Test Settings                               *
+ *******************************************************************************/
 
-#ifndef ADD_NOISE
-#define ADD_NOISE  0
-#endif 
 
 #ifndef TEST_ITERS
-#define TEST_ITERS 3
+#define TEST_ITERS 1
 #endif
-
-// where to store test results — manually create this directory
 
 #ifndef SAVE_DATA
 #define SAVE_DATA   0
 #endif 
-
-#ifndef DATA_DIRECTORY
-#define DATA_DIRECTORY   "/tmp/results/"
-#endif 
-
 
 #ifndef USE_DOUBLES
 #define USE_DOUBLES 0
@@ -48,9 +48,13 @@ typedef double linsys_t;
 typedef float linsys_t;
 #endif
 
-// when enabled ABSOLUTE_QD_PENALTY penalizes qd like controls, rather than penalizing relative distance to precomputed traj
-#ifndef ABSOLUTE_QD_PENALTY
-#define ABSOLUTE_QD_PENALTY 0
+/*******************************************************************************
+ *                           MPC Settings                               *
+ *******************************************************************************/
+
+
+#ifndef ADD_NOISE
+#define ADD_NOISE  0
 #endif 
 
 #ifndef CONST_UPDATE_FREQ
@@ -67,26 +71,62 @@ typedef float linsys_t;
 #define SHIFT_THRESHOLD (1 * timestep)
 #endif
 
-#if TIME_LINSYS == 1
-    #define SQP_MAX_ITER    20
-    typedef double toplevel_return_type;
-#else
-    #define SQP_MAX_ITER    40
-    typedef uint32_t toplevel_return_type;
+#ifndef SIMULATION_PERIOD
+#define SIMULATION_PERIOD 2000
+#endif
+
+#ifndef MERIT_THREADS
+#define MERIT_THREADS       128
+#endif 
+
+// when enabled ABSOLUTE_QD_PENALTY penalizes qd like controls, rather than penalizing relative distance to precomputed traj
+#ifndef ABSOLUTE_QD_PENALTY
+#define ABSOLUTE_QD_PENALTY 0
+#endif 
+
+
+#ifndef R_COST
+	#if KNOT_POINTS == 64
+#define R_COST .001 
+	#else 
+#define R_COST .0001 
+	#endif
+#endif
+
+#ifndef QD_COST
+#define QD_COST .0001 
+#endif
+
+
+
+/*******************************************************************************
+ *                           Linsys Settings                               *
+ *******************************************************************************/
+
+
+/* time_linsys = 1 to record linear system solve times. 
+time_linsys = 0 to record number of sqp iterations. 
+In both cases, the tracking error will also be recorded. */
+    
+#ifndef TIME_LINSYS
+#define TIME_LINSYS 1
 #endif
 
 #ifndef PCG_NUM_THREADS
-#define PCG_NUM_THREADS     128
+#define PCG_NUM_THREADS	128
 #endif
 
 
-#ifndef PCG_SOLVE
-#define PCG_SOLVE 1 
+/* LINSYS_SOLVE = 1 uses pcg as the underlying linear system solver
+LINSYS_SOLVE = 0 uses qdldl as the underlying linear system solver */
+
+#ifndef LINSYS_SOLVE
+#define LINSYS_SOLVE 1 
 #endif
 
-// Constants found using experiments
+// Values found using experiments
 #ifndef PCG_MAX_ITER
-	#if PCG_SOLVE
+	#if LINSYS_SOLVE
 		#if KNOT_POINTS == 32
 #define PCG_MAX_ITER 173 
 		#elif KNOT_POINTS == 64
@@ -108,9 +148,23 @@ typedef float linsys_t;
 #endif
 
 
-#ifndef MERIT_THREADS
-#define MERIT_THREADS       128
-#endif 
+/*******************************************************************************
+ *                           SQP Settings                               *
+ *******************************************************************************/
+
+
+#if TIME_LINSYS == 1
+    #define SQP_MAX_ITER    20
+    typedef double toplevel_return_type;
+#else
+    #define SQP_MAX_ITER    40
+    typedef uint32_t toplevel_return_type;
+#endif
+
+
+#ifndef SQP_MAX_TIME_US
+#define SQP_MAX_TIME_US 2000 
+#endif
 
 #ifndef SCHUR_THREADS
 #define SCHUR_THREADS       128
@@ -123,6 +177,14 @@ typedef float linsys_t;
 #ifndef KKT_THREADS
 #define KKT_THREADS         128
 #endif
+
+
+
+/*******************************************************************************
+ *                           Rho Settings                               *
+ *******************************************************************************/
+
+
 
 #ifndef RHO_MIN
 #define RHO_MIN 1e-3
@@ -137,37 +199,5 @@ typedef float linsys_t;
 #define RHO_MAX 10 
 #endif
 
-//TODO: get rid of sqp in defines
-#ifndef SQP_MAX_TIME_US
-#define SQP_MAX_TIME_US 2000 
-#endif
-
-
-#ifndef SIMULATION_PERIOD
-#define SIMULATION_PERIOD 2000
-#endif
-
-
-#ifndef KNOT_POINTS
-#define KNOT_POINTS 32 
-#endif
-
-// default value is for iiwa arm 
-#ifndef STATE_SIZE
-#define STATE_SIZE  14
-#endif
-
-
-#ifndef R_COST
-	#if KNOT_POINTS == 64
-#define R_COST .001 
-	#else 
-#define R_COST .0001 
-	#endif
-#endif
-
-#ifndef QD_COST
-#define QD_COST .0001 
-#endif
 
 

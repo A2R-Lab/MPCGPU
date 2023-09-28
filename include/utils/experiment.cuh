@@ -11,12 +11,6 @@
 #include <pthread.h>
 #include <iostream>
 
-
-#define TEST_FOR_EQUIVALENCE 0
-#define CPU_THREADS_GLOBAL 8
-#define TEST_ITERS_GLOBAL 100000
-
-#define RANDOM_MEAN 0
 #define time_delta_us_timespec(start,end) (1e6*static_cast<double>(end.tv_sec - start.tv_sec)+1e-3*static_cast<double>(end.tv_nsec - start.tv_nsec))
 
 template<bool PRINT_DISTRIBUTION = true>
@@ -140,40 +134,11 @@ std::string printStats(std::vector<T> *data, std::string prefix = "data"){
    }
    std::cout << "Average[" << mean << "] Std Dev [" << stdev << "] Min [" << min << "] Max [" << max << "] Median [" << median << "] Q1 [" << Q1 << "] Q3 [" << Q3 << "]" << std::endl;
 
-   // // Create filename with timestamp
-   // std::string filename = prefix + "_" + getCurrentTimestamp() + ".txt";
-   // // Open the file
-   // std::ofstream outfile(filename);
-   // if (!outfile.is_open()) {
-   //    std::cerr << "Failed to open file for writing: " << filename << std::endl;
-   //    return;
-   // }
-   // // Write the vector data to the file
-   // for (const auto& val : *data) {
-   //    outfile << val << "\n";
-   // }
-   // // Close the file
-   // outfile.close();
-   // std::cout << "Data written to: " << filename << std::endl;
-
    // Construct the formatted string
    std::stringstream ss;
    ss << "Average[" << mean << "] Std Dev [" << stdev << "] Min [" << min << "] Max [" << max << "] Median [" << median << "] Q1 [" << Q1 << "] Q3 [" << Q3 << "]";
    
    return ss.str();
-}
-
-std::string create_test_directory() {
-    std::string subdirectoryPath = DATA_DIRECTORY + std::to_string(KNOT_POINTS);
-
-//     try {
-//         std::filesystem::create_directory(subdirectoryPath);
-//         std::cout << "Directory created: " << subdirectoryPath << std::endl;
-//     } catch (const std::filesystem::filesystem_error& e) {
-//         std::cerr << "Error creating directory: " << e.what() << std::endl;
-//     }
-
-    return subdirectoryPath + "/";
 }
 
 template <typename T>

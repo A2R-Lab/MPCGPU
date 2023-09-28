@@ -16,7 +16,7 @@
 #include "utils/track.cuh"
 #include "utils/experiment.cuh"
 
-#if PCG_SOLVE
+#if LINSYS_SOLVE == 1
 #include "linsys_solvers/pcg/sqp.cuh"
 #else 
 #include "linsys_solvers/qdldl/sqp.cuh"
@@ -88,7 +88,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> t
     T *d_eePos;
     gpuErrchk(cudaMalloc(&d_eePos, 6*sizeof(T)));
 
-#if PCG_SOLVE
+#if LINSYS_SOLVE == 1
     pcg_config config;
     config.pcg_block = PCG_NUM_THREADS;
     config.pcg_exit_tol = linsys_exit_tol;
@@ -99,7 +99,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> t
     T rho_reset = 1e-3;
 
 #if REMOVE_JITTERS
-	#if PCG_SOLVE
+	#if LINSYS_SOLVE == 1
     config.pcg_exit_tol = 1e-11;
     config.pcg_max_iter = 10000;
     
@@ -142,7 +142,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> t
         
 
 
-#if PCG_SOLVE
+#if LINSYS_SOLVE == 1
 
         sqp_stats = sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, rho_reset);
 #else 

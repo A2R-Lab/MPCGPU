@@ -23,7 +23,8 @@ int main(){
     if(!std::is_same<QDLDL_float, linsys_t>::value){ std::cout << "GPU-PCG QDLDL type mismatch" << std::endl; exit(1); }
 
     print_test_config();
-    std::string output_directory_path = create_test_directory();
+     // where to store test results — manually create this directory
+    std::string output_directory_path = "/tmp/results/";
 
     const uint32_t recorded_states = 5;
     const uint32_t start_goal_combinations = recorded_states*recorded_states;
@@ -41,7 +42,7 @@ int main(){
         if(start_state == goal_state && start_state != 0){ continue; }
         std::cout << "start: " << start_state << " goal: " << goal_state << std::endl;
 
-		float qdldl_exit_tol = -1;
+		float linsys_exit_tol = -1;
 		std::vector<double> linsys_times;
 		std::vector<uint32_t> sqp_iters;
 		std::vector<toplevel_return_type> current_results;
@@ -49,16 +50,16 @@ int main(){
 		std::vector<float> cur_tracking_errs;
 		double tot_final_tracking_err = 0;
 
-		std::string test_output_prefix = output_directory_path + std::to_string(PCG_SOLVE) + "_" + std::to_string(qdldl_exit_tol);
+		std::string test_output_prefix = output_directory_path  + std::to_string(KNOT_POINTS) + "_" + ( (LINSYS_SOLVE == 1) ? "PCG" : "QDLDL");
 		printf("Logging test results to files with prefix %s \n", test_output_prefix.c_str()); 
 
 		for (uint32_t single_traj_test_iter = 0; single_traj_test_iter < traj_test_iters; single_traj_test_iter++){
 
 			// read in traj
-			snprintf(eePos_traj_file_name, sizeof(eePos_traj_file_name), "examples/testfiles/%d_%d_eepos.traj", start_state, goal_state);
+			snprintf(eePos_traj_file_name, sizeof(eePos_traj_file_name), "examples/trajfiles/%d_%d_eepos.traj", start_state, goal_state);
 			std::vector<std::vector<linsys_t>> eePos_traj2d = readCSVToVecVec<linsys_t>(eePos_traj_file_name);
 			
-			snprintf(xu_traj_file_name, sizeof(xu_traj_file_name), "examples/testfiles/%d_%d_traj.csv", start_state, goal_state);
+			snprintf(xu_traj_file_name, sizeof(xu_traj_file_name), "examples/trajfiles/%d_%d_traj.csv", start_state, goal_state);
 			std::vector<std::vector<linsys_t>> xu_traj2d = readCSVToVecVec<linsys_t>(xu_traj_file_name);
 			
 			if(eePos_traj2d.size() < knot_points){std::cout << "precomputed traj length < knotpoints, not implemented\n"; continue; }
@@ -83,7 +84,7 @@ int main(){
 			gpuErrchk(cudaMemcpy(d_xs, h_xu_traj.data(), state_size*sizeof(linsys_t), cudaMemcpyHostToDevice));
 
 			std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> trackingstats = track<linsys_t, toplevel_return_type>(state_size, control_size, knot_points, 
-				static_cast<uint32_t>(eePos_traj2d.size()), timestep, d_eePos_traj, d_xu_traj, d_xs, start_state, goal_state, single_traj_test_iter, qdldl_exit_tol, test_output_prefix);
+				static_cast<uint32_t>(eePos_traj2d.size()), timestep, d_eePos_traj, d_xu_traj, d_xs, start_state, goal_state, single_traj_test_iter, linsys_exit_tol, test_output_prefix);
 			
 			current_results = std::get<0>(trackingstats);
 			if (TIME_LINSYS == 1) {
@@ -108,22 +109,23 @@ int main(){
 
 		std::cout << "Completed at " << getCurrentTimestamp() << std::endl;
 		std::cout << "\nRESULTS*************************************\n";
-		std::cout << "exit tol: " << qdldl_exit_tol << std::endl;
-		std::cout << "tracking err\n";
+		std::cout << "exit tol: " << linsys_exit_tol << std::endl;
+		std::cout << "\nTracking err";
 		std::string trackingStats = printStats<float>(&tracking_errs, "trackingerr");
-		std::cout << tot_final_tracking_err / traj_test_iters << std::endl;
+		std::cout << "Average final tracking err: " << tot_final_tracking_err / traj_test_iters << std::endl;
 		std::string linsysOrSqpStats;
 		if (TIME_LINSYS == 1)
 		{
-			std::cout << "linsys times\n";
-			linsysOrSqpStats = printStats<double>(&linsys_times, "linsystimes");
+		std::cout << "\nLinsys times";
+		linsysOrSqpStats = printStats<double>(&linsys_times, "linsystimes");
 		}
 		else
 		{
-			std::cout << "sqp iters\n";
-			linsysOrSqpStats = printStats<uint32_t>(&sqp_iters, "sqpiters");
+		std::cout << "\nSqp iters";
+		linsysOrSqpStats = printStats<uint32_t>(&sqp_iters, "sqpiters");
 		}
 		std::cout << "************************************************\n\n";
+
 
 		// Specify the CSV file path
 		const std::string csvFilePath = test_output_prefix + "_" + "overall_stats.csv";

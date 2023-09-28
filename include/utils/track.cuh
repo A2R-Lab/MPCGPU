@@ -101,27 +101,28 @@ void dump_tracking_data(std::vector<int> *pcg_iters, std::vector<bool> *pcg_exit
 
 
 void print_test_config(){
-    std::cout << "knot points: " << KNOT_POINTS << "\n";
-    std::cout << "datatype: " << (USE_DOUBLES ? "DOUBLE" : "FLOAT") << "\n";
-    std::cout << "noise: " << (ADD_NOISE ? "ON" : "OFF") << "\n";
-    std::cout << "sqp exits condition: " << (CONST_UPDATE_FREQ ? "CONSTANT TIME" : "CONSTANT ITERS") << "\n";
+    std::cout << "Knot points: " << KNOT_POINTS << "\n";
+    std::cout << "State size: " << STATE_SIZE << "\n";
+    std::cout << "Datatype: " << (USE_DOUBLES ? "DOUBLE" : "FLOAT") << "\n";
+    std::cout << "Noise: " << (ADD_NOISE ? "ON" : "OFF") << "\n";
+    std::cout << "Sqp exits condition: " << (CONST_UPDATE_FREQ ? "CONSTANT TIME" : "CONSTANT ITERS") << "\n";
     std::cout << "QD COST: " << QD_COST << "\n";
     std::cout << "R COST: " << R_COST << "\n";
-    std::cout << "rho factor: " << RHO_FACTOR << "\n";
-    std::cout << "rho max: " << RHO_MAX << "\n";
-    std::cout << "test iters: " << TEST_ITERS << "\n";
+    std::cout << "Rho factor: " << RHO_FACTOR << "\n";
+    std::cout << "Rho max: " << RHO_MAX << "\n";
+    std::cout << "Test iters: " << TEST_ITERS << "\n";
 #if CONST_UPDATE_FREQ
-    std::cout << "max sqp time: " << SQP_MAX_TIME_US << "\n";
+    std::cout << "Max sqp time: " << SQP_MAX_TIME_US << "\n";
 #else
-    std::cout << "max sqp iter: " << SQP_MAX_ITER << "\n";
+    std::cout << "Max sqp iter: " << SQP_MAX_ITER << "\n";
 #endif
-    std::cout << "solver: " << (PCG_SOLVE ? "PCG" : "QDLDL") << "\n";
-#if PCG_SOLVE
-    std::cout << "max pcg iter: " << PCG_MAX_ITER << "\n";
+    std::cout << "Solver: " << ( (LINSYS_SOLVE == 1) ? "PCG" : "QDLDL") << "\n";
+#if LINSYS_SOLVE == 1
+    std::cout << "Max pcg iter: " << PCG_MAX_ITER << "\n";
     // std::cout << "pcg exit tol: " << PCG_EXIT_TOL << "\n";
 #endif
-    std::cout << "save data: " << (SAVE_DATA ? "ON" : "OFF") << "\n";
-    std::cout << "jitters: " << (REMOVE_JITTERS ? "ON" : "OFF") << "\n";
+    std::cout << "Save data: " << (SAVE_DATA ? "ON" : "OFF") << "\n";
+    std::cout << "Jitters: " << (REMOVE_JITTERS ? "ON" : "OFF") << "\n";
 
     std::cout << "\n\n";
 }
