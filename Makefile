@@ -2,7 +2,7 @@
 
 # Compiler and compiler flags
 NVCC = nvcc
-CFLAGS = --compiler-options -Wall  -O3 -Iinclude -IGLASS  -IGPU-PCG/include  -lqdldl  -Iqdldl/include -Lqdldl/build/out -lcublas
+CFLAGS = --compiler-options -Wall  -O3 -Iinclude -IGLASS  -IGBD-PCG/include  -lqdldl  -Iqdldl/include -Lqdldl/build/out -lcublas
 
 
 examples: examples/pcg.exe examples/qdldl.exe

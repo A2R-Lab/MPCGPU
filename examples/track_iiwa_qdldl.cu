@@ -20,7 +20,7 @@ int main(){
 
     const uint32_t traj_test_iters = TEST_ITERS;
 
-    if(!std::is_same<QDLDL_float, linsys_t>::value){ std::cout << "GPU-PCG QDLDL type mismatch" << std::endl; exit(1); }
+    if(!std::is_same<QDLDL_float, linsys_t>::value){ std::cout << "GBD-PCG QDLDL type mismatch" << std::endl; exit(1); }
 
     print_test_config();
      // where to store test results — manually create this directory

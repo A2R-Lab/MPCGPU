@@ -1,6 +1,6 @@
-[submodule "GPU-PCG"]
-	path = GPU-PCG
-	url = git@github.com:A2R-Lab/GPU-PCG.git
+[submodule "GBD-PCG"]
+	path = GBD-PCG
+	url = git@github.com:A2R-Lab/GBD-PCG.git
 [submodule "qdldl"]
 	path = qdldl
 	url = https://github.com/osqp/qdldl.git
