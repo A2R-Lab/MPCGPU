@@ -1,4 +1,3 @@
-#pragma once
 #include <fstream>
 #include <vector>
 #include <sstream>
@@ -84,7 +83,7 @@ int main(){
 			gpuErrchk(cudaMemcpy(d_xs, h_xu_traj.data(), state_size*sizeof(linsys_t), cudaMemcpyHostToDevice));
 
 			std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> trackingstats = track<linsys_t, toplevel_return_type>(state_size, control_size, knot_points, 
-				static_cast<uint32_t>(eePos_traj2d.size()), timestep, d_eePos_traj, d_xu_traj, d_xs, start_state, goal_state, single_traj_test_iter, linsys_exit_tol, test_output_prefix);
+				static_cast<uint32_t>(eePos_traj2d.size()), timestep, d_eePos_traj, d_xu_traj, d_xs, single_traj_test_iter, linsys_exit_tol, test_output_prefix);
 			
 			current_results = std::get<0>(trackingstats);
 			if (TIME_LINSYS == 1) {
