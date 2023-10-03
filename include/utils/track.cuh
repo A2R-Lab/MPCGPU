@@ -41,8 +41,8 @@ T compute_tracking_error(uint32_t state_size, T *d_xu_goal, T *d_xs){
 
 template <typename T>
 void dump_tracking_data(std::vector<int> *pcg_iters, std::vector<bool> *pcg_exits, std::vector<double> *linsys_times, std::vector<double> *sqp_times, std::vector<uint32_t> *sqp_iters, 
-                std::vector<bool> *sqp_exits, std::vector<T> *tracking_errors, std::vector<std::vector<T>> *tracking_path, uint32_t timesteps_taken, 
-                uint32_t control_updates_taken, uint32_t start_state_ind, uint32_t goal_state_ind, uint32_t test_iter,
+                std::vector<bool> *sqp_exits, std::vector<T> *tracking_errors, std::vector<std::vector<T>> *tracking_path, uint32_t test_iter, uint32_t timesteps_taken, 
+                uint32_t control_updates_taken,
                 std::string filename_prefix){
     // Helper function to create file names
     auto createFileName = [&](const std::string& data_type) {
@@ -122,7 +122,7 @@ void print_test_config(){
     // std::cout << "pcg exit tol: " << PCG_EXIT_TOL << "\n";
 #endif
     std::cout << "Save data: " << (SAVE_DATA ? "ON" : "OFF") << "\n";
-    std::cout << "Jitters: " << (REMOVE_JITTERS ? "ON" : "OFF") << "\n";
+    std::cout << "Remove jitters: " << (REMOVE_JITTERS ? "ON" : "OFF") << "\n";
 
     std::cout << "\n\n";
 }
