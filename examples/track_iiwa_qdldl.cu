@@ -55,10 +55,10 @@ int main(){
 		for (uint32_t single_traj_test_iter = 0; single_traj_test_iter < traj_test_iters; single_traj_test_iter++){
 
 			// read in traj
-			snprintf(eePos_traj_file_name, sizeof(eePos_traj_file_name), "examples/trajfiles/%d_%d_eepos.traj", start_state, goal_state);
+			snprintf(eePos_traj_file_name, sizeof(eePos_traj_file_name), "examples/precomputedTrajectories/%d_%d_eepos.csv", start_state, goal_state);
 			std::vector<std::vector<linsys_t>> eePos_traj2d = readCSVToVecVec<linsys_t>(eePos_traj_file_name);
 			
-			snprintf(xu_traj_file_name, sizeof(xu_traj_file_name), "examples/trajfiles/%d_%d_traj.csv", start_state, goal_state);
+			snprintf(xu_traj_file_name, sizeof(xu_traj_file_name), "examples/precomputedTrajectories/%d_%d_traj.csv", start_state, goal_state);
 			std::vector<std::vector<linsys_t>> xu_traj2d = readCSVToVecVec<linsys_t>(xu_traj_file_name);
 			
 			if(eePos_traj2d.size() < knot_points){std::cout << "precomputed traj length < knotpoints, not implemented\n"; continue; }
@@ -82,8 +82,20 @@ int main(){
 			gpuErrchk(cudaMalloc(&d_xs, state_size*sizeof(linsys_t)));
 			gpuErrchk(cudaMemcpy(d_xs, h_xu_traj.data(), state_size*sizeof(linsys_t), cudaMemcpyHostToDevice));
 
-			std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> trackingstats = track<linsys_t, toplevel_return_type>(state_size, control_size, knot_points, 
-				static_cast<uint32_t>(eePos_traj2d.size()), timestep, d_eePos_traj, d_xu_traj, d_xs, single_traj_test_iter, linsys_exit_tol, test_output_prefix);
+			std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> trackingstats
+			
+			trackingstats = track<linsys_t, toplevel_return_type>(
+				state_size, 
+				control_size, 
+				knot_points, 
+				static_cast<uint32_t>(eePos_traj2d.size()), 
+				timestep, 
+				d_eePos_traj, 
+				d_xu_traj, 
+				d_xs, 
+				linsys_exit_tol, 
+				single_traj_test_iter,  
+				test_output_prefix);
 			
 			current_results = std::get<0>(trackingstats);
 			if (TIME_LINSYS == 1) {

@@ -21,8 +21,8 @@ int main(){
 
 	// test parameters
     const uint32_t traj_test_iters = TEST_ITERS;
-    char eePos_traj_file_name[] = "precomputedTrajectories/0_0_eepos.csv";
-    char xu_traj_file_name[] = "precomputedTrajectories/0_0_eepos.csv";
+    char eePos_traj_file_name[] = "examples/precomputedTrajectories/0_0_eepos.csv";
+    char xu_traj_file_name[] = "examples/precomputedTrajectories/0_0_eepos.csv";
     std::string output_directory_path = "/tmp/results/";
     print_test_config();
 
