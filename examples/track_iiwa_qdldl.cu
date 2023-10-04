@@ -1,4 +1,3 @@
-#pragma once
 #include <fstream>
 #include <vector>
 #include <sstream>
@@ -24,7 +23,7 @@ int main(){
 
     print_test_config();
      // where to store test results — manually create this directory
-    std::string output_directory_path = "/tmp/results/";
+    std::string output_directory_path = "tmp/results/";
 
     const uint32_t recorded_states = 5;
     const uint32_t start_goal_combinations = recorded_states*recorded_states;
