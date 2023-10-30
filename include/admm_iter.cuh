@@ -1,58 +1,96 @@
 #include <glass.cuh>
 #define NUM_THREADS 64
-#define STATE_SIZE 10
-#define CONTROL_SIZE 2
 #define KNOT_POINTS 10
 #define MSIZE (STATE_SIZE+CONTROL_SIZE)*KNOT_POINTS
 #define SSpCS (STATE_SIZE+CONTROL_SIZE)
+#define NX 120
+#define NC 120
+#define STATE_SIZE NX/KNOT_POINTS
 
 template <typename T>
-compute_gamma(T * d_gamma, T * d_g, T * d_A, t *d_x, T* d_lambda, float rho, float sigma){
-	/* gamma = g + sigma * x + A.T ( rho *x - lambda )*/
+compute_gamma(T * d_gamma, T * d_g, T * d_A, t *d_x, T* d_lambda, T*d_z,  float rho, float sigma){
+	/* gamma = -g + sigma * x + A.T ( rho *z - lambda )*/
 	
 	/* launch it*/
 
-	update_gamma_skernel<T><<<nx, NUM_THREADS>>>(d_gamma, d_g, d_A, d_x, d_lambda, d_z, rho, sigma);
+	T *d_zdiff, T *d_Atz;
+	gpuErrchk(cudaMalloc(d_zdiff, NC * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_Atz, NX * sizeof(T)));
 
+	void *compute_gamma_kernel = (void *) compute_gamma_kernel<T>;
+
+	void *kernelArgs[] = {
+		(void *)&d_gamma, 
+		(void *)&d_g, 
+		(void *)&d_A,
+		(void *)&d_x, 
+		(void *)&d_lambda, 
+		(void *)&d_z, 
+		(void *)&d_zdiff, 
+		(void *)&d_Atz, 
+		(void *)&rho, 
+		(void *)&sigma
+	}
+
+	gpuErrchk(cudaLaunchCooperativeKernel(compute_gamma_kernel, knot_points, NUM_THREADS, kernelArgs, 0));    
+    gpuErrchk(cudaPeekAtLastError());
 }
 
 
 template <typename T>
-compute_gamma_kernel(){
-	/* x_diff = rho * x - lambda */
-	glass::axpby<T>(nx, rho, d_x, -1, lambda, d_xdiff);
+compute_gamma_kernel(T * d_gamma, T * d_g, T * d_A, t *d_x, T* d_lambda, T*d_z, T *d_zdiff, T *d_Atz, float rho, float sigma){
 
-	/* Atx = A.T * x_diff */
-	glass::gemv<T, true>(nx, nx, 1, d_A, d_xdiff, d_Atx);
+	/* z_diff = rho * z - lambda */
+	glass::axpby<T>(NC, rho, d_z, -1, d_lambda, d_zdiff);
 
-	/* gamma = g + sigma *x */
-	glass::axpby<T>(nx, 1, d_g, sigma, x, d_gamma);
+	/* Atx = A.T * z_diff */
+	glass::gemv<T, true>(NC, NX, 1, d_A, d_zdiff, d_Atz);
 
-	/* gamma = Atx + gamma */
-	glass::axpy<T>(nx, 1, d_Atx, d_gamma);
+	/* gamma = -g + sigma * x */
+	glass::axpby<T>(NX, -1, d_g, sigma, x, d_gamma);
+
+	/* gamma = Atz + gamma */
+	glass::axpy<T>(NX, 1, d_Atz, d_gamma);
 }
 
 
 template <typename T>
-update_z(T *d_A, T *d_x, T *d_lambda, T *d_z, float rho, T* l, T* u){
+update_z(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* l, T* u, float rho){
 	/* z = clip( Ax + 1/rho * lambda )*/
 
 	/* launch kernel*/
-	
-	update_z_kernel<T><<<nx, NUM_THREADS>>>(d_A, d_x, d_lambda, d_z, rho, l, u);
 
+	/* Allocate for  Ax*/
+	T * d_Ax;
+	gpuErrchk(cudaMalloc(d_Ax, NC * sizeof(T)));
+
+	void *update_z_kernel = (void *) compute_z_kernel<T>;
+
+	void *kernelArgs[] = {
+		(void *)&d_A,
+		(void *)&d_x, 
+		(void *)&d_lambda, 
+		(void *)&d_z,  
+		(void *)&d_Ax, 
+		(void *)&d_l,
+		(void *)&d_u,
+		(void *)&rho
+	}
+
+	gpuErrchk(cudaLaunchCooperativeKernel(update_z_kernel, knot_points, NUM_THREADS, kernelArgs, 0));    
+    gpuErrchk(cudaPeekAtLastError());
 }
 
 template <typename T>
-update_z_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z,  T * l, T * u, float rho, , T* l, T* u){
+update_z_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, d_Ax , T* l, T* u float rho ){
 	/* Ax = A * x */
-	glass::gemv<T, false>(nx, nx, 1, d_A, d_x, d_Ax);
+	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
 
 	/* z = Ax + 1/rho * lambda */
-	glass::axpby<T>(nx, 1, d_Ax, 1/rho, lambda, d_z);
+	glass::axpby<T>(NC, 1, d_Ax, 1/rho, lambda, d_z);
 
 	/* z = clip(z) */
-	glass::clip(nx, d_z, l, u);
+	glass::clip(NC, d_z, l, u);
 
 }
 
@@ -60,20 +98,37 @@ template <typename T>
 update_lambda(T * d_A, T * d_x, T * d_lambda, T * d_z, float rho){
 	/* lambda = lambda + rho * (A * x - z )*/
 
+	T * d_Ax, T d_Axz;
+	gpuErrchk(cudaMalloc(d_Ax, NC * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_Axz, NC * sizeof(T)));
+
 	/* launch */
-	update_lambda_kernel<T><<<nx, NUM_THREADS>>>(d_A, d_x, d_lambda, d_z, rho);
+	void *update_lambda_kernel = (void *) compute_lambda_kernel<T>;
+
+	void *kernelArgs[] = {
+		(void *)&d_A,
+		(void *)&d_x, 
+		(void *)&d_lambda, 
+		(void *)&d_z,  
+		(void *)&d_Ax,
+		(void *)&d_Axz,
+		(void *)&rho
+	}
+
+	gpuErrchk(cudaLaunchCooperativeKernel(update_lambda_kernel, knot_points, NUM_THREADS, kernelArgs, 0));    
+    gpuErrchk(cudaPeekAtLastError());
 }
 
 template <typename T>
-update_lambda_kernel(T * d_A, T * d_x, T * d_lambda, T * d_z, float rho){
+update_lambda_kernel(T * d_A, T * d_x, T * d_lambda, T * d_z, T * d_Ax, T * d_Axz, float rho){
 	/* Ax = A * x*/
-	glass::gemv<T, false>(nx, nx, 1, d_A, d_x, d_Ax);
+	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
 
 	/* Axz = Ax - z*/
-	glass::axpby<T>(nx, 1, d_Ax, -1, d_z, d_Axz);
+	glass::axpby<T>(NC, 1, d_Ax, -1, d_z, d_Axz);
 
 	/* lambda = lambda + rho * Axz */
-	glass::axpy<T>(nx, rho, d_Axz, d_lambda);
+	glass::axpy<T>(NC, rho, d_Axz, d_lambda);
 }
 
 template <typename T>
@@ -118,9 +173,7 @@ solve_pcg(T * d_S, T * d_Pinv, T * d_x){
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
 
-	gpuErrchk(cudaLaunchCooperativeKernel(pcg_kernel, knot_points, NUM_THREADS, pcgKernelArgs, ppcg_kernel_smem_size));    
-	gpuErrchk(cudaMemcpy(&pcg_iters, d_pcg_iters, sizeof(uint32_t), cudaMemcpyDeviceToHost));
-	gpuErrchk(cudaMemcpy(&pcg_exit, d_pcg_exit, sizeof(bool), cudaMemcpyDeviceToHost));
+	gpuErrchk(cudaLaunchCooperativeKernel(pcg_kernel, knot_points, NUM_THREADS, pcgKernelArgs, ppcg_kernel_smem_size));  
 	gpuErrchk(cudaPeekAtLastError());
 }
 
@@ -128,16 +181,18 @@ template <typename T>
 admm_iter(qp *prob, T *d_S, T *d_Pinv, T *d_x, T *d_lambda, T *d_z, float rho, float sigma){
 
 	/*Allocate memory for gamma, */
+	T *d_gamma;
+	gpuErrchk(cudaMalloc(d_gamma, NX * sizeof(T)));
 
 	/*compute gamma*/
-	compute_gamma(d_gamma, prob->d_g, prob->d_A, d_x, d_lambda, rho, sigma);
+	compute_gamma<T(d_gamma, prob->d_g, prob->d_A, d_x, d_lambda, d_z, rho, sigma);
 
 	/*call pcg*/
-	solve_pcg(d_S, d_Pinv, d_x);
+	solve_pcg<T>(d_S, d_Pinv, d_x);
 
 	/*update z*/
-	update_z(d_A, d_x, d_lambda, d_z, rho, prob->l, prob->u);
+	update_z<T>(d_A, d_x, d_lambda, d_z, prob->l, prob->u, rho);
 
 	/*update lambda*/
-	update_lambda(d_A, d_x, d_lambda, d_z, rho);
+	update_lambda<T>(d_A, d_x, d_lambda, d_z, rho);
 }

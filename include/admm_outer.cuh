@@ -22,21 +22,21 @@ form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 
 	/* Allocating memory*/
 	T * d_I, d_Anorm;
-	gpuErrchk(cudaMalloc(d_I, nx * nx * sizeof(T)));
-	gpuErrchk(cudaMalloc(d_Aorm, nx * nx * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_I, NX * NX * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_Aorm, NX * NX * sizeof(T)));
 
 
 	/* TODO: create sigma Identity matrix*/
-	createIdentityMatrix<<<nx, nx>>>(d_I, nx);
+	createIdentityMatrix<<<NX, NX>>>(d_I, NX);
 
 	/* Anorm = A.T * A */
-	cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, nx, nx, &alpha, d_A, nx, &beta, d_A, nx, d_Anorm, nx);
+	cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, NX, NX, NC, 1, d_A, NX, 1, d_A, NC, d_Anorm, NX);
 
 	/* S = H + sigma * I */
-	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, n, 1.0, d_H, n, sigma, d_I, n, d_S, n);
+	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, 1.0, d_H, NX, sigma, d_I, NX, d_S, NX);
 
 	/* S = S + rho * Anorm */
-	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, n, 1.0, d_S, n, rho, d_Anorm, n, d_S, n);
+	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, 1.0, d_S, NX, rho, d_Anorm, NX, d_S, NX);
 
 }
 
@@ -114,6 +114,8 @@ template <typename T>
 __global__
 form_ss_kernel(T * d_Pinv, T * d_S){
 	extern __shared__ T s_temp[];
+	int state_size = STATE_SIZE;
+	int knot_points = KNOT_POINTS;
     
 	for(unsigned ind=blockIdx.x; ind<knot_points; ind+=gridDim.x){
 		gato_ss_from_schur<T>(
@@ -142,7 +144,10 @@ form_ss_kernel(T * d_Pinv, T * d_S){
 template <typename T>
 admm_solve(qp *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sigma =1e-6, float tol =1e-3, max_iter=1000){
 
-	/* TODO: Allocate memory for schur and pinv */
+	/* Allocate memory for schur and pinv */
+	int state_size = STATE_SIZE;
+	int knot_points = KNOT_POINTS;
+
 	T *d_Pinv, d_S, d_Sbd;
     gpuErrchk(cudaMalloc(&d_Pinv, 3*states_size*state_size*knot_points*sizeof(T)));
 	gpuErrchk(cudaMalloc(&d_S, 3*states_size*state_size*knot_points*sizeof(T)));
@@ -170,39 +175,39 @@ admm_solve_outer(T * h_H,  T *h_g, T *h_A, T*h_l , T*d_u, int nx, int nc, T * h_
 	T * d_H, d_g, d_A, d_l, d_u, d_x, d_lambda, d_z;
 
 	int msize = MSIZE;
-	gpuErrchk(cudaMalloc(d_H, msize * msize * sizeof(T)));
-	gpuErrchk(cudaMalloc(d_A, msize * msize * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_H, NX * NX * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_A, NC * NX * sizeof(T)));
 
 
-	gpuErrchk(cudaMalloc(d_g, msize * sizeof(T)));
-	gpuErrchk(cudaMalloc(d_l, msize * sizeof(T)));
-	gpuErrchk(cudaMalloc(d_u, msize * sizeof(T)));
-	gpuErrchk(cudaMalloc(d_x, msize * sizeof(T)));
-	gpuErrchk(cudaMalloc(d_lambda, msize * sizeof(T)));
-	gpuErrchk(cudaMalloc(d_z, msize * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_g, NX * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_l, NC * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_u, NC * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_x, NX * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_lambda, NC * sizeof(T)));
+	gpuErrchk(cudaMalloc(d_z, NC * sizeof(T)));
 
 
 	/* Copy from host to device memory */
-	gpuErrchk(cudaMemcpy(d_H, h_H, msize * msize * sizeof(T), cudaMemcpyHostToDevice));
-	gpuErrchk(cudaMemcpy(d_A, h_A, msize * msize * sizeof(T), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_H, h_H,  NX * NX * sizeof(T), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_A, h_A, NC * NX * sizeof(T), cudaMemcpyHostToDevice));
 
-	gpuErrchk(cudaMemcpy(d_g, h_g, msize * sizeof(T), cudaMemcpyHostToDevice));
-	gpuErrchk(cudaMemcpy(d_l, h_l, msize * sizeof(T), cudaMemcpyHostToDevice));
-	gpuErrchk(cudaMemcpy(d_u, h_u, msize * sizeof(T), cudaMemcpyHostToDevice));
-	gpuErrchk(cudaMemcpy(d_x, h_x, msize * sizeof(T), cudaMemcpyHostToDevice));
-	gpuErrchk(cudaMemcpy(d_lamda, h_lambda, msize * sizeof(T), cudaMemcpyHostToDevice));
-	gpuErrchk(cudaMemcpy(d_z, h_z, msize * sizeof(T), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_g, h_g, NX * sizeof(T), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_l, h_l, NC * sizeof(T), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_u, h_u, NC * sizeof(T), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_x, h_x, NX * sizeof(T), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_lamda, h_lambda, NC * sizeof(T), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_z, h_z, NC * sizeof(T), cudaMemcpyHostToDevice));
 
 
 	/* Make QP struct */
-	qp<T> prob(d_H, d_g, d_A, d_l, d_u, nx, nc);
+	qp<T> prob(d_H, d_g, d_A, d_l, d_u, NX, NC);
 
 
 	/* Call admm_solve */
 	admm_solve(&prob, d_x, d_lambda, d_z, rho, sigma, tol, max_iters);
 
 	/* Copy x, lambda, z */
-	gpuErrchk(cudaMemcpy(h_x, d_x, msize * sizeof(T), cudaMemcpyDeviceToHost));
-	gpuErrchk(cudaMemcpy(h_lamda, d_lambda, msize * sizeof(T), cudaMemcpyDeviceToHost));
-	gpuErrchk(cudaMemcpy(h_z, d_z, msize * sizeof(T), cudaMemcpyDeviceToHost));
+	gpuErrchk(cudaMemcpy(h_x, d_x, NX * sizeof(T), cudaMemcpyDeviceToHost));
+	gpuErrchk(cudaMemcpy(h_lamda, d_lambda, NC * sizeof(T), cudaMemcpyDeviceToHost));
+	gpuErrchk(cudaMemcpy(h_z, d_z, NC * sizeof(T), cudaMemcpyDeviceToHost));
 }
