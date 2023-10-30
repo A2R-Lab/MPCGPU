@@ -4,6 +4,7 @@
 cublasHandle_t handle;
 cublasCreate(&handle);
 
+
 template <typename T>
 __global__ void createIdentityMatrix(T* A, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -39,8 +40,57 @@ form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 
 }
 
-convert_to_bd(T * d_S){
-	/* TODO: */
+template <typename T>
+convert_to_bd(T * d_Sn, t * d_Sbd){
+	/* TODO: launch*/
+	convert_to_bd_kernel<<<KNOT_POINTS, 3 * STATE_SIZE * STATE_SIZE>>>(d_Sn, d_Sbd);
+
+}
+
+/* 
+for (int i = 0; i <  3 * state_size ; i++){
+		for (int j = 0; j < state_size ; j++){
+
+			
+
+				
+				if (blockIdx.x == 0 && i * state_size + j < state_size * state_size){
+					d_Sbd[offset_bd + i * state_size + j] = 0;
+				}
+
+				else if (blockIdx.x == blockDim.x - 1 && i * state_size + j >= 2 * state_size * state_size) {
+					d_Sbd[offset_bd + i * state_size + j] = 0;
+				}
+				
+				d_Sbd[offset_bd + i * state_size + j] = d_Sn[offset_n + j]
+			
+		}
+		offset_n += state_size * knot_points;
+	}
+*/
+/* TODO: only for blocks==knot_points */
+template <typename T>
+__global__
+convert_to_bd_kernel(T * d_Sn, t * d_Sbd){
+	int j = threadIdx.x % state_size;
+	int i = (threadIdx.x - j) / state_size;
+
+	offset_bd = 3 * state_size * state_size * blockIdx.x;
+	offset_n = blockIdx.x * ( state_size )  + ( blockIdx.x - 1 ) * state_size * state_size * knot_points;
+	offset_n += i * state_size * knot_points;
+	
+	if ( blockIdx.x == 0 && threadIdx.x < state_size * state_size){
+		d_Sbd[offset_bd + threadIdx.x] = 0;
+	}
+	
+	else if ( blockIdx.x == blockDim.x - 1 && threadIdx.x >= 2 * state_size * state_size){
+		d_Sbd[offset_bd + threadIdx.x] = 0;
+	}
+
+	else {
+		d_Sbd[offset_bd + threadIdx.x] = d_Sn[offset_n + j];
+	}
+
 }
 
 form_ss(T * d_Pinv, T * d_S){
@@ -93,12 +143,16 @@ template <typename T>
 admm_solve(qp *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sigma =1e-6, float tol =1e-3, max_iter=1000){
 
 	/* TODO: Allocate memory for schur and pinv */
+	T *d_Pinv, d_S, d_Sbd;
+    gpuErrchk(cudaMalloc(&d_Pinv, 3*states_size*state_size*knot_points*sizeof(T)));
+	gpuErrchk(cudaMalloc(&d_S, 3*states_size*state_size*knot_points*sizeof(T)));
+	gpuErrchk(cudaMalloc(&d_Sbd, 3*states_size*state_size*knot_points*sizeof(T)));
 
 	/* form_schur */
 	form_schur(d_S, prob->d_H,prob->d_A, sigma, rho);
 
 	/* convert to custom bd form */
-	convert_to_bd(d_Sbd);
+	convert_to_bd(d_S, d_Sbd);
 
 	/* TODO: form_precon from schur */
 	form_ss(d_Pinv, d_Sbd);
@@ -115,7 +169,7 @@ admm_solve_outer(T * h_H,  T *h_g, T *h_A, T*h_l , T*d_u, int nx, int nc, T * h_
 	/*Allocate memory for device pointers */
 	T * d_H, d_g, d_A, d_l, d_u, d_x, d_lambda, d_z;
 
-	int msize = (state_size + control_size) * knot_points;
+	int msize = MSIZE;
 	gpuErrchk(cudaMalloc(d_H, msize * msize * sizeof(T)));
 	gpuErrchk(cudaMalloc(d_A, msize * msize * sizeof(T)));
 
