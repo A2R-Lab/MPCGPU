@@ -4,9 +4,9 @@
 #include <types.cuh>
 
 #define NUM_THREADS 64
-#define KNOT_POINTS 1
-#define NX 3
-#define NC 5
+#define KNOT_POINTS 3
+#define NX 9
+#define NC 9
 #define STATE_SIZE NX/KNOT_POINTS
 
 
@@ -171,7 +171,8 @@ void solve_pcg(T * d_S, T * d_Pinv, T *d_gamma,  T * d_x){
         (void *)&d_pcg_iters,
         (void *)&d_pcg_exit,
         (void *)&config.pcg_max_iter,
-        (void *)&config.pcg_exit_tol
+        (void *)&config.pcg_exit_tol,
+		(void *)&config.empty_pinv
     };
     size_t ppcg_kernel_smem_size = pcgSharedMemSize<T>(STATE_SIZE, KNOT_POINTS);
 

@@ -27,6 +27,14 @@ void admm_iter(qp<T> *prob, T *d_S, T *d_Pinv, T *d_x, T *d_lambda, T *d_z, floa
 	/*compute gamma*/
 	compute_gamma<T>(d_gamma, prob->d_g, prob->d_A, d_x, d_lambda, d_z, rho, sigma);
 
+	// T h_gamma[NX];
+	// gpuErrchk(cudaMemcpy(h_gamma, d_gamma, NX * sizeof(T), cudaMemcpyDeviceToHost));
+	// std::cout << "Gamma: ";
+	// 	for(int i=0; i<9; i++){
+	// 		std::cout << h_gamma[i] << " ";
+	// 	}
+
+
 	/*call pcg*/
 	solve_pcg<T>(d_S, d_Pinv, d_gamma, d_x);
 
@@ -66,7 +74,10 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 
 	/* Anorm = A.T * A */
 	float one = 1.0f;
-	cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, NX, NX, NC, &one, d_A, NX, d_A, NC, 0, d_Anorm, NX);
+	float beta = 0.0f;
+
+	/* TODO: understand leading dimension*/
+	cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, NX, NX, NC, &one, d_A, NC, d_A, NC, &beta, d_Anorm, NX);
 
 	/* S = H + sigma * I */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_H, NX, &sigma, d_I, NX, d_S, NX);
@@ -102,24 +113,40 @@ for (int i = 0; i <  3 * STATE_SIZE ; i++){
 template <typename T>
 __global__
 void convert_to_bd_kernel(T * d_Sn, T * d_Sbd){
-	int j = threadIdx.x % STATE_SIZE;
-	int i = (threadIdx.x - j) / STATE_SIZE;
 
-	int offset_bd = 3 * STATE_SIZE * STATE_SIZE * blockIdx.x;
-	int offset_n = blockIdx.x * ( STATE_SIZE )  + ( blockIdx.x - 1 ) * STATE_SIZE * STATE_SIZE * KNOT_POINTS;
-	offset_n += i * STATE_SIZE * KNOT_POINTS;
 	
-	if ( blockIdx.x == 0 && threadIdx.x < STATE_SIZE * STATE_SIZE){
+	// if (threadIdx.x == 0 && blockIdx.x == 0){
+	// 	printf("d_Sn: ");
+	// 	for(int k=0;  k<NX ; k++){
+	// 		for(int l=0; l<NX; l++)
+	// 			printf("%f ", d_Sn[k + l*NX]);
+	// 		printf("\n");
+	// 	}
+	// 	printf("\n\n");
+		
+	// }
+	int state_size = STATE_SIZE;
+	int knot_points = KNOT_POINTS;
+	int j = threadIdx.x % state_size;
+	int i = (threadIdx.x - j) / state_size;
+
+	int offset_bd = 3 * state_size * state_size * blockIdx.x;
+	int offset_n = blockIdx.x * ( state_size )  + ( blockIdx.x - 1 ) * state_size * state_size * knot_points;
+	offset_n += i * state_size * knot_points + j;
+	
+	if ( blockIdx.x == 0 && threadIdx.x < state_size * state_size){
 		d_Sbd[offset_bd + threadIdx.x] = 0;
 	}
 	
-	else if ( blockIdx.x == blockDim.x - 1 && threadIdx.x >= 2 * STATE_SIZE * STATE_SIZE){
+	else if ( blockIdx.x == blockDim.x - 1 && threadIdx.x >= 2 * state_size * state_size){
 		d_Sbd[offset_bd + threadIdx.x] = 0;
 	}
 
 	else {
-		d_Sbd[offset_bd + threadIdx.x] = d_Sn[offset_n + j];
+		d_Sbd[offset_bd + threadIdx.x] = d_Sn[offset_n];
 	}
+
+
 
 }
 
@@ -134,6 +161,24 @@ void convert_to_bd(T * d_Sn, T * d_Sbd){
 template <typename T>
 __global__
 void form_ss_kernel(T * d_Pinv, T * d_S){
+
+
+	if (threadIdx.x == 0 && blockIdx.x == 0){
+		printf("d_Sbd:\n");
+
+		for(int k=0; k<KNOT_POINTS;k++){
+			int offset = k * 3 * STATE_SIZE * STATE_SIZE;
+			for (int i=0; i < STATE_SIZE; i++){
+				for (int j=0; j < 3 * STATE_SIZE; j++){
+					printf("%f ", d_S[offset + i + j * STATE_SIZE]);
+				}
+				printf("\n");
+			}
+		}
+		printf("\n\n");
+		
+	}
+
 	extern __shared__ T s_temp[];
     const cgrps::grid_group grid = cgrps::this_grid();
     
@@ -158,6 +203,22 @@ void form_ss_kernel(T * d_Pinv, T * d_S){
         );
     }
     grid.sync();
+
+	if (threadIdx.x == 0 && blockIdx.x == 0){
+		printf("d_Pinv:\n");
+
+		for(int k=0; k<KNOT_POINTS;k++){
+			int offset = k * 3 * STATE_SIZE * STATE_SIZE;
+			for (int i=0; i < STATE_SIZE; i++){
+				for (int j=0; j < 3 * STATE_SIZE; j++){
+					printf("%f ", d_Pinv[offset + i + j * STATE_SIZE]);
+				}
+				printf("\n");
+			}
+		}
+		printf("\n\n");
+		
+	}
 }
 
 template <typename T>
@@ -166,8 +227,8 @@ void form_ss(T * d_Pinv, T * d_S){
     void *ss_kernel = (void *) form_ss_kernel<T>;
 
     void *kernelArgs[] = {
-        (void *)&d_S,
         (void *)&d_Pinv,
+        (void *)&d_S,
     };
 
     size_t pcg_kernel_smem_size = pcgSharedMemSize<T>(STATE_SIZE, KNOT_POINTS);
@@ -190,7 +251,7 @@ void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sig
 	gpuErrchk(cudaMalloc(&d_Sbd, 3*STATE_SIZE*STATE_SIZE*KNOT_POINTS*sizeof(T)));
 
 	/* form_schur */
-	form_schur(d_S, prob->d_H, prob->d_A, sigma, rho);
+	form_schur(d_S, prob->d_H, prob->d_A, rho, sigma);
 
 	/* convert to custom bd form */
 	convert_to_bd(d_S, d_Sbd);
@@ -198,9 +259,40 @@ void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sig
 	/* TODO: form_precon from schur */
 	form_ss(d_Pinv, d_Sbd);
 
+	T h_x[NX];
+	T h_z[NC];
+	T h_lambda[NC];
+	
+	max_iter = 100;
 	for(int iter=0;  iter<max_iter; iter++){
 		admm_iter(prob, d_Sbd, d_Pinv, d_x, d_lambda, d_z, rho, sigma);
+
+		// gpuErrchk(cudaMemcpy(h_x, d_x, NX * sizeof(T), cudaMemcpyDeviceToHost));
+		// gpuErrchk(cudaMemcpy(h_lambda, d_lambda, NC * sizeof(T), cudaMemcpyDeviceToHost));
+		// gpuErrchk(cudaMemcpy(h_z, d_z, NC * sizeof(T), cudaMemcpyDeviceToHost));
+		// std::cout<< "ADMM ITER: " << iter <<"\n\n\n";
+		// std::cout << "X: ";
+		// for(int i=0; i<9; i++){
+		// 	std::cout << h_x[i] << " ";
+		// }
+		// std::cout << "\n\n";
+		// std::cout << "lambda: ";
+		// for(int i=0; i<9; i++){
+		// 	std::cout << h_lambda[i] << " ";
+		// }
+
+		// std::cout << "\n\n";
+		// std::cout << "z: ";
+		// for(int i=0; i<9; i++){
+		// 	std::cout << h_z[i] << " ";
+		// }
+
+		// std::cout << "\n\n";
 	}
+
+	
+
+	
 }
 
 
@@ -212,6 +304,8 @@ void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T 
 
 	gpuErrchk(cudaMalloc(&d_H, NX * NX * sizeof(T)));
 	gpuErrchk(cudaMalloc(&d_A, NC * NX * sizeof(T)));
+
+	
 
 
 	gpuErrchk(cudaMalloc(&d_g, NX * sizeof(T)));
@@ -237,7 +331,6 @@ void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T 
 	/* Make QP struct */
 	struct qp<T> prob(d_H, d_g, d_A, d_l, d_u, NX, NC);
 
-
 	/* Call admm_solve */
 	admm_solve(&prob, d_x, d_lambda, d_z, rho, sigma, tol, max_iters);
 
@@ -246,3 +339,24 @@ void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T 
 	gpuErrchk(cudaMemcpy(h_lambda, d_lambda, NC * sizeof(T), cudaMemcpyDeviceToHost));
 	gpuErrchk(cudaMemcpy(h_z, d_z, NC * sizeof(T), cudaMemcpyDeviceToHost));
 }
+
+
+	/* 
+	T h_Anorm[9];
+	T h_A[15];
+	// gpuErrchk(cudaMalloc(&h_Anorm, NX * NX * sizeof(T)));
+	gpuErrchk(cudaMemcpy(h_Anorm, d_Anorm,  NX * NX * sizeof(T), cudaMemcpyDeviceToHost));
+	gpuErrchk(cudaMemcpy(h_A, d_A,  NC * NX * sizeof(T), cudaMemcpyDeviceToHost));
+	std::cout << "Anorm: ";
+	for(int i=0; i<NX*NX; i++){
+		std::cout << h_Anorm[i] << " ";
+	}
+	std::cout << "\n\n";
+
+	std::cout << "A: ";
+	for(int i=0; i<NC*NX; i++){
+		std::cout << h_A[i] << " ";
+	}
+	std::cout << "\n\n";
+
+	*/
