@@ -26,7 +26,11 @@ int main(){
 	float lambda[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 	float rho = 0.1;
 
-	admm_solve_outer(H, g, A, l, u, x, lambda, z, rho);
+	float sigma = 1e-6;
+	float tol = 1e-3;
+	int max_iter = 100;
+
+	admm_solve_outer(H, g, A, l, u, x, lambda, z, rho, sigma, tol, max_iter);
 	
 	std::cout << "x: ";
 	for(int i=0; i<9; i++){
@@ -45,7 +49,5 @@ int main(){
 	}
 
 	std::cout << "\n\n";
-
-
 
 }

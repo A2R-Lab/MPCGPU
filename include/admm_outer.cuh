@@ -210,10 +210,6 @@ void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sig
 
 	/* Allocate memory for schur and pinv */
 
-
-
-
-
 	float primal_res_value, dual_res_value;
 	
 	max_iter = 100;
