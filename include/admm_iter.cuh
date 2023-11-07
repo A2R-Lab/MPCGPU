@@ -4,11 +4,17 @@
 #include <types.cuh>
 #include <cmath>
 
-#define NUM_THREADS 64
-#define KNOT_POINTS 3
-#define NX 9
-#define NC 9
-#define STATE_SIZE NX/KNOT_POINTS
+#ifndef NUM_THREADS
+#define NUM_THREADS  64
+#endif
+
+#ifndef NX
+#define NX  9
+#endif
+#ifndef NC
+#define NC  9
+#endif
+
 
 template <typename T>
 T compute_norm(T * h_x, int n){
