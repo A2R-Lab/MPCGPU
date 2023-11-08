@@ -52,6 +52,9 @@ void compute_gamma(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*d_z,  f
 
 	gpuErrchk(cudaLaunchCooperativeKernel(compute_gamma_kernel_ptr, KNOT_POINTS, NUM_THREADS, kernelArgs, 0));    
     gpuErrchk(cudaPeekAtLastError());
+
+	gpuErrchk(cudaFree(d_zdiff));
+	gpuErrchk(cudaFree(d_Atz));
 }
 
 
@@ -95,6 +98,8 @@ void update_z(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, float rho){
 
 	gpuErrchk(cudaLaunchCooperativeKernel(update_z_kernel_ptr, KNOT_POINTS, NUM_THREADS, kernelArgs, 0));    
     gpuErrchk(cudaPeekAtLastError());
+
+	gpuErrchk(cudaFree(d_Ax));
 }
 
 
@@ -134,6 +139,9 @@ void update_lambda(T * d_A, T * d_x, T * d_lambda, T * d_z, float rho){
 
 	gpuErrchk(cudaLaunchCooperativeKernel(update_lambda_kernel_ptr, KNOT_POINTS, NUM_THREADS, kernelArgs, 0));    
     gpuErrchk(cudaPeekAtLastError());
+
+	gpuErrchk(cudaFree(d_Ax));
+	gpuErrchk(cudaFree(d_Axz));
 }
 
 
@@ -170,4 +178,9 @@ void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma)
 
 	/*update lambda*/
 	update_lambda<T>(prob->d_A, d_x, d_lambda, d_z, rho);
+
+	gpuErrchk(cudaFree(d_Pinv));
+	gpuErrchk(cudaFree(d_Sn));
+	gpuErrchk(cudaFree(d_Sbd));
+	gpuErrchk(cudaFree(d_gamma));
 }
