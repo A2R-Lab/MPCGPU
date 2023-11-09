@@ -42,6 +42,9 @@ void solve_pcg(T * d_S, T * d_Pinv, T *d_gamma,  T * d_x){
 
 	gpuErrchk(cudaLaunchCooperativeKernel(pcg_kernel, KNOT_POINTS, NUM_THREADS, pcgKernelArgs, ppcg_kernel_smem_size));  
 	gpuErrchk(cudaPeekAtLastError());
+
+
+	gpuErrchk(cudaDeviceSynchronize());
 }
 
 
@@ -79,11 +82,18 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 	/* TODO: understand leading dimension*/
 	cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, NX, NX, NC, &one, d_A, NC, d_A, NC, &beta, d_Anorm, NX);
 
+
+	gpuErrchk(cudaDeviceSynchronize());
+
 	/* S = H + sigma * I */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_H, NX, &sigma, d_I, NX, d_S, NX);
 
+	gpuErrchk(cudaDeviceSynchronize());
+
 	/* S = S + rho * Anorm */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_S, NX, &rho, d_Anorm, NX, d_S, NX);
+
+	cudaDeviceSynchronize();
 
 }
 
@@ -144,6 +154,7 @@ template <typename T>
 void convert_to_bd(T * d_Sn, T * d_Sbd){
 	/* TODO: launch*/
 	convert_to_bd_kernel<<<KNOT_POINTS, 3 * STATE_SIZE * STATE_SIZE>>>(d_Sn, d_Sbd);
+	gpuErrchk(cudaDeviceSynchronize());
 
 }
 
@@ -199,4 +210,5 @@ void form_ss(T * d_Pinv, T * d_S){
 
     gpuErrchk(cudaLaunchCooperativeKernel(ss_kernel, KNOT_POINTS, 64, kernelArgs, pcg_kernel_smem_size));    
     gpuErrchk(cudaPeekAtLastError());
+	gpuErrchk(cudaDeviceSynchronize());
 }

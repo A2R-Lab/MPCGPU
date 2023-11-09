@@ -23,6 +23,7 @@ void compute_gamma_kernel(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*
 
 	/* gamma = Atz + gamma */
 	glass::axpy<T>(NX, 1, d_Atz, d_gamma);
+
 }
 
 template <typename T>
@@ -50,8 +51,9 @@ void compute_gamma(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*d_z,  f
 		(void *)&sigma
 	};
 
-	gpuErrchk(cudaLaunchCooperativeKernel(compute_gamma_kernel_ptr, KNOT_POINTS, NUM_THREADS, kernelArgs, 0));    
+	gpuErrchk(cudaLaunchCooperativeKernel(compute_gamma_kernel_ptr, 1, NUM_THREADS, kernelArgs, 0));    
     gpuErrchk(cudaPeekAtLastError());
+	gpuErrchk(cudaDeviceSynchronize());
 
 	gpuErrchk(cudaFree(d_zdiff));
 	gpuErrchk(cudaFree(d_Atz));
@@ -61,14 +63,20 @@ void compute_gamma(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*d_z,  f
 template <typename T>
 __global__
 void update_z_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T *d_Ax , T* l, T* u, float rho ){
+
+	const cgrps::grid_group grid = cgrps::this_grid();
+
 	/* Ax = A * x */
 	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
+	grid.sync();
 
 	/* z = Ax + 1/rho * lambda */
 	glass::axpby<T>(NC, 1, d_Ax, 1/rho, d_lambda, d_z);
+	grid.sync();
 
 	/* z = clip(z) */
 	glass::clip(NC, d_z, l, u);
+	grid.sync();
 
 }
 
@@ -96,8 +104,9 @@ void update_z(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, float rho){
 		(void *)&rho
 	};
 
-	gpuErrchk(cudaLaunchCooperativeKernel(update_z_kernel_ptr, KNOT_POINTS, NUM_THREADS, kernelArgs, 0));    
+	gpuErrchk(cudaLaunchCooperativeKernel(update_z_kernel_ptr, 1, NUM_THREADS, kernelArgs, 0));    
     gpuErrchk(cudaPeekAtLastError());
+	gpuErrchk(cudaDeviceSynchronize());
 
 	gpuErrchk(cudaFree(d_Ax));
 }
@@ -106,19 +115,27 @@ void update_z(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, float rho){
 template <typename T>
 __global__
 void update_lambda_kernel(T * d_A, T * d_x, T * d_lambda, T * d_z, T * d_Ax, T * d_Axz, float rho){
+
+	const cgrps::grid_group grid = cgrps::this_grid();
+
 	/* Ax = A * x*/
 	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
+	grid.sync();
 
 	/* Axz = Ax - z*/
 	glass::axpby<T>(NC, 1, d_Ax, -1, d_z, d_Axz);
+	grid.sync();
 
 	/* lambda = lambda + rho * Axz */
 	glass::axpy<T>(NC, rho, d_Axz, d_lambda);
+	grid.sync();
 }
 
 template <typename T>
 void update_lambda(T * d_A, T * d_x, T * d_lambda, T * d_z, float rho){
 	/* lambda = lambda + rho * (A * x - z )*/
+
+	// printf("Rho: %f\n\n", rho);
 
 	T *d_Ax, *d_Axz;
 	gpuErrchk(cudaMalloc(&d_Ax, NC * sizeof(T)));
@@ -137,8 +154,9 @@ void update_lambda(T * d_A, T * d_x, T * d_lambda, T * d_z, float rho){
 		(void *)&rho
 	};
 
-	gpuErrchk(cudaLaunchCooperativeKernel(update_lambda_kernel_ptr, KNOT_POINTS, NUM_THREADS, kernelArgs, 0));    
+	gpuErrchk(cudaLaunchCooperativeKernel(update_lambda_kernel_ptr, 1, NUM_THREADS, kernelArgs, 0));    
     gpuErrchk(cudaPeekAtLastError());
+	gpuErrchk(cudaDeviceSynchronize());
 
 	gpuErrchk(cudaFree(d_Ax));
 	gpuErrchk(cudaFree(d_Axz));
@@ -169,6 +187,14 @@ void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma)
 
 	/*compute gamma*/
 	compute_gamma<T>(d_gamma, prob->d_g, prob->d_A, d_x, d_lambda, d_z, rho, sigma);
+
+	// T h_gamma[NX];
+	// gpuErrchk(cudaMemcpy(h_gamma, d_gamma, NX * sizeof(T), cudaMemcpyDeviceToHost));
+	// std::cout << "Gamma: ";
+	// 	for(int i=0; i<NX; i++){
+	// 		std::cout << h_gamma[i] << " ";
+	// }
+	// std::cout << "\n\n";
 
 	/*call pcg*/
 	solve_pcg<T>(d_Sbd, d_Pinv, d_gamma, d_x);
