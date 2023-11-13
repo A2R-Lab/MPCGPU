@@ -82,28 +82,8 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 	float one = 1.0f;
 	float beta = 0.0f;
 
-	// T h_A[NC * NX];
-	// gpuErrchk(cudaMemcpy(h_A, d_A, NC * NX * sizeof(T), cudaMemcpyDeviceToHost));
-	// std::cout << "A: ";
-	// 	for(int i=0; i<NC * NX; i++){
-	// 		std::cout << h_A[i] << " ";
-	// }
-	// std::cout << "\n\n";
 
-	/* TODO: understand leading dimension*/
 	int ret = cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, NX, NX, NC, &one, d_A, NC, d_A, NC, &beta, d_Anorm, NX);
-	// std::cout << "Ret: " << ret << "\n";
-
-	// gpuErrchk(cudaDeviceSynchronize());
-
-	// T h_Anorm[NX * NX];
-	// gpuErrchk(cudaMemcpy(h_Anorm, d_Anorm, NX * NX * sizeof(T), cudaMemcpyDeviceToHost));
-	// std::cout << "Anorm: ";
-	// 	for(int i=0; i<NX * NX; i++){
-	// 		std::cout << h_Anorm[i] << " ";
-	// }
-	// std::cout << "\n\n";
-
 	
 
 	/* S = H + sigma * I */
@@ -111,26 +91,10 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 
 	gpuErrchk(cudaDeviceSynchronize());
 
-	// T h_S[NX * NX];
-	// gpuErrchk(cudaMemcpy(h_S, d_S, NX * NX * sizeof(T), cudaMemcpyDeviceToHost));
-	// std::cout << "S = H + sigma * I: ";
-	// 	for(int i=0; i<NX * NX; i++){
-	// 		std::cout << h_S[i] << " ";
-	// }
-	// std::cout << "\n\n";
-
 	/* S = S + rho * Anorm */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_S, NX, &rho, d_Anorm, NX, d_S, NX);
 
 	cudaDeviceSynchronize();
-
-	// gpuErrchk(cudaMemcpy(h_S, d_S, NX * NX * sizeof(T), cudaMemcpyDeviceToHost));
-	// std::cout << "S = S + rho * Anorm: ";
-	// 	for(int i=0; i<NX * NX; i++){
-	// 		std::cout << h_S[i] << " ";
-	// }
-	// std::cout << "\n\n";
-
 }
 
 

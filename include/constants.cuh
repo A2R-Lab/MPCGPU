@@ -8,3 +8,7 @@
 #ifndef NC
 #define NC  50
 #endif
+
+#ifndef DEBUG_MODE
+#define DEBUG_MODE 0
+#endif

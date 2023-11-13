@@ -31,32 +31,34 @@ void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sig
 			else if ( rho > 1e6 ) rho = 1e6;
 		}
 
-		// T h_x[NX];
-		// T h_z[NC];
-		// T h_lambda[NC];
-		// gpuErrchk(cudaMemcpy(h_x, d_x, NX * sizeof(T), cudaMemcpyDeviceToHost));
-		// gpuErrchk(cudaMemcpy(h_lambda, d_lambda, NC * sizeof(T), cudaMemcpyDeviceToHost));
-		// gpuErrchk(cudaMemcpy(h_z, d_z, NC * sizeof(T), cudaMemcpyDeviceToHost));
+#if DEBUG_MODE
+		T h_x[NX];
+		T h_z[NC];
+		T h_lambda[NC];
+		gpuErrchk(cudaMemcpy(h_x, d_x, NX * sizeof(T), cudaMemcpyDeviceToHost));
+		gpuErrchk(cudaMemcpy(h_lambda, d_lambda, NC * sizeof(T), cudaMemcpyDeviceToHost));
+		gpuErrchk(cudaMemcpy(h_z, d_z, NC * sizeof(T), cudaMemcpyDeviceToHost));
 
-		// std::cout<< "ADMM ITER iter: " << iter<< " with primal res:" << primal_res_value << " dual res:" << dual_res_value <<"\n\n\n";
+		std::cout<< "ADMM ITER iter: " << iter<< " with primal res:" << primal_res_value << " dual res:" << dual_res_value <<"\n\n\n";
 			
-		// std::cout << "X: ";
-		// for(int i=0; i<NX; i++){
-		// 	std::cout << h_x[i] << " ";
-		// }
-		// std::cout << "\n\n";
-		// std::cout << "lambda: ";
-		// for(int i=0; i<NC; i++){
-		// 	std::cout << h_lambda[i] << " ";
-		// }
+		std::cout << "X: ";
+		for(int i=0; i<NX; i++){
+			std::cout << h_x[i] << " ";
+		}
+		std::cout << "\n\n";
+		std::cout << "lambda: ";
+		for(int i=0; i<NC; i++){
+			std::cout << h_lambda[i] << " ";
+		}
 
-		// std::cout << "\n\n";
-		// std::cout << "z: ";
-		// for(int i=0; i<NC; i++){
-		// 	std::cout << h_z[i] << " ";
-		// }
+		std::cout << "\n\n";
+		std::cout << "z: ";
+		for(int i=0; i<NC; i++){
+			std::cout << h_z[i] << " ";
+		}
 
-		// std::cout << "\n\n";
+		std::cout << "\n\n";
+#endif 
 
 
 	}
@@ -116,146 +118,3 @@ void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T 
 	gpuErrchk(cudaFree(d_z));
 	
 }
-
-
-	/* 
-	T h_Anorm[9];
-	T h_A[15];
-	// gpuErrchk(cudaMalloc(&h_Anorm, NX * NX * sizeof(T)));
-	gpuErrchk(cudaMemcpy(h_Anorm, d_Anorm,  NX * NX * sizeof(T), cudaMemcpyDeviceToHost));
-	gpuErrchk(cudaMemcpy(h_A, d_A,  NC * NX * sizeof(T), cudaMemcpyDeviceToHost));
-	std::cout << "Anorm: ";
-	for(int i=0; i<NX*NX; i++){
-		std::cout << h_Anorm[i] << " ";
-	}
-	std::cout << "\n\n";
-
-	std::cout << "A: ";
-	for(int i=0; i<NC*NX; i++){
-		std::cout << h_A[i] << " ";
-	}
-	std::cout << "\n\n";
-
-	*/
-
-		// T h_gamma[NX];
-	// gpuErrchk(cudaMemcpy(h_gamma, d_gamma, NX * sizeof(T), cudaMemcpyDeviceToHost));
-	// std::cout << "Gamma: ";
-	// 	for(int i=0; i<9; i++){
-	// 		std::cout << h_gamma[i] << " ";
-	// 	}
-
-
-	
-	// if (threadIdx.x == 0 && blockIdx.x == 0){
-	// 	printf("d_Sn: ");
-	// 	for(int k=0;  k<NX ; k++){
-	// 		for(int l=0; l<NX; l++)
-	// 			printf("%f ", d_Sn[k + l*NX]);
-	// 		printf("\n");
-	// 	}
-	// 	printf("\n\n");
-		
-	// }
-
-
-		// 	T h_x[NX];
-		// T h_z[NC];
-		// T h_lambda[NC];
-		// gpuErrchk(cudaMemcpy(h_x, d_x, NX * sizeof(T), cudaMemcpyDeviceToHost));
-		// gpuErrchk(cudaMemcpy(h_lambda, d_lambda, NC * sizeof(T), cudaMemcpyDeviceToHost));
-		// gpuErrchk(cudaMemcpy(h_z, d_z, NC * sizeof(T), cudaMemcpyDeviceToHost));
-		// std::cout<< "ADMM ITER: " << iter <<"\n\n\n";
-		// std::cout << "X: ";
-		// for(int i=0; i<9; i++){
-		// 	std::cout << h_x[i] << " ";
-		// }
-		// std::cout << "\n\n";
-		// std::cout << "lambda: ";
-		// for(int i=0; i<9; i++){
-		// 	std::cout << h_lambda[i] << " ";
-		// }
-
-		// std::cout << "\n\n";
-		// std::cout << "z: ";
-		// for(int i=0; i<9; i++){
-		// 	std::cout << h_z[i] << " ";
-		// }
-
-		// std::cout << "\n\n";
-
-
-	// if (threadIdx.x == 0 && blockIdx.x == 0){
-	// 	printf("d_Pinv:\n");
-
-	// 	for(int k=0; k<KNOT_POINTS;k++){
-	// 		int offset = k * 3 * STATE_SIZE * STATE_SIZE;
-	// 		for (int i=0; i < STATE_SIZE; i++){
-	// 			for (int j=0; j < 3 * STATE_SIZE; j++){
-	// 				printf("%f ", d_Pinv[offset + i + j * STATE_SIZE]);
-	// 			}
-	// 			printf("\n");
-	// 		}
-	// 	}
-	// 	printf("\n\n");
-		
-	// }
-
-		// if (threadIdx.x == 0 && blockIdx.x == 0){
-	// 	printf("d_Sbd:\n");
-
-	// 	for(int k=0; k<KNOT_POINTS;k++){
-	// 		int offset = k * 3 * STATE_SIZE * STATE_SIZE;
-	// 		for (int i=0; i < STATE_SIZE; i++){
-	// 			for (int j=0; j < 3 * STATE_SIZE; j++){
-	// 				printf("%f ", d_S[offset + i + j * STATE_SIZE]);
-	// 			}
-	// 			printf("\n");
-	// 		}
-	// 	}
-	// 	printf("\n\n");
-		
-	// }
-
-
-		// if(threadIdx.x==0 && blockIdx.x == 0){
-	// 	printf("\nres dot");
-	// 	for(int i=0;i<NC;i++){
-	// 		printf("%f ", d_Axz[i]);
-	// 	};
-	// 	printf("\n");
-	// }
-
-		// grid.sync();
-	// if(threadIdx.x==0 && blockIdx.x == 0){
-	// 	printf("\nx: ");
-	// 	for(int i=0;i<NX;i++){
-	// 		printf("%f ", d_x[i]);
-	// 	};
-	// 	printf("\n");
-	// }
-	// if(threadIdx.x==0 && blockIdx.x == 0){
-	// 	printf("\nHx: ");
-	// 	for(int i=0;i<NX;i++){
-	// 		printf("%f ", d_Hx[i]);
-	// 	};
-	// 	printf("\n");
-	// }
-
-	// grid.sync();
-	// if(threadIdx.x==0 && blockIdx.x == 0){
-	// 	printf("\nAtl: ");
-	// 	for(int i=0;i<NX;i++){
-	// 		printf("%f ", d_Atl[i]);
-	// 	};
-	// 	printf("\n");
-	// };
-
-		// grid.sync();
-	// if(threadIdx.x==0 && blockIdx.x == 0){
-	// 	printf("\nr: ");
-	// 	for(int i=0;i<NX;i++){
-	// 		printf("%f ", d_res[i]);
-	// 	};
-	// 	printf("\n");
-	// };

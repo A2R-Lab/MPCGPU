@@ -176,14 +176,6 @@ void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma)
 	form_schur(d_Sn, prob->d_H, prob->d_A, rho, sigma);
 	cudaDeviceSynchronize();
 
-	// T h_Sn[NX * NX];
-	// gpuErrchk(cudaMemcpy(h_Sn, d_Sn, NX * NX * sizeof(T), cudaMemcpyDeviceToHost));
-	// std::cout << "Sn: ";
-	// 	for(int i=0; i<NX * NX; i++){
-	// 		std::cout << h_Sn[i] << " ";
-	// }
-	// std::cout << "\n\n";
-
 	/* convert to custom bd form */
 	convert_to_bd(d_Sn, d_Sbd);
 
@@ -196,14 +188,6 @@ void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma)
 
 	/*compute gamma*/
 	compute_gamma<T>(d_gamma, prob->d_g, prob->d_A, d_x, d_lambda, d_z, rho, sigma);
-
-	// T h_gamma[NX];
-	// gpuErrchk(cudaMemcpy(h_gamma, d_gamma, NX * sizeof(T), cudaMemcpyDeviceToHost));
-	// std::cout << "Gamma: ";
-	// 	for(int i=0; i<NX; i++){
-	// 		std::cout << h_gamma[i] << " ";
-	// }
-	// std::cout << "\n\n";
 
 	/*call pcg*/
 	solve_pcg<T>(d_Sbd, d_Pinv, d_gamma, d_x);
