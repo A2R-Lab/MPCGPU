@@ -76,8 +76,6 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 	/*  create sigma Identity matrix*/
 	createIdentityMatrix<<<NX, NX>>>(d_I, NX);
 
-	gpuErrchk(cudaDeviceSynchronize());
-
 	/* Anorm = A.T * A */
 	float one = 1.0f;
 	float beta = 0.0f;
@@ -89,12 +87,8 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 	/* S = H + sigma * I */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_H, NX, &sigma, d_I, NX, d_S, NX);
 
-	gpuErrchk(cudaDeviceSynchronize());
-
 	/* S = S + rho * Anorm */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_S, NX, &rho, d_Anorm, NX, d_S, NX);
-
-	cudaDeviceSynchronize();
 }
 
 
@@ -154,7 +148,6 @@ template <typename T>
 void convert_to_bd(T * d_Sn, T * d_Sbd){
 	/* TODO: launch*/
 	convert_to_bd_kernel<<<KNOT_POINTS, 3 * STATE_SIZE * STATE_SIZE>>>(d_Sn, d_Sbd);
-	gpuErrchk(cudaDeviceSynchronize());
 
 }
 
