@@ -3,10 +3,10 @@
 #endif
 
 #ifndef NX
-#define NX  50
+#define NX  9
 #endif
 #ifndef NC
-#define NC  50
+#define NC  9
 #endif
 
 #ifndef DEBUG_MODE
