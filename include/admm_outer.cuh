@@ -31,32 +31,32 @@ void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sig
 			else if ( rho > 1e6 ) rho = 1e6;
 		}
 
-		T h_x[NX];
-		T h_z[NC];
-		T h_lambda[NC];
-		gpuErrchk(cudaMemcpy(h_x, d_x, NX * sizeof(T), cudaMemcpyDeviceToHost));
-		gpuErrchk(cudaMemcpy(h_lambda, d_lambda, NC * sizeof(T), cudaMemcpyDeviceToHost));
-		gpuErrchk(cudaMemcpy(h_z, d_z, NC * sizeof(T), cudaMemcpyDeviceToHost));
+		// T h_x[NX];
+		// T h_z[NC];
+		// T h_lambda[NC];
+		// gpuErrchk(cudaMemcpy(h_x, d_x, NX * sizeof(T), cudaMemcpyDeviceToHost));
+		// gpuErrchk(cudaMemcpy(h_lambda, d_lambda, NC * sizeof(T), cudaMemcpyDeviceToHost));
+		// gpuErrchk(cudaMemcpy(h_z, d_z, NC * sizeof(T), cudaMemcpyDeviceToHost));
 
-		std::cout<< "ADMM ITER iter: " << iter<< " with primal res:" << primal_res_value << " dual res:" << dual_res_value <<"\n\n\n";
+		// std::cout<< "ADMM ITER iter: " << iter<< " with primal res:" << primal_res_value << " dual res:" << dual_res_value <<"\n\n\n";
 			
-		std::cout << "X: ";
-		for(int i=0; i<NX; i++){
-			std::cout << h_x[i] << " ";
-		}
-		std::cout << "\n\n";
-		std::cout << "lambda: ";
-		for(int i=0; i<NC; i++){
-			std::cout << h_lambda[i] << " ";
-		}
+		// std::cout << "X: ";
+		// for(int i=0; i<NX; i++){
+		// 	std::cout << h_x[i] << " ";
+		// }
+		// std::cout << "\n\n";
+		// std::cout << "lambda: ";
+		// for(int i=0; i<NC; i++){
+		// 	std::cout << h_lambda[i] << " ";
+		// }
 
-		std::cout << "\n\n";
-		std::cout << "z: ";
-		for(int i=0; i<NC; i++){
-			std::cout << h_z[i] << " ";
-		}
+		// std::cout << "\n\n";
+		// std::cout << "z: ";
+		// for(int i=0; i<NC; i++){
+		// 	std::cout << h_z[i] << " ";
+		// }
 
-		std::cout << "\n\n";
+		// std::cout << "\n\n";
 
 
 	}

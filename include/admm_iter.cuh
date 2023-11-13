@@ -168,12 +168,21 @@ template <typename T>
 void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma){
 	T *d_Pinv, * d_Sn, * d_Sbd;
     gpuErrchk(cudaMalloc(&d_Pinv, 3*STATE_SIZE*STATE_SIZE*KNOT_POINTS*sizeof(T)));
-	gpuErrchk(cudaMalloc(&d_Sn, 3*STATE_SIZE*STATE_SIZE*KNOT_POINTS*sizeof(T)));
+	gpuErrchk(cudaMalloc(&d_Sn, NX * NX * sizeof(T)));
 	gpuErrchk(cudaMalloc(&d_Sbd, 3*STATE_SIZE*STATE_SIZE*KNOT_POINTS*sizeof(T)));
 
 
 	/* form_schur */
 	form_schur(d_Sn, prob->d_H, prob->d_A, rho, sigma);
+	cudaDeviceSynchronize();
+
+	// T h_Sn[NX * NX];
+	// gpuErrchk(cudaMemcpy(h_Sn, d_Sn, NX * NX * sizeof(T), cudaMemcpyDeviceToHost));
+	// std::cout << "Sn: ";
+	// 	for(int i=0; i<NX * NX; i++){
+	// 		std::cout << h_Sn[i] << " ";
+	// }
+	// std::cout << "\n\n";
 
 	/* convert to custom bd form */
 	convert_to_bd(d_Sn, d_Sbd);

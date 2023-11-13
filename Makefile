@@ -17,7 +17,7 @@ examples/double_integrator.exe:
 	$(NVCC) $(CFLAGS) -DKNOT_POINTS=10 -DSTATE_SIZE=3 -DNUM_THREADS=64 -DNX=30 -DNC=30 examples/double_integrator.cu -o examples/double_integrator.exe 
 
 examples/double_integrator_2d.exe:
-	$(NVCC) $(CFLAGS) -DKNOT_POINTS=10 -DSTATE_SIZE=3 -DNUM_THREADS=64 -DNX=30 -DNC=30 examples/double_integrator_2d.cu -o examples/double_integrator_2d.exe 
+	$(NVCC) $(CFLAGS) -DKNOT_POINTS=10 -DSTATE_SIZE=6 -DNUM_THREADS=64 -DNX=60 -DNC=60 examples/double_integrator_2d.cu -o examples/double_integrator_2d.exe 
 
 clean:
 	rm -f examples/*.exe
