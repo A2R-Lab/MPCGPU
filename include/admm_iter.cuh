@@ -163,6 +163,69 @@ void update_lambda(T * d_A, T * d_x, T * d_lambda, T * d_z, float rho){
 }
 
 
+template <typename T>
+__global__
+void update_z_lambda_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T *d_Ax , T *d_Axz , T* l, T* u, float rho ){
+
+	const cgrps::grid_group grid = cgrps::this_grid();
+
+	/* Ax = A * x */
+	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
+	grid.sync();
+
+	/* z = Ax + 1/rho * lambda */
+	glass::axpby<T>(NC, 1, d_Ax, 1/rho, d_lambda, d_z);
+	grid.sync();
+
+	/* z = clip(z) */
+	glass::clip(NC, d_z, l, u);
+	grid.sync();
+
+
+	/* Axz = Ax - z*/
+	glass::axpby<T>(NC, 1, d_Ax, -1, d_z, d_Axz);
+	grid.sync();
+
+	/* lambda = lambda + rho * Axz */
+	glass::axpy<T>(NC, rho, d_Axz, d_lambda);
+	grid.sync();
+
+}
+
+
+template <typename T>
+void update_z_lambda(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, float rho){
+	/* z = clip( Ax + 1/rho * lambda )*/
+
+	/* launch kernel*/
+
+	/* Allocate for  Ax, Axz*/
+	T *d_Ax, *d_Axz;
+	gpuErrchk(cudaMalloc(&d_Ax, NC * sizeof(T)));
+	gpuErrchk(cudaMalloc(&d_Axz, NC * sizeof(T)));
+
+	void *update_z_lambda_kernel_ptr = (void *) update_z_lambda_kernel<T>;
+
+	void *kernelArgs[] = {
+		(void *)&d_A,
+		(void *)&d_x, 
+		(void *)&d_lambda, 
+		(void *)&d_z,  
+		(void *)&d_Ax,
+		(void *)&d_Axz,  
+		(void *)&d_l,
+		(void *)&d_u,
+		(void *)&rho
+	};
+
+	gpuErrchk(cudaLaunchCooperativeKernel(update_z_lambda_kernel_ptr, 1, NUM_THREADS, kernelArgs, 0));    
+    gpuErrchk(cudaPeekAtLastError());
+	gpuErrchk(cudaDeviceSynchronize());
+
+	gpuErrchk(cudaFree(d_Ax));
+	gpuErrchk(cudaFree(d_Axz));
+}
+
 
 template <typename T>
 void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma){
@@ -192,11 +255,8 @@ void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma)
 	/*call pcg*/
 	solve_pcg<T>(d_Sbd, d_Pinv, d_gamma, d_x);
 
-	/*update z*/
-	update_z<T>(prob->d_A, d_x, d_lambda, d_z, prob->d_l, prob->d_u, rho);
-
-	/*update lambda*/
-	update_lambda<T>(prob->d_A, d_x, d_lambda, d_z, rho);
+	/*update z and lambda*/
+	update_z_lambda<T>(prob->d_A, d_x, d_lambda, d_z, prob->d_l, prob->d_u, rho);
 
 	gpuErrchk(cudaFree(d_Pinv));
 	gpuErrchk(cudaFree(d_Sn));
