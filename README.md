@@ -1,5 +1,24 @@
 # GBD-PCG + ADMM
 
+### Main interface function
+
+```
+admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T *h_lambda, T *h_z, float rho, float sigma =1e-6, float tol =1e-3, int max_iters=1000, int update_rho=1)
+```
+
+Input sizes:
+- Matrices are expected to be in column major order
+	- h_H (NX * NX)  
+	- h_A (NC *NX)
+- Vectors
+	- h_g (NX)
+	- h_l (NC)
+	- h_u (NC)
+	- h_x (NX)
+	- h_lambda (NC)
+	- h_z (NC)
+
+
 
 ### Building and running examples
 
