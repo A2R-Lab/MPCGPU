@@ -8,12 +8,16 @@ template <typename T>
 void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sigma =1e-6, float tol =1e-3, int max_iter=1000, int update_rho=1){
 
 	float primal_res_value, dual_res_value;
+	float primal_res_ptr[1], dual_res_ptr[1];
 	
 	for(int iter=0;  iter<max_iter; iter++){
 		admm_iter(prob, d_x, d_lambda, d_z, rho, sigma);
 
-		primal_res_value = primal_res(prob->d_A, d_x, d_z);
-		dual_res_value = dual_res(prob->d_A, prob->d_H, prob->d_g, d_x, d_lambda);
+
+		res(prob->d_A, prob->d_H, prob->d_g, d_x, d_lambda, d_z, primal_res_ptr, dual_res_ptr);
+
+		primal_res_value = abs(primal_res_ptr[0]);
+		dual_res_value = abs(dual_res_ptr[0]);
 
 		if (primal_res_value < tol && dual_res_value < tol){
 			std::cout<< "Finished in iters: " << iter + 1 << " with primal res:" << primal_res_value << " dual res:" << dual_res_value <<"\n\n\n";
