@@ -39,13 +39,17 @@ void solve_pcg(T * d_S, T * d_Pinv, T *d_gamma,  T * d_x){
 
 
     gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
-
 	gpuErrchk(cudaLaunchCooperativeKernel(pcg_kernel, KNOT_POINTS, NUM_THREADS, pcgKernelArgs, ppcg_kernel_smem_size));  
 	gpuErrchk(cudaPeekAtLastError());
-
-
 	gpuErrchk(cudaDeviceSynchronize());
+
+	gpuErrchk(cudaFree(d_r));
+	gpuErrchk(cudaFree(d_p));
+	gpuErrchk(cudaFree(d_v_temp));
+	gpuErrchk(cudaFree(d_eta_new_temp));
+	gpuErrchk(cudaFree(d_pcg_iters));
+	gpuErrchk(cudaFree(d_pcg_exit));
+
 }
 
 
@@ -89,6 +93,9 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 
 	/* S = S + rho * Anorm */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_S, NX, &rho, d_Anorm, NX, d_S, NX);
+
+	gpuErrchk(cudaFree(d_I));
+	gpuErrchk(cudaFree(d_Anorm));
 }
 
 

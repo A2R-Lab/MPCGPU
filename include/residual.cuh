@@ -1,13 +1,15 @@
-template <typename T>
-T compute_norm(T * h_x, int n){
-	T max_value = h_x[0];
-	for (int i=0; i<n; i++){
-		if(abs(h_x[i]) > max_value){
-			max_value = abs(h_x[i]);
-		}
-	}
-	return max_value;
-}
+#include <thrust/extrema.h>
+#include <thrust/execution_policy.h>
+
+struct max_abs_value
+{
+	template <typename T>
+  __device__
+  bool operator()(T lhs, T rhs)
+  {
+    return abs(lhs) < abs(rhs);
+  }
+};
 
 template <typename T>
 __global__
@@ -44,9 +46,15 @@ template <typename T>
 	/* Launch*/
 
 	/* prima_res = norm(primal_res) */
-	T primal_res_value[NC];
-	gpuErrchk(cudaMemcpy(primal_res_value, d_Axz, NC * sizeof(T), cudaMemcpyDeviceToHost));
-	return compute_norm<T>(primal_res_value, NC);
+	T * d_abs_max = thrust::max_element(thrust::device, d_Axz, d_Axz + NC, max_abs_value());
+	
+	T h_abs_max[1];
+	gpuErrchk(cudaMemcpy(h_abs_max, d_abs_max,  sizeof(T), cudaMemcpyDeviceToHost));
+
+	gpuErrchk(cudaFree(d_Ax));
+	gpuErrchk(cudaFree(d_Axz));
+
+	return abs(*h_abs_max);
 
  }
 
@@ -100,7 +108,15 @@ template <typename T>
     gpuErrchk(cudaPeekAtLastError());
 
 	/* dual_res = norm(dual_res) */
-	T dual_res_value[NX];
-	gpuErrchk(cudaMemcpy(dual_res_value, d_res, NX * sizeof(T), cudaMemcpyDeviceToHost));
-	return compute_norm<T>(dual_res_value, NX);
+	T * d_abs_max = thrust::max_element(thrust::device, d_res, d_res + NX, max_abs_value());
+	
+	T h_abs_max[1];
+	gpuErrchk(cudaMemcpy(h_abs_max, d_abs_max,  sizeof(T), cudaMemcpyDeviceToHost));
+
+
+	gpuErrchk(cudaFree(d_Hx));
+	gpuErrchk(cudaFree(d_Atl));
+	gpuErrchk(cudaFree(d_res));
+
+	return abs(*h_abs_max);
 }

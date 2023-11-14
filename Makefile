@@ -19,5 +19,11 @@ examples/double_integrator_1d.exe:
 examples/double_integrator_2d.exe:
 	$(NVCC) $(CFLAGS) -DKNOT_POINTS=10 -DSTATE_SIZE=6 -DNUM_THREADS=64 -DNX=60 -DNC=60 examples/double_integrator_2d.cu -o examples/double_integrator_2d.exe 
 
+run:
+	./examples/qp.exe
+	./examples/double_integrator_1d.exe
+	./examples/double_integrator_2d.exe
+	./examples/double_pendulum.exe
+
 clean:
 	rm -f examples/*.exe
