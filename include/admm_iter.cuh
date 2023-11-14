@@ -64,19 +64,14 @@ template <typename T>
 __global__
 void update_z_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T *d_Ax , T* l, T* u, float rho ){
 
-	const cgrps::grid_group grid = cgrps::this_grid();
-
 	/* Ax = A * x */
 	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
-	grid.sync();
 
 	/* z = Ax + 1/rho * lambda */
 	glass::axpby<T>(NC, 1, d_Ax, 1/rho, d_lambda, d_z);
-	grid.sync();
 
 	/* z = clip(z) */
 	glass::clip(NC, d_z, l, u);
-	grid.sync();
 
 }
 
@@ -116,19 +111,14 @@ template <typename T>
 __global__
 void update_lambda_kernel(T * d_A, T * d_x, T * d_lambda, T * d_z, T * d_Ax, T * d_Axz, float rho){
 
-	const cgrps::grid_group grid = cgrps::this_grid();
-
 	/* Ax = A * x*/
 	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
-	grid.sync();
 
 	/* Axz = Ax - z*/
 	glass::axpby<T>(NC, 1, d_Ax, -1, d_z, d_Axz);
-	grid.sync();
 
 	/* lambda = lambda + rho * Axz */
 	glass::axpy<T>(NC, rho, d_Axz, d_lambda);
-	grid.sync();
 }
 
 template <typename T>
@@ -171,24 +161,19 @@ void update_z_lambda_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T *d_Ax , T *d_
 
 	/* Ax = A * x */
 	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
-	grid.sync();
 
 	/* z = Ax + 1/rho * lambda */
 	glass::axpby<T>(NC, 1, d_Ax, 1/rho, d_lambda, d_z);
-	grid.sync();
 
 	/* z = clip(z) */
 	glass::clip(NC, d_z, l, u);
-	grid.sync();
 
 
 	/* Axz = Ax - z*/
 	glass::axpby<T>(NC, 1, d_Ax, -1, d_z, d_Axz);
-	grid.sync();
 
 	/* lambda = lambda + rho * Axz */
 	glass::axpy<T>(NC, rho, d_Axz, d_lambda);
-	grid.sync();
 
 }
 
