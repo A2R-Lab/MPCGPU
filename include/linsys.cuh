@@ -64,7 +64,7 @@ __global__ void createIdentityMatrix(T* A, int n) {
 }
 
 template <typename T>
-void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
+void form_schur(T * d_S, T * d_H, T *d_A, T *d_Anorm, float rho, float sigma){
 	cublasHandle_t handle;
 	cublasCreate(&handle);
 
@@ -72,9 +72,8 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 
 
 	/* Allocating memory*/
-	T * d_I, * d_Anorm;
+	T * d_I;
 	gpuErrchk(cudaMalloc(&d_I, NX * NX * sizeof(T)));
-	gpuErrchk(cudaMalloc(&d_Anorm, NX * NX * sizeof(T)));
 
 
 	/*  create sigma Identity matrix*/
@@ -82,11 +81,6 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 
 	/* Anorm = A.T * A */
 	float one = 1.0f;
-	float beta = 0.0f;
-
-
-	int ret = cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, NX, NX, NC, &one, d_A, NC, d_A, NC, &beta, d_Anorm, NX);
-	
 
 	/* S = H + sigma * I */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_H, NX, &sigma, d_I, NX, d_S, NX);
@@ -95,7 +89,6 @@ void form_schur(T * d_S, T * d_H, T *d_A,  float rho, float sigma){
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_S, NX, &rho, d_Anorm, NX, d_S, NX);
 
 	gpuErrchk(cudaFree(d_I));
-	gpuErrchk(cudaFree(d_Anorm));
 }
 
 

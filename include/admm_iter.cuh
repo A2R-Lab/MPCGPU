@@ -221,7 +221,7 @@ void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma)
 
 
 	/* form_schur */
-	form_schur(d_Sn, prob->d_H, prob->d_A, rho, sigma);
+	form_schur(d_Sn, prob->d_H, prob->d_A, prob->d_Anorm, rho, sigma);
 	cudaDeviceSynchronize();
 
 	/* convert to custom bd form */

@@ -70,15 +70,27 @@ void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sig
 	
 }
 
+template <typename T>
+void compute_Anorm(T *d_A, T *d_Anorm){
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+	
+	float one = 1.0f;
+	float beta = 0.0f;
+
+
+	int ret = cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, NX, NX, NC, &one, d_A, NC, d_A, NC, &beta, d_Anorm, NX);
+}
 
 template <typename T>
 void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T *h_lambda, T *h_z, float rho, float sigma =1e-6, float tol =1e-3, int max_iters=1000, int update_rho=1){
 
 	/*Allocate memory for device pointers */
-	T * d_H, * d_g, * d_A, * d_l, * d_u, * d_x, * d_lambda, * d_z;
+	T * d_H, * d_g, * d_A, * d_Anorm, * d_l, * d_u, * d_x, * d_lambda, * d_z;
 
 	gpuErrchk(cudaMalloc(&d_H, NX * NX * sizeof(T)));
 	gpuErrchk(cudaMalloc(&d_A, NC * NX * sizeof(T)));
+	gpuErrchk(cudaMalloc(&d_Anorm, NX * NX * sizeof(T)));
 
 	
 	gpuErrchk(cudaMalloc(&d_g, NX * sizeof(T)));
@@ -100,9 +112,10 @@ void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T 
 	gpuErrchk(cudaMemcpy(d_lambda, h_lambda, NC * sizeof(T), cudaMemcpyHostToDevice));
 	gpuErrchk(cudaMemcpy(d_z, h_z, NC * sizeof(T), cudaMemcpyHostToDevice));
 
+	compute_Anorm(d_A, d_Anorm);
 
 	/* Make QP struct */
-	struct qp<T> prob(d_H, d_g, d_A, d_l, d_u, NX, NC);
+	struct qp<T> prob(d_H, d_g, d_A, d_Anorm, d_l, d_u, NX, NC);
 
 	/* Call admm_solve */
 	admm_solve(&prob, d_x, d_lambda, d_z, rho, sigma, tol, max_iters, update_rho);
@@ -120,5 +133,6 @@ void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T 
 	gpuErrchk(cudaFree(d_x));
 	gpuErrchk(cudaFree(d_lambda));
 	gpuErrchk(cudaFree(d_z));
+	gpuErrchk(cudaFree(d_Anorm));
 	
 }
