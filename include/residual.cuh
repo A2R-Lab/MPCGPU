@@ -13,24 +13,29 @@ struct max_abs_value
 
 template <typename T>
 __global__
- void res_kernel(T * d_A, T * d_H, T * d_g,  T * d_x, T * d_lambda, T *d_z, T * d_Ax, T * d_Axz,  T * d_Hx, T * d_Atl, T * d_res){
+ void res_kernel(T * d_A, T * d_H, T * d_g,  T * d_x, T * d_lambda, T *d_z, T * d_Axz,  T * d_res){
 	/* ||Ax - z||*/
+	__shared__ T s_Ax[NC];
+	
+	__shared__ T s_Hx[NX];
+	__shared__ T s_Atl[NX];
+
 
 	/* Ax = A * x */
-	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
+	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, s_Ax);
 
 	/* Axz = Ax - z */
-	glass::axpby<T>(NC, 1, d_Ax, -1, d_z, d_Axz);
+	glass::axpby<T>(NC, 1, s_Ax, -1, d_z, d_Axz);
 	/* || H*x + g + A.T*lamb ||*/
 
 	/* Hx = H * x */
-	glass::gemv<T, false>(NX, NX, 1, d_H, d_x, d_Hx);
+	glass::gemv<T, false>(NX, NX, 1, d_H, d_x, s_Hx);
 
 	/* Atl = A.T * lamb */
-	glass::gemv<T, true>(NC, NX, 1, d_A, d_lambda, d_Atl);
+	glass::gemv<T, true>(NC, NX, 1, d_A, d_lambda, s_Atl);
 
 	/* res = Hx + Atl */
-	glass::axpby<T>(NX, 1, d_Hx, 1, d_Atl, d_res);
+	glass::axpby<T>(NX, 1, s_Hx, 1, s_Atl, d_res);
 
 	/* res += g */
 	glass::axpy<T>(NX, 1, d_g, d_res);
@@ -40,13 +45,10 @@ __global__
 template <typename T>
  void res(T * d_A, T * d_H, T * d_g,  T * d_x, T * d_lambda, T *d_z, T * h_primal_res, T * h_dual_res){
 	/* Alloc d_Ax, d_Axz*/
-	T *d_Ax, *d_Axz;
-	gpuErrchk(cudaMalloc(&d_Ax, NC * sizeof(T)));
+	T *d_Axz;
 	gpuErrchk(cudaMalloc(&d_Axz, NC * sizeof(T)));
 
-	T *d_Hx, *d_Atl, *d_res;
-	gpuErrchk(cudaMalloc(&d_Hx, NX * sizeof(T)));
-	gpuErrchk(cudaMalloc(&d_Atl, NX * sizeof(T)));
+	T *d_res;
 	gpuErrchk(cudaMalloc(&d_res, NX * sizeof(T)));
 
 	/* Launch */
@@ -58,11 +60,8 @@ template <typename T>
 		(void *)&d_g,
 		(void *)&d_x,
 		(void *)&d_lambda,
-		(void *)&d_z, 
-		(void *)&d_Ax, 
+		(void *)&d_z,  
 		(void *)&d_Axz,
-		(void *)&d_Hx, 
-		(void *)&d_Atl,
 		(void *)&d_res
 	};
 
@@ -79,10 +78,7 @@ template <typename T>
 	T * d_dual_res = thrust::max_element(thrust::device, d_res, d_res + NX, max_abs_value());
 	gpuErrchk(cudaMemcpy(h_dual_res, d_dual_res,  sizeof(T), cudaMemcpyDeviceToHost));
 
-	gpuErrchk(cudaFree(d_Ax));
 	gpuErrchk(cudaFree(d_Axz));
-	gpuErrchk(cudaFree(d_Hx));
-	gpuErrchk(cudaFree(d_Atl));
 	gpuErrchk(cudaFree(d_res));
  }
 
