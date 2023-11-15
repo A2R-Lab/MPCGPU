@@ -115,7 +115,7 @@ void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T 
 	compute_Anorm(d_A, d_Anorm);
 
 	/* Make QP struct */
-	struct qp<T> prob(d_H, d_g, d_A, d_Anorm, d_l, d_u, NX, NC);
+	struct qp<T> prob(d_H, d_g, d_A, d_Anorm, d_l, d_u);
 
 	/* Call admm_solve */
 	admm_solve(&prob, d_x, d_lambda, d_z, rho, sigma, tol, max_iters, update_rho);
