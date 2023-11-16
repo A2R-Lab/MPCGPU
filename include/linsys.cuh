@@ -64,7 +64,7 @@ __global__ void createIdentityMatrix(T* A, int n) {
 }
 
 template <typename T>
-void form_schur(T * d_S, T * d_H, T *d_A, T *d_Anorm, float rho, float sigma){
+void form_schur(T * d_S, T * d_H, T *d_A, T *d_Anorm, T rho, T sigma){
 	cublasHandle_t handle;
 	cublasCreate(&handle);
 
@@ -80,7 +80,7 @@ void form_schur(T * d_S, T * d_H, T *d_A, T *d_Anorm, float rho, float sigma){
 	createIdentityMatrix<<<NX, NX>>>(d_I, NX);
 
 	/* Anorm = A.T * A */
-	float one = 1.0f;
+	T one = 1.0;
 
 	/* S = H + sigma * I */
 	cublasSgeam(handle, CUBLAS_OP_N, CUBLAS_OP_N, NX, NX, &one, d_H, NX, &sigma, d_I, NX, d_S, NX);

@@ -10,7 +10,7 @@
 
 template <typename T>
 __global__
-void compute_gamma_kernel(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*d_z, float rho, float sigma){
+void compute_gamma_kernel(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*d_z, T rho, T sigma){
 
 	__shared__ T s_zdiff[NC];
 	__shared__ T s_Atz[NX];
@@ -30,7 +30,7 @@ void compute_gamma_kernel(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*
 }
 
 template <typename T>
-void compute_gamma(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*d_z,  float rho, float sigma){
+void compute_gamma(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*d_z,  T rho, T sigma){
 	/* gamma = -g + sigma * x + A.T ( rho *z - lambda )*/
 	
 	/* launch it*/
@@ -56,7 +56,7 @@ void compute_gamma(T * d_gamma, T * d_g, T * d_A, T *d_x, T* d_lambda, T*d_z,  f
 
 template <typename T>
 __global__
-void update_z_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T *d_Ax , T* l, T* u, float rho ){
+void update_z_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T *d_Ax , T* l, T* u, T rho ){
 
 	/* Ax = A * x */
 	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
@@ -71,7 +71,7 @@ void update_z_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T *d_Ax , T* l, T* u, 
 
 
 template <typename T>
-void update_z(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, float rho){
+void update_z(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, T rho){
 	/* z = clip( Ax + 1/rho * lambda )*/
 
 	/* launch kernel*/
@@ -103,7 +103,7 @@ void update_z(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, float rho){
 
 template <typename T>
 __global__
-void update_lambda_kernel(T * d_A, T * d_x, T * d_lambda, T * d_z, T * d_Ax, T * d_Axz, float rho){
+void update_lambda_kernel(T * d_A, T * d_x, T * d_lambda, T * d_z, T * d_Ax, T * d_Axz, T rho){
 
 	/* Ax = A * x*/
 	glass::gemv<T, false>(NC, NX, 1, d_A, d_x, d_Ax);
@@ -116,7 +116,7 @@ void update_lambda_kernel(T * d_A, T * d_x, T * d_lambda, T * d_z, T * d_Ax, T *
 }
 
 template <typename T>
-void update_lambda(T * d_A, T * d_x, T * d_lambda, T * d_z, float rho){
+void update_lambda(T * d_A, T * d_x, T * d_lambda, T * d_z, T rho){
 	/* lambda = lambda + rho * (A * x - z )*/
 
 	// printf("Rho: %f\n\n", rho);
@@ -149,7 +149,7 @@ void update_lambda(T * d_A, T * d_x, T * d_lambda, T * d_z, float rho){
 
 template <typename T>
 __global__
-void update_z_lambda_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T* l, T* u, float rho ){
+void update_z_lambda_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T* l, T* u, T rho ){
 	__shared__ T s_Ax[NC];
 	__shared__ T s_Axz[NC];
 
@@ -172,7 +172,7 @@ void update_z_lambda_kernel(T *d_A, T *d_x, T *d_lambda, T *d_z, T* l, T* u, flo
 
 
 template <typename T>
-void update_z_lambda(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, float rho){
+void update_z_lambda(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, T rho){
 	/* z = clip( Ax + 1/rho * lambda )*/
 
 	/* launch kernel*/
@@ -196,7 +196,7 @@ void update_z_lambda(T *d_A, T *d_x, T *d_lambda, T *d_z,  T* d_l, T* d_u, float
 
 
 template <typename T>
-void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, float rho, float sigma){
+void admm_iter(qp<T> *prob, T *d_x, T *d_lambda, T *d_z, T rho, T sigma){
 	T *d_Pinv, * d_Sn, * d_Sbd;
     gpuErrchk(cudaMalloc(&d_Pinv, 3*STATE_SIZE*STATE_SIZE*KNOT_POINTS*sizeof(T)));
 	gpuErrchk(cudaMalloc(&d_Sn, NX * NX * sizeof(T)));

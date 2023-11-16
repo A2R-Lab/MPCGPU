@@ -95,7 +95,7 @@ __global__
 }
 
 template <typename T>
- float primal_res(T * d_A, T * d_x, T *d_z){
+ T primal_res(T * d_A, T * d_x, T *d_z){
 	/* Alloc d_Ax, d_Axz*/
 	T *d_Ax, *d_Axz;
 	gpuErrchk(cudaMalloc(&d_Ax, NC * sizeof(T)));
@@ -154,7 +154,7 @@ __global__
 }
 
 template <typename T>
- float dual_res(T * d_A, T * d_H, T * d_g,  T * d_x, T * d_lambda ){
+ T dual_res(T * d_A, T * d_H, T * d_g,  T * d_x, T * d_lambda ){
 	/* Alloc:T * d_Hx, T * d_Atl, T * d_res*/
 	T *d_Hx, *d_Atl, *d_res;
 	gpuErrchk(cudaMalloc(&d_Hx, NX * sizeof(T)));

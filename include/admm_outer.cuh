@@ -5,10 +5,10 @@
 
 
 template <typename T>
-void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, float rho, float sigma =1e-6, float tol =1e-3, int max_iter=1000, int update_rho=1){
+void admm_solve(qp<T> *prob, T * d_x,  T *d_lambda, T *d_z, T rho, T sigma =1e-6, T tol =1e-3, int max_iter=1000, int update_rho=1){
 
-	float primal_res_value, dual_res_value;
-	float primal_res_ptr[1], dual_res_ptr[1];
+	T primal_res_value, dual_res_value;
+	T primal_res_ptr[1], dual_res_ptr[1];
 	
 	for(int iter=0;  iter<max_iter; iter++){
 		admm_iter(prob, d_x, d_lambda, d_z, rho, sigma);
@@ -75,15 +75,15 @@ void compute_Anorm(T *d_A, T *d_Anorm){
 	cublasHandle_t handle;
 	cublasCreate(&handle);
 	
-	float one = 1.0f;
-	float beta = 0.0f;
+	T one = 1.0;
+	T beta = 0.0;
 
 
 	int ret = cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, NX, NX, NC, &one, d_A, NC, d_A, NC, &beta, d_Anorm, NX);
 }
 
 template <typename T>
-void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T *h_lambda, T *h_z, float rho, float sigma =1e-6, float tol =1e-3, int max_iters=1000, int update_rho=1){
+void admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T *h_lambda, T *h_z, T rho, T sigma =1e-6, T tol =1e-3, int max_iters=1000, int update_rho=1){
 
 	/*Allocate memory for device pointers */
 	T * d_H, * d_g, * d_A, * d_Anorm, * d_l, * d_u, * d_x, * d_lambda, * d_z;
