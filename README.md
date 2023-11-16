@@ -3,7 +3,7 @@
 ### Main interface function
 
 ```
-admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T *h_lambda, T *h_z, float rho, float sigma =1e-6, float tol =1e-3, int max_iters=1000, int update_rho=1)
+admm_solve_outer(T * h_H,  T *h_g, T *h_A, T * h_l , T * h_u,  T * h_x,  T *h_lambda, T *h_z, T rho, T sigma =1e-6, T tol =1e-3, int max_iters=1000, int update_rho=1)
 ```
 
 Input sizes:
@@ -17,6 +17,7 @@ Input sizes:
 	- h_x (NX)
 	- h_lambda (NC)
 	- h_z (NC)
+- T can double or float
 
 
 
@@ -24,7 +25,7 @@ Input sizes:
 
 We have the following examples:
 - random QP
-- double pendulum 
+- double pendulum (float/double precision)
 - double integrator (1D)
 - double integrator (2D)
 
