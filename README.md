@@ -33,12 +33,12 @@ You should also be able to compile and run it for a different problem that  "Kuk
 ### Citing
 To cite this work in your research, please use the following bibtex:
 ```
-@misc{adabag2023mpcgpu,
-      title={MPCGPU: Real-Time Nonlinear Model Predictive Control through Preconditioned Conjugate Gradient on the GPU}, 
-      author={Emre Adabag and Miloni Atal and William Gerard and Brian Plancher},
-      year={2023},
-      eprint={2309.08079},
-      archivePrefix={arXiv},
-      primaryClass={cs.RO}
+@inproceedings{adabag2024mpcgpu,
+  title={MPCGPU: Real-Time Nonlinear Model Predictive Control through Preconditioned Conjugate Gradient on the GPU}, 
+  author={Emre Adabag and Miloni Atal and William Gerard and Brian Plancher},
+  booktitle={IEEE International Conference on Robotics and Automation (ICRA)},
+  address = {Yokohama, Japan},
+  month={May.},
+  year = {2024}
 }
 ```
