@@ -53,10 +53,6 @@ typedef float linsys_t;
  *******************************************************************************/
 
 
-#ifndef ADD_NOISE
-#define ADD_NOISE  0
-#endif 
-
 #ifndef CONST_UPDATE_FREQ
 #define CONST_UPDATE_FREQ 1
 #endif

@@ -2,11 +2,10 @@
 #include <cstdint>
 #include "gpuassert.cuh"
 #include "glass.cuh"
-#include "rbdfiles/rbd_plant.cuh"
+#include "dynamics/rbd_plant.cuh"
 #include "merit.cuh"
 #include "utils/matrix.cuh"
 #include "utils/csr.cuh"
-#include "schur_inner.cuh"
 #include "integrator.cuh"
 #include "qdldl.h"
 

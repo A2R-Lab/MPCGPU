@@ -11,11 +11,12 @@
 #include <cuda_runtime.h>
 #include <tuple>
 #include <time.h>
-#include "schur.cuh"
+#include "linsys_setup.cuh"
+#include "common/kkt.cuh"
+#include "common/dz.cuh"
 #include "merit.cuh"
 #include "gpu_pcg.cuh"
 #include "settings.cuh"
-#include "schur_inner.cuh"
 
 template <typename T>
 auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config& config, T &rho, T rho_reset){
@@ -186,7 +187,7 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
     //
     for(uint32_t sqpiter = 0; sqpiter < SQP_MAX_ITER; sqpiter++){
         
-        gato_form_kkt<T><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
+        generate_kkt_submatrices<T><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
             state_size,
             control_size,
             knot_points,
@@ -203,9 +204,19 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
 
-        form_schur<T>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c,
-                   d_S, d_Pinv, d_gamma,
-                   rho);
+        form_schur_system<T>(
+            state_size, 
+            control_size, 
+            knot_points, 
+            d_G_dense, 
+            d_C_dense, 
+            d_g, 
+            d_c,
+            d_S, 
+            d_Pinv, 
+            d_gamma,
+            rho
+        );
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
         
@@ -231,7 +242,6 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
 
         pcg_iter_vec.push_back(pcg_iters);
         pcg_exit_vec.push_back(pcg_exit);
-
 
         
         if (sqpTimecheck()){ break; }

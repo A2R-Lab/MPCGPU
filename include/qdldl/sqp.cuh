@@ -11,7 +11,9 @@
 #include <cuda_runtime.h>
 #include <tuple>
 #include <time.h>
-#include "schur.cuh"
+// #include "linsys_setup/linsys_setup.cuh"
+#include "common/kkt.cuh"
+#include "common/dz.cuh"
 #include "schur_qdldl.cuh"
 #include "merit.cuh"
 #include "qdldl_helper.cuh"
@@ -33,7 +35,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     gpuErrchk(cudaDeviceSynchronize());
     clock_gettime(CLOCK_MONOTONIC, &sqp_solve_start);
 
-
+    printf("as;kdjfaosdfj\n");
 
     const uint32_t states_sq = state_size*state_size;
     const uint32_t states_p_controls = state_size * control_size;
@@ -205,7 +207,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     //
     for(uint32_t sqpiter = 0; sqpiter < SQP_MAX_ITER; sqpiter++){
         
-        gato_form_kkt<T><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
+        generate_kkt_submatrices<T><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
             state_size,
             control_size,
             knot_points,
@@ -390,16 +392,16 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     gpuErrchk(cudaFree(d_row_ind));
     gpuErrchk(cudaFree(d_val));
     gpuErrchk(cudaFree(d_lambda_double));
-	free(etree);
-	free(Lnz);
-    	free(Lp);
-	free(D);
-	free(Dinv);
-	free(iwork);
-	free(bwork);
-	free(fwork);
-	free(Li);
-	free(Lx);
+	// free(etree);
+	// free(Lnz);
+    // free(Lp);
+	// free(D);
+	// free(Dinv);
+	// free(iwork);
+	// free(bwork);
+	// free(fwork);
+	// free(Li);
+	// free(Lx);
 
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
 

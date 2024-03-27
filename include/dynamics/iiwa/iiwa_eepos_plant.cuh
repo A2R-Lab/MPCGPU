@@ -28,7 +28,7 @@
 #include <cuda_runtime_api.h>
 #include <cooperative_groups.h>
 #include "iiwa_eepos_grid.cuh"
-#include "../../settings.cuh"
+#include "settings.cuh"
 
 #include "glass.cuh"
 

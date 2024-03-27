@@ -1,70 +1,38 @@
-#pragma once
-#include <cstdint>
-#include "gpuassert.cuh"
-#include "glass.cuh"
-#include "rbdfiles/rbd_plant.cuh"
+
+#include "dynamics/rbd_plant.cuh"
 #include "merit.cuh"
-#include "utils/matrix.cuh"
-#include "schur_inner.cuh"
-#include "integrator.cuh"
-#include "utils/csr.cuh"
 
 template <typename T>
-__global__
-void gato_form_schur_jacobi(uint32_t state_size,
-                            uint32_t control_size,
-                            uint32_t knot_points,
-                            T *d_G,
-                            T *d_C,
-                            T *d_g,
-                            T *d_c,
-                            T *d_S,
-                            T *d_Pinv, 
-                            T *d_gamma,
-                            T rho,
-                            uint32_t num_blocks)
-{
+size_t get_kkt_smem_size(uint32_t state_size, uint32_t control_size){
+    const uint32_t states_sq = state_size * state_size;
+    const uint32_t controls_sq = control_size * control_size;
 
+    size_t smem_size = sizeof(T)*(3*states_sq + 
+                                  controls_sq + 
+                                  7 * state_size + 
+                                  3 * control_size + 
+                                  state_size*control_size + 
+                                  max(grid::EE_POS_SHARED_MEM_COUNT, grid::DEE_POS_SHARED_MEM_COUNT) + 
+                                  max((state_size/2)*(state_size + control_size + 1) + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared(), 3 + (state_size/2)*6));
 
-    
-    extern __shared__ T s_temp[ ];
-
-
-    for(unsigned blockrow=blockIdx.x; blockrow<knot_points; blockrow+=num_blocks){
-
-
-        gato_form_schur_jacobi_inner<T>(state_size, control_size, knot_points, d_G, d_C, d_g, d_c, d_S, d_Pinv, d_gamma, rho, s_temp, blockrow);
-        // gato_form_schur_jacobi_inner(
-        //     state_size,
-        //     control_size,
-        //     knot_points,
-        //     d_G,
-        //     d_C,
-        //     d_g,
-        //     d_c,
-        //     d_S,
-        //     d_Pinv,
-        //     d_gamma,
-        //     rho,
-        //     s_temp,
-        //     blockrow
-        // );
-    
-    }
+    return smem_size;
 }
-
-
-/*******************************************************************************
- *                           Interface Functions                                *
- *******************************************************************************/
 
 
 template <typename T, unsigned INTEGRATOR_TYPE = 0, bool ANGLE_WRAP = false>
 __global__
-void gato_form_kkt(uint32_t state_size, uint32_t control_size, uint32_t knot_points,
-                   T *d_G_dense, T *d_C_dense, T *d_g, T *d_c,
-                   void *d_dynMem_const, T timestep,
-                   T *d_eePos_traj, T *d_xs, T *d_xu)
+void generate_kkt_submatrices(uint32_t state_size, 
+                              uint32_t control_size, 
+                              uint32_t knot_points,
+                              T *d_G_dense, 
+                              T *d_C_dense, 
+                              T *d_g, 
+                              T *d_c,
+                              void *d_dynMem_const, 
+                              T timestep,
+                              T *d_eePos_traj, 
+                              T *d_xs, 
+                              T *d_xu)
 {
 
     const cgrps::thread_block block = cgrps::this_thread_block();
@@ -192,29 +160,4 @@ void gato_form_kkt(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
             glass::copy<T>(state_size, s_integrator_error, &d_c[state_size*(k+1)]);
         }
     }
-}
-
-
-
-template <typename T>
-void form_schur(uint32_t state_size, uint32_t control_size, uint32_t knot_points,
-                T *d_G_dense, T *d_C_dense, T *d_g, T *d_c, 
-                T *d_S, T *d_Pinv, T *d_gamma, 
-                T rho)
-{
-    const uint32_t s_temp_size =sizeof(T)*(8 * state_size*state_size+   
-                                7 * state_size+ 
-                                state_size * control_size+
-                                3 * control_size + 2 * control_size * control_size + 3);
-
-    // form Schur, Pinv
-    gato_form_schur_jacobi<T><<<knot_points, SCHUR_THREADS, s_temp_size>>>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_S, d_Pinv, d_gamma, rho, knot_points);// hard coded
-    
-}
-
-
-template <typename T>
-void compute_dz(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *d_G_dense, T *d_C_dense, T *d_g_val, T *d_lambda, T *d_dz){
-    
-    compute_dz_kernel<<<knot_points, DZ_THREADS, sizeof(T)*(2*state_size*state_size+state_size)>>>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g_val, d_lambda, d_dz);
 }

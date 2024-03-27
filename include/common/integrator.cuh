@@ -2,12 +2,9 @@
 #include <cooperative_groups.h>
 #include <algorithm>
 #include <cmath>
-#if ADD_NOISE
-#include "noise.cuh"
-#endif
 
 namespace cgrps = cooperative_groups;
-#include "rbdfiles/rbd_plant.cuh"
+#include "dynamics/rbd_plant.cuh"
 
 #include "glass.cuh"
 
@@ -295,41 +292,6 @@ void simple_integrator_kernel(uint32_t state_size, uint32_t control_size, T *d_x
     }
 }
 
-// ///TODO: edge case where all knots are used, shift at some point
-// template <typename T>
-// void simple_integrator(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *d_xs, T *d_xu, void *d_dynMem_const, T timestep, T time_offset, T simulation_time){
-
-//     const T epsilon = .0001; // this is to prevent float error from messing up floor
-//     const size_t simple_integrator_kernel_smem_size = sizeof(T)*(2*state_size + control_size + state_size/2 + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared());
-//     const uint32_t states_s_controls = state_size + control_size;
-//     T time_since_traj_start = time_offset;
-//     T simulation_time_left = simulation_time;
-//     uint32_t prev_knot = static_cast<uint32_t>(floorf(time_since_traj_start / timestep + epsilon));
-//     T simulation_iter_time;
-
-//     simulation_iter_time = std::min(simulation_time, std::min(timestep, timestep - time_offset));  //EMRE verify this
-
-//     // simulate half-used timestep
-//     simple_integrator_kernel<T><<< 1, 1, simple_integrator_kernel_smem_size>>>(state_size, control_size, d_xs, &d_xu[prev_knot*states_s_controls + state_size], d_dynMem_const, simulation_iter_time);
-
-//     simulation_time_left -= simulation_iter_time;
-//     time_since_traj_start += simulation_iter_time;
-
-//     // simulate remaining full timesteps and partial timestep at end (if applicable)
-//     while(simulation_time_left > 0.001){
-        
-//         simulation_iter_time = std::min(simulation_time_left, timestep);
-        
-//         prev_knot = static_cast<uint32_t>(floorf(time_since_traj_start / timestep + epsilon));
-
-//         simple_integrator_kernel<T><<< 1, 1, simple_integrator_kernel_smem_size>>>(state_size, control_size, d_xs, &d_xu[prev_knot*states_s_controls + state_size], d_dynMem_const, simulation_iter_time);
-
-//         simulation_time_left -= simulation_iter_time;
-//         time_since_traj_start += simulation_iter_time;
-//     }
-// }
-
-
 template <typename T>
 void simple_simulate(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *d_xs, T *d_xu, void *d_dynMem_const, double timestep, double time_offset_us, double sim_time_us, unsigned long long = 123456){
 
@@ -359,6 +321,5 @@ void simple_simulate(uint32_t state_size, uint32_t control_size, uint32_t knot_p
 
     T half_sim_step_time = fmod(sim_time, sim_step_time);
 
-    // half sim step — this one adds noise if ADD_NOISE is enabled
     simple_integrator_kernel<T><<<1,32,simple_integrator_kernel_smem_size>>>(state_size, control_size, d_xs, control, d_dynMem_const, half_sim_step_time);
 }

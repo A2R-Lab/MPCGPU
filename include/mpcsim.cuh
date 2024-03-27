@@ -1,4 +1,7 @@
 #pragma once
+#include <iomanip>
+#include <fstream>
+#include <iostream>
 #include <vector>
 #include <numeric>
 #include <algorithm>
@@ -7,23 +10,141 @@
 #include <math.h>
 #include <cmath>
 #include <random>
-#include <iomanip>
 #include <cuda_runtime.h>
 #include <tuple>
 #include <time.h>
 #include "integrator.cuh"
 #include "settings.cuh"
-#include "utils/track.cuh"
 #include "utils/experiment.cuh"
+#include "gpuassert.cuh"
 
 #if LINSYS_SOLVE == 1
-#include "linsys_solvers/pcg/sqp.cuh"
+#include "pcg/sqp.cuh"
 #else 
-#include "linsys_solvers/qdldl/sqp.cuh"
+#include "qdldl/sqp.cuh"
 #endif
 
+
+
+template <typename T>
+__global__
+void compute_tracking_error_kernel(T *d_tracking_error, uint32_t state_size, T *d_xu_goal, T *d_xs){
+    
+    T err;
+    
+    for(int ind = threadIdx.x; ind < state_size/2; ind += blockDim.x){
+        err = abs(d_xs[ind] - d_xu_goal[ind]);
+        atomicAdd(d_tracking_error, err);
+    }
+}
+
+
+template <typename T>
+T compute_tracking_error(uint32_t state_size, T *d_xu_goal, T *d_xs){
+
+    T h_tracking_error = 0.0f;
+    T *d_tracking_error;
+    gpuErrchk(cudaMalloc(&d_tracking_error, sizeof(T)));
+    gpuErrchk(cudaMemcpy(d_tracking_error, &h_tracking_error, sizeof(T), cudaMemcpyHostToDevice));
+
+    compute_tracking_error_kernel<T><<<1,32>>>(d_tracking_error, state_size, d_xu_goal, d_xs);
+
+    gpuErrchk(cudaMemcpy(&h_tracking_error, d_tracking_error, sizeof(T), cudaMemcpyDeviceToHost));
+    gpuErrchk(cudaFree(d_tracking_error));
+    return h_tracking_error;
+}
+
+
+template <typename T>
+void dump_tracking_data(std::vector<int> *pcg_iters, std::vector<bool> *pcg_exits, std::vector<double> *linsys_times, std::vector<double> *sqp_times, std::vector<uint32_t> *sqp_iters, 
+                std::vector<bool> *sqp_exits, std::vector<T> *tracking_errors, std::vector<std::vector<T>> *tracking_path, uint32_t timesteps_taken, 
+                uint32_t control_updates_taken, uint32_t start_state_ind, uint32_t goal_state_ind, uint32_t test_iter,
+                std::string filename_prefix){
+    // Helper function to create file names
+    auto createFileName = [&](const std::string& data_type) {
+        std::string filename = filename_prefix + "_" + std::to_string(test_iter) + "_" + data_type + ".result";
+        return filename;
+    };
+    
+    // Helper function to dump single-dimension vector data
+    auto dumpVectorData = [&](const auto& data, const std::string& data_type) {
+        std::ofstream file(createFileName(data_type));
+        if (!file.is_open()) {
+            std::cerr << "Failed to open " << data_type << " file.\n";
+            return;
+        }
+        for (const auto& item : *data) {
+            file << item << '\n';
+        }
+        file.close();
+    };
+
+    // Dump single-dimension vector data
+    dumpVectorData(pcg_iters, "pcg_iters");
+    dumpVectorData(linsys_times, "linsys_times");
+    dumpVectorData(sqp_times, "sqp_times");
+    dumpVectorData(sqp_iters, "sqp_iters");
+    dumpVectorData(sqp_exits, "sqp_exits");
+    dumpVectorData(tracking_errors, "tracking_errors");
+    dumpVectorData(pcg_exits, "pcg_exits");
+
+
+    // Dump two-dimension vector data (tracking_path)
+    std::ofstream file(createFileName("tracking_path"));
+    if (!file.is_open()) {
+        std::cerr << "Failed to open tracking_path file.\n";
+        return;
+    }
+    for (const auto& outerItem : *tracking_path) {
+        for (const auto& innerItem : outerItem) {
+            file << innerItem << ',';
+        }
+        file << '\n';
+    }
+    file.close();
+
+    std::ofstream statsfile(createFileName("stats"));
+    if (!statsfile.is_open()) {
+        std::cerr << "Failed to open stats file.\n";
+        return;
+    }
+    statsfile << "timesteps: " << timesteps_taken << "\n";
+    statsfile << "control_updates: " << control_updates_taken << "\n";
+    // printStatsToFile<double>(&linsys_times, )
+    
+    statsfile.close();
+}
+
+
+void print_test_config(){
+    std::cout << "Knot points: " << KNOT_POINTS << "\n";
+    std::cout << "State size: " << STATE_SIZE << "\n";
+    std::cout << "Datatype: " << (USE_DOUBLES ? "DOUBLE" : "FLOAT") << "\n";
+    std::cout << "Sqp exits condition: " << (CONST_UPDATE_FREQ ? "CONSTANT TIME" : "CONSTANT ITERS") << "\n";
+    std::cout << "QD COST: " << QD_COST << "\n";
+    std::cout << "R COST: " << R_COST << "\n";
+    std::cout << "Rho factor: " << RHO_FACTOR << "\n";
+    std::cout << "Rho max: " << RHO_MAX << "\n";
+    std::cout << "Test iters: " << TEST_ITERS << "\n";
+#if CONST_UPDATE_FREQ
+    std::cout << "Max sqp time: " << SQP_MAX_TIME_US << "\n";
+#else
+    std::cout << "Max sqp iter: " << SQP_MAX_ITER << "\n";
+#endif
+    std::cout << "Solver: " << ( (LINSYS_SOLVE == 1) ? "PCG" : "QDLDL") << "\n";
+#if LINSYS_SOLVE == 1
+    std::cout << "Max pcg iter: " << PCG_MAX_ITER << "\n";
+    // std::cout << "pcg exit tol: " << PCG_EXIT_TOL << "\n";
+#endif
+    std::cout << "Save data: " << (SAVE_DATA ? "ON" : "OFF") << "\n";
+    std::cout << "Jitters: " << (REMOVE_JITTERS ? "ON" : "OFF") << "\n";
+
+    std::cout << "\n\n";
+}
+
+
 template <typename T, typename return_type>
-std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> track(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, const uint32_t traj_steps, 
+std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> simulateMPC(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, const uint32_t traj_steps, 
             float timestep, T *d_eePos_traj, T *d_xu_traj, T *d_xs, uint32_t start_state_ind, uint32_t goal_state_ind, uint32_t test_iter, T linsys_exit_tol,
             std::string test_output_prefix){
 
@@ -143,10 +264,9 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> t
 
 
 #if LINSYS_SOLVE == 1
-
         sqp_stats = sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, rho_reset);
 #else 
-	sqp_stats = sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, rho_reset);
+	    sqp_stats = sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, rho_reset);
 #endif
 
         cur_linsys_iters = std::get<0>(sqp_stats);
@@ -219,10 +339,6 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> t
             
             shifted = true;
         }
-
-#if ADD_NOISE
-        addNoise<T>(state_size, d_xs, 1, .0001, .001);
-#endif
 
         if (time_since_timestep > timestep){
             // std::cout << "shifted to offset: " << traj_offset + 1 << std::endl;

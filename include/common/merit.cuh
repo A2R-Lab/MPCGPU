@@ -2,8 +2,7 @@
 
 #include <cstdint>
 #include <cooperative_groups.h>
-
-#include "rbdfiles/rbd_plant.cuh"
+#include "dynamics/rbd_plant.cuh"
 #include "integrator.cuh"
 
 //TODO: this

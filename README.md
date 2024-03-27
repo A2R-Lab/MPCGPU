@@ -28,7 +28,7 @@ an example.
 
 You should be able to replace the underlying linear system solver with your own solver. Please refer to `include/linsys_solvers/qdldl/sqp.cuh` for an example.
 
-You should also be able to compile and run it for a different problem that  "Kuka IIWA manipulator". Please refer to `include/rbdfiles/` folder for an example. We use [GRiD](!https://github.com/robot-acceleration/GRiD)  for computing rigid body dynamics with analytical gradients.
+You should also be able to compile and run it for a different problem that  "Kuka IIWA manipulator". Please refer to `include/dynamics/` folder for an example. We use [GRiD](!https://github.com/robot-acceleration/GRiD)  for computing rigid body dynamics with analytical gradients.
 
 ### Citing
 To cite this work in your research, please use the following bibtex:
