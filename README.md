@@ -9,7 +9,7 @@ git clone https://github.com/A2R-Lab/MPCGPU
 git submodule update --init --recursive
 make build_qdldl
 make examples
-mkdir /tmp/results
+mkdir -p tmp/results
 ./examples/pcg.exe
 ./examples/qdldl.exe
 ```

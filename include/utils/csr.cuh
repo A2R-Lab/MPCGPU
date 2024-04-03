@@ -5,38 +5,8 @@
 #include "qdldl.h"
 #include <fstream>
 
-void write_device_matrix_to_file(float* d_matrix, int rows, int cols, const char* filename, int filesuffix = 0) {
-    
-    char fname[100];
-    snprintf(fname, sizeof(fname), "%s%d.txt", filename, filesuffix);
-    
-    // Allocate host memory for the matrix
-    float* h_matrix = new float[rows * cols];
 
-    // Copy the data from the device to the host memory
-    size_t pitch = cols * sizeof(float);
-    cudaMemcpy2D(h_matrix, pitch, d_matrix, pitch, pitch, rows, cudaMemcpyDeviceToHost);
-
-    // Write the data to a file in column-major order
-    std::ofstream outfile(fname);
-    if (outfile.is_open()) {
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                outfile << std::setprecision(std::numeric_limits<float>::max_digits10+1) << h_matrix[col * rows + row] << "\t";
-            }
-            outfile << std::endl;
-        }
-        outfile.close();
-    } else {
-        std::cerr << "Unable to open file: " << fname << std::endl;
-    }
-
-    // Deallocate host memory
-    delete[] h_matrix;
-}
-
-
-///TODO: this has maximum branching right now
+// fills in the values of the lower triangle of a symmetric block tridiagonal matrix
 template <typename T>
 __device__
 void store_block_csr_lowertri(uint32_t bdim, uint32_t mdim, T *d_src, QDLDL_float *d_val, bool col1, uint32_t bd_block_row, int32_t multiplier=1){
@@ -66,6 +36,7 @@ void store_block_csr_lowertri(uint32_t bdim, uint32_t mdim, T *d_src, QDLDL_floa
 }
 
 
+// fills in the column pointers and row indices for the CSR representation of the lower triangle of a symmetric block tridiagonal matrix
 __global__
 void prep_csr(uint32_t state_size, uint32_t knot_points, QDLDL_int *d_col_ptr, QDLDL_int *d_row_ind){
     

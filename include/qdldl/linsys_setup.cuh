@@ -338,7 +338,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
 }
 
 template <typename T>
-void form_schur_qdl(uint32_t state_size, uint32_t control_size, uint32_t knot_points,
+void form_schur_system_qdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_points,
                 T *d_G_dense, T *d_C_dense, T *d_g, T *d_c, 
                 QDLDL_float *d_val, T *d_gamma,
                 T rho)

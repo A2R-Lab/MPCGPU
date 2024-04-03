@@ -11,13 +11,43 @@
 #include <cuda_runtime.h>
 #include <tuple>
 #include <time.h>
-// #include "linsys_setup/linsys_setup.cuh"
-#include "common/kkt.cuh"
-#include "common/dz.cuh"
-#include "schur_qdldl.cuh"
+#include "qdldl.h"
+#include "qdldl/linsys_setup.cuh"
 #include "merit.cuh"
-#include "qdldl_helper.cuh"
 #include "settings.cuh"
+#include "kkt.cuh"
+#include "dz.cuh"
+
+
+__host__
+void qdldl_solve_schur(const QDLDL_int An,
+					   QDLDL_int *h_col_ptr, QDLDL_int *h_row_ind, QDLDL_float *Ax, QDLDL_float *b, 
+					   QDLDL_float *h_lambda,
+					   QDLDL_int *Lp, QDLDL_int *Li, QDLDL_float *Lx, QDLDL_float *D, QDLDL_float *Dinv, QDLDL_int *Lnz, QDLDL_int *etree, QDLDL_bool *bwork, QDLDL_int *iwork, QDLDL_float *fwork){
+
+	
+
+
+
+    QDLDL_int i;
+
+	const QDLDL_int *Ap = h_col_ptr;
+	const QDLDL_int *Ai = h_row_ind;
+
+    //data for L and D factors
+	QDLDL_int Ln = An;
+
+
+	//Data for results of A\b
+	QDLDL_float *x = h_lambda;
+
+	QDLDL_factor(An,Ap,Ai,Ax,Lp,Li,Lx,D,Dinv,Lnz,etree,bwork,iwork,fwork);
+
+	for(i=0;i < Ln; i++) x[i] = b[i];
+
+	QDLDL_solve(Ln,Lp,Li,Lx,Dinv,x);
+}
+
 
 template <typename T>
 auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, T &rho, T rho_reset){
@@ -35,7 +65,6 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     gpuErrchk(cudaDeviceSynchronize());
     clock_gettime(CLOCK_MONOTONIC, &sqp_solve_start);
 
-    printf("as;kdjfaosdfj\n");
 
     const uint32_t states_sq = state_size*state_size;
     const uint32_t states_p_controls = state_size * control_size;
@@ -116,8 +145,8 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 
 
 
-    const int nnz = (knot_points-1)*states_sq + knot_points*((state_size+1)*state_size/2);
-
+    const int nnz = (knot_points-1)*states_sq + knot_points*(((state_size+1)*state_size)/2);
+    
     QDLDL_float h_lambda[state_size*knot_points];
     QDLDL_float h_gamma[state_size*knot_points];
     QDLDL_int h_col_ptr[state_size*knot_points+1];
@@ -145,7 +174,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 	QDLDL_int *Lnz;
     etree = (QDLDL_int*)malloc(sizeof(QDLDL_int)*An);
 	Lnz   = (QDLDL_int*)malloc(sizeof(QDLDL_int)*An);
-
+    
     QDLDL_int *Lp;
 	QDLDL_float *D;
 	QDLDL_float *Dinv;
@@ -224,11 +253,8 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
 
-    // write_device_matrix_to_file(d_g, 1, 2*(state_size+control_size), "g", 0);
-    // write_device_matrix_to_file(d_c, 1, 2*(state_size+control_size), "c", 0);
-    // exit(2);
 
-        form_schur_qdl<T>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_val, d_gamma, rho);
+        form_schur_system_qdldl<T>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_val, d_gamma, rho);
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
 
@@ -242,7 +268,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
         gpuErrchk(cudaMemcpy(h_val, d_val, (nnz)*sizeof(T), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaMemcpy(h_gamma, d_gamma, (state_size*knot_points)*sizeof(T), cudaMemcpyDeviceToHost))
 
-        qdl::qdldl_solve_schur(An, h_col_ptr, h_row_ind, h_val, h_gamma, h_lambda, Lp, Li, Lx, D, Dinv, Lnz, etree, bwork, iwork, fwork);
+        qdldl_solve_schur(An, h_col_ptr, h_row_ind, h_val, h_gamma, h_lambda, Lp, Li, Lx, D, Dinv, Lnz, etree, bwork, iwork, fwork);
         
         gpuErrchk(cudaMemcpy(d_lambda, h_lambda, (state_size*knot_points)*sizeof(T), cudaMemcpyHostToDevice));
 
@@ -392,16 +418,16 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     gpuErrchk(cudaFree(d_row_ind));
     gpuErrchk(cudaFree(d_val));
     gpuErrchk(cudaFree(d_lambda_double));
-	// free(etree);
-	// free(Lnz);
-    // free(Lp);
-	// free(D);
-	// free(Dinv);
-	// free(iwork);
-	// free(bwork);
-	// free(fwork);
-	// free(Li);
-	// free(Lx);
+	free(etree);
+	free(Lnz);
+    free(Lp);
+	free(D);
+	free(Dinv);
+	free(iwork);
+	free(bwork);
+	free(fwork);
+	free(Li);
+	free(Lx);
 
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
 
