@@ -210,7 +210,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     gpuErrchk(cudaMalloc(&d_eePos, 6*sizeof(T)));
 
 #if LINSYS_SOLVE == 1
-    pcg_config config;
+    pcg_config<T> config;
     config.pcg_block = PCG_NUM_THREADS;
     config.pcg_exit_tol = linsys_exit_tol;
     config.pcg_max_iter = PCG_MAX_ITER;
