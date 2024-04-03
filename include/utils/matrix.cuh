@@ -238,61 +238,6 @@ void invertMatrix(unsigned DIMA, unsigned DIMB, unsigned DIMC, unsigned MAX_DIM,
 }
 
 
-
-
-
-template <typename T>
-__device__
-void mat_mat_prod(T *out, T *mat_A, T *mat_B, int A_rows, int A_cols, int B_rows, int B_cols, bool transposeB = false){
-
-    if(!transposeB){
-
-        unsigned ind, thing;
-        unsigned maxind = A_rows*B_cols;
-        T res;
-        int row, col;
-
-        for(ind=threadIdx.x; ind<maxind; ind+=blockDim.x){
-            // ind x takes row x/A_cols and col x%b_rows
-            res = 0;
-            row = ind % A_rows;
-            col = ind / A_rows;
-
-            for(thing=0; thing<A_cols; thing++){
-                res += mat_A[thing*A_rows+row] * mat_B[col*B_rows+thing];
-            }
-
-            out[col*A_rows+row] = res;
-
-        } 
-    }
-    else{                       // transpose matrix B
-
-
-        unsigned ind, thing;
-        unsigned maxind = A_rows*B_rows;
-        T res;
-        int row, col;
-
-        for(ind=threadIdx.x; ind<maxind; ind+=blockDim.x){
-            // ind x takes row x/A_cols and col x%b_rows
-            res = 0;
-            row = ind % A_rows;
-            col = ind / A_rows;
-
-            for(thing=0; thing<A_cols; thing++){
-                res += mat_A[thing*A_rows+row] * mat_B[thing*B_rows+col];
-            }
-
-            out[col*A_rows+row] = res;
-
-        } 
-
-    }
-}
-
-
-
 void write_device_matrix_to_file(float* d_matrix, int rows, int cols, const char* filename, int filesuffix = 0) {
     
     char fname[100];

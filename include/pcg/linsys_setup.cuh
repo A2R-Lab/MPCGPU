@@ -444,15 +444,14 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         __syncthreads();//----------------------------------------------------------------
 
         // compute AQ^{-1}AT   -   Qkp1^{-1} for theta
-        mat_mat_prod<T>(
-            s_theta_k,
-            s_phi_k,
-            s_Ak,
+        glass::gemm<T, true>(
+            state_size, 
+            state_size, 
             state_size,
-            state_size,
-            state_size,
-            state_size,
-            true
+            static_cast<T>(1.0), 
+            s_phi_k, 
+            s_Ak, 
+            s_theta_k
         );
 
         __syncthreads();//----------------------------------------------------------------
@@ -471,15 +470,14 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         __syncthreads();//----------------------------------------------------------------
 
         // compute BR^{-1}BT for theta            temp storage in QKp1{-1}
-        mat_mat_prod<T>(
-            s_Qkp1_i,
+        glass::gemm<T, true>(
+            state_size,
+            control_size,
+            state_size,
+            static_cast<T>(1.0),
             s_Qkp1,
             s_Bk,
-            state_size,
-            control_size,
-            state_size,
-            control_size,
-            true
+            s_Qkp1_i
         );
 
         __syncthreads();//----------------------------------------------------------------
@@ -538,7 +536,15 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         //transpose phi_k
         loadIdentity<T>(state_size,s_Ak);
         __syncthreads();//----------------------------------------------------------------
-        mat_mat_prod<T>(s_Qkp1,s_Ak,s_phi_k,state_size,state_size,state_size,state_size,true);
+        glass::gemm<T, true>(
+            state_size, 
+            state_size, 
+            state_size,
+            static_cast<T>(1.0), 
+            s_Ak, 
+            s_phi_k, 
+            s_Qkp1
+        );
         __syncthreads();//----------------------------------------------------------------
 
         // save phi_k_T into right off-diagonal of S,

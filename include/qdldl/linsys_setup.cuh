@@ -212,27 +212,27 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // Compute -AQ^{-1} in phi
-            mat_mat_prod<T>(
-                s_phi_k,
-                s_Ak,
-                s_Qk_i,
+            glass::gemm<T>(
                 state_size, 
                 state_size, 
-                state_size, 
-                state_size
+                state_size,
+                static_cast<T>(1.0),
+                s_Ak, 
+                s_Qk_i, 
+                s_phi_k
             );
 
             __syncthreads();//----------------------------------------------------------------
 
             // Compute -BR^{-1} in Qkp1
-            mat_mat_prod<T>(
-                s_Qkp1,
-                s_Bk,
-                s_Rk_i,
-                state_size,
+            glass::gemm<T>(
+                state_size, 
+                control_size, 
                 control_size,
-                control_size,
-                control_size
+                static_cast<T>(1.0),
+                s_Bk, 
+                s_Rk_i, 
+                s_Qkp1
             );
 
             __syncthreads();//----------------------------------------------------------------
@@ -274,15 +274,14 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // compute AQ^{-1}AT   -   Qkp1^{-1} for theta
-            mat_mat_prod<T>(
-                s_theta_k,
-                s_phi_k,
-                s_Ak,
+            glass::gemm<T, true>(
+                state_size, 
+                state_size, 
                 state_size,
-                state_size,
-                state_size,
-                state_size,
-                true
+                static_cast<T>(1.0),
+                s_phi_k, 
+                s_Ak, 
+                s_theta_k
             );
 
             __syncthreads();//----------------------------------------------------------------
@@ -295,15 +294,14 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // compute BR^{-1}BT for theta            temp storage in QKp1{-1}
-            mat_mat_prod<T>(
-                s_Qkp1_i,
-                s_Qkp1,
-                s_Bk,
-                state_size,
+            glass::gemm<T, true>(
+                state_size, 
                 control_size,
-                state_size,
-                control_size,
-                true
+                state_size, 
+                static_cast<T>(1.0),
+                s_Qkp1, 
+                s_Bk, 
+                s_Qkp1_i
             );
 
             __syncthreads();//----------------------------------------------------------------
