@@ -28,12 +28,27 @@
 
 
 template <typename T, typename return_type>
-std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> simulateMPC_N(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, const uint32_t traj_steps, 
-            float timestep, T *d_eePos_traj, T *d_xu_traj, T *d_xs, uint32_t start_state_ind, uint32_t goal_state_ind, uint32_t test_iter, T linsys_exit_tol,
-            std::string test_output_prefix){
+std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> simulateMPC_n(
+    const uint32_t state_size, // constant
+    const uint32_t control_size, // constant
+    const uint32_t knot_points, // probably constant?
+    const uint32_t traj_steps, // probably constant?
+    float timestep, // constant
+    T *d_eePos_traj, // eventually instanced
+    T *d_xu_traj, // eventually instanced
+    T *d_xs, // eventually instanced
+    uint32_t start_state_ind, // eventually instanced
+    uint32_t goal_state_ind, // eventually instanced
+    uint32_t test_iter, // probably eventually instanced?
+    T linsys_exit_tol, // probably constant
+    std::string test_output_prefix, // probably constant
+    uint32_t solve_count // constant
+){
 
+    // constant
     const uint32_t traj_len = (state_size+control_size)*knot_points-control_size;
 
+    // constants
     const T shift_threshold = SHIFT_THRESHOLD;
     const int max_control_updates = 100000;
     
@@ -68,14 +83,18 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     // mpc iterates
     // TODO probably need to be instanced: one per simultaneous solve
     T *d_lambda, *d_eePos_goal, *d_xu, *d_xu_old;
-    gpuErrchk(cudaMalloc(&d_lambda, state_size*knot_points*sizeof(T)));
-    gpuErrchk(cudaMalloc(&d_xu, traj_len*sizeof(T)));
-    gpuErrchk(cudaMalloc(&d_xu_old, traj_len*sizeof(T)));
-    gpuErrchk(cudaMalloc(&d_eePos_goal, 6*knot_points*sizeof(T)));
-    gpuErrchk(cudaMemset(d_lambda, 0, state_size*knot_points*sizeof(T)));
-    gpuErrchk(cudaMemcpy(d_eePos_goal, d_eePos_traj, 6*knot_points*sizeof(T), cudaMemcpyDeviceToDevice));
-    gpuErrchk(cudaMemcpy(d_xu_old, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
-    gpuErrchk(cudaMemcpy(d_xu, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
+    auto lambda_size = state_size*knot_points*sizeof(T)*solve_count;
+    auto xu_size = traj_len * sizeof(T) * solve_count;
+    auto eePos_size = 6*knot_points*sizeof(T) * solve_count;
+
+    gpuErrchk(cudaMalloc(&d_lambda, lambda_size));
+    gpuErrchk(cudaMalloc(&d_xu, xu_size));
+    gpuErrchk(cudaMalloc(&d_xu_old, xu_size));
+    gpuErrchk(cudaMalloc(&d_eePos_goal, eePos_size));
+    gpuErrchk(cudaMemset(d_lambda, 0, lambda_size));
+    gpuErrchk(cudaMemcpy(d_eePos_goal, d_eePos_traj, eePos_size, cudaMemcpyDeviceToDevice));
+    gpuErrchk(cudaMemcpy(d_xu_old, d_xu_traj, xu_size, cudaMemcpyDeviceToDevice));
+    gpuErrchk(cudaMemcpy(d_xu, d_xu_traj, xu_size, cudaMemcpyDeviceToDevice));
 
 
     // puts constants onto device, probably no need to instance
