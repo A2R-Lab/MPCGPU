@@ -21,6 +21,7 @@
 template <typename T>
 auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config<T>& config, T &rho, T rho_reset){
     
+
     // data storage
     std::vector<std::vector<int>> pcg_iter_vec;
     std::vector<std::vector<bool>> pcg_exit_vec;
@@ -157,14 +158,14 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
     for (uint32_t prob = 0; prob < solve_count; prob++){
         compute_merit<T><<<knot_points, MERIT_THREADS, merit_smem_size>>>(
             state_size, control_size, knot_points,
-            d_xu + traj_len * prob, 
-            d_eePos_traj + 6 * knot_points * prob, 
+            d_xu, // d_xu + traj_len * prob, 
+            d_eePos_traj, // d_eePos_traj + 6 * knot_points * prob, 
             static_cast<T>(10), 
             timestep, 
             d_dynMem_const, 
             d_merit_initial + prob
         );
-        gpuErrchk(cudaMemcpyAsync(&h_merit_initial + prob, d_merit_initial + prob, sizeof(T), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpyAsync(&h_merit_initial[prob], d_merit_initial + prob, sizeof(T), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaPeekAtLastError());
     }
 
