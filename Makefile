@@ -7,10 +7,10 @@ CFLAGS = --compiler-options -Wall  -O3 -Iinclude -Iinclude/common -IGLASS  -IGBD
 
 examples: examples/pcg.exe examples/qdldl.exe examples/pcg_n.exe
 
-examples/pcg.exe: examples/track_iiwa_pcg.cu
+examples/pcg.exe: examples/track_iiwa_pcg.cu include/mpcsim.cuh
 	$(NVCC) $(CFLAGS) examples/track_iiwa_pcg.cu -o examples/pcg.exe
 
-examples/pcg_n.exe: examples/track_iiwa_pcg_n.cu
+examples/pcg_n.exe: examples/track_iiwa_pcg_n.cu include/mpcsim_n.cuh
 	$(NVCC) $(CFLAGS) examples/track_iiwa_pcg_n.cu -o examples/pcg_n.exe
 
 examples/qdldl.exe: examples/track_iiwa_qdldl.cu
