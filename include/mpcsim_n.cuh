@@ -103,18 +103,23 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 
     // temp host memory
     // TODO probably instanced
-    T h_xs[state_size];
-    gpuErrchk(cudaMemcpy(h_xs, d_xs, state_size*sizeof(T), cudaMemcpyDeviceToHost));
+    auto xs_size = state_size * solve_count;
+    T h_xs[xs_size];
+    // this size needs to match the parameter passed to simulateMPC
+    gpuErrchk(cudaMemcpy(h_xs, d_xs, state_size * sizeof(T), cudaMemcpyDeviceToHost));
+    // this line uses pointers as iterators, essentially h_xs.begin(), h_xs.end()
+    // doesn't need to be changed while we just pass in the first entry
+    // but needs to be in a loop later
     tracking_path_vec[0].push_back(std::vector<T>(h_xs, &h_xs[state_size]));
     gpuErrchk(cudaPeekAtLastError());
-    T h_eePos[6];
-    T h_eePos_goal[6];
+    T h_eePos[6 * solve_count];
+    T h_eePos_goal[6 * solve_count];
 
 
     // temp device memory
     // TODO probably instanced
     T *d_eePos;
-    gpuErrchk(cudaMalloc(&d_eePos, 6*sizeof(T)));
+    gpuErrchk(cudaMalloc(&d_eePos, sizeof(h_eePos)));
 
 #if LINSYS_SOLVE == 1
     pcg_config<T> config;
