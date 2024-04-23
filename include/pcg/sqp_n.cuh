@@ -182,15 +182,15 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
                 state_size,
                 control_size,
                 knot_points,
-                d_G_dense, 
-                d_C_dense, 
-                d_g, 
-                d_c,
+                d_G_dense, // d_G_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_C_dense, // d_C_dense + KKT_C_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_g, // d_g + KKT_g_SIZE_BYTES / sizeof(T) * prob,
+                d_c, // d_c + KKT_c_SIZE_BYTES / sizeof(T) * prob,
                 d_dynMem_const,
                 timestep,
-                d_eePos_traj,
-                d_xs,
-                d_xu
+                d_eePos_traj, // d_eePos_traj + 6 * knot_points * prob,
+                d_xs, // d_xs + state_size * prob,
+                d_xu // d_xu + traj_len * prob
             );
             gpuErrchk(cudaPeekAtLastError());
             if (sqpTimecheck()){ break; }
@@ -199,14 +199,14 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
                 state_size, 
                 control_size, 
                 knot_points, 
-                d_G_dense, 
-                d_C_dense, 
-                d_g, 
-                d_c,
-                d_S, 
-                d_Pinv, 
-                d_gamma,
-                rho
+                d_G_dense, // d_G_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_C_dense, // d_C_dense + KKT_C_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_g, // d_g + KKT_g_SIZE_BYTES / sizeof(T) * prob,
+                d_c, // d_c + KKT_c_SIZE_BYTES / sizeof(T) * prob,
+                d_S, // d_S + 3*states_sq*knot_points * prob,
+                d_Pinv, // d_Pinv + 3*states_sq*knot_points * prob,
+                d_gamma, // d_gamma + state_size*knot_points * prob,
+                rho // not sure if instanced?
             );
             gpuErrchk(cudaPeekAtLastError());
             if (sqpTimecheck()){ break; }
