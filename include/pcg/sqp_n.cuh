@@ -21,6 +21,7 @@
 template <typename T>
 auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config<T>& config, T &rho, T rho_reset){
     
+
     // data storage
     std::vector<std::vector<int>> pcg_iter_vec;
     std::vector<std::vector<bool>> pcg_exit_vec;
@@ -127,10 +128,10 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
     void *pcg_kernel = (void *) pcg<T, STATE_SIZE, KNOT_POINTS>;
     uint32_t pcg_iters;
     uint32_t *d_pcg_iters;
-    gpuErrchk(cudaMalloc(&d_pcg_iters, sizeof(uint32_t) * solve_count));
-    bool pcg_exit;
+    gpuErrchk(cudaMalloc(&d_pcg_iters, sizeof(uint32_t));
+    bool pcg_exit[solve_count];
     bool *d_pcg_exit;
-    gpuErrchk(cudaMalloc(&d_pcg_exit, sizeof(bool) * solve_count));
+    gpuErrchk(cudaMalloc(&d_pcg_exit, sizeof(bool)));
    
     size_t ppcg_kernel_smem_size = pcgSharedMemSize<T>(state_size, knot_points);
 
@@ -157,14 +158,14 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
     for (uint32_t prob = 0; prob < solve_count; prob++){
         compute_merit<T><<<knot_points, MERIT_THREADS, merit_smem_size>>>(
             state_size, control_size, knot_points,
-            d_xu + traj_len * prob, 
-            d_eePos_traj + 6 * knot_points * prob, 
+            d_xu, // d_xu + traj_len * prob, 
+            d_eePos_traj, // d_eePos_traj + 6 * knot_points * prob, 
             static_cast<T>(10), 
             timestep, 
             d_dynMem_const, 
             d_merit_initial + prob
         );
-        gpuErrchk(cudaMemcpyAsync(&h_merit_initial + prob, d_merit_initial + prob, sizeof(T), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpyAsync(&h_merit_initial[prob], d_merit_initial + prob, sizeof(T), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaPeekAtLastError());
     }
 
@@ -181,15 +182,15 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
                 state_size,
                 control_size,
                 knot_points,
-                d_G_dense, 
-                d_C_dense, 
-                d_g, 
-                d_c,
+                d_G_dense, // d_G_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_C_dense, // d_C_dense + KKT_C_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_g, // d_g + KKT_g_SIZE_BYTES / sizeof(T) * prob,
+                d_c, // d_c + KKT_c_SIZE_BYTES / sizeof(T) * prob,
                 d_dynMem_const,
                 timestep,
-                d_eePos_traj,
-                d_xs,
-                d_xu
+                d_eePos_traj, // d_eePos_traj + 6 * knot_points * prob,
+                d_xs, // d_xs + state_size * prob,
+                d_xu // d_xu + traj_len * prob
             );
             gpuErrchk(cudaPeekAtLastError());
             if (sqpTimecheck()){ break; }
@@ -198,14 +199,14 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
                 state_size, 
                 control_size, 
                 knot_points, 
-                d_G_dense, 
-                d_C_dense, 
-                d_g, 
-                d_c,
-                d_S, 
-                d_Pinv, 
-                d_gamma,
-                rho
+                d_G_dense, // d_G_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_C_dense, // d_C_dense + KKT_C_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_g, // d_g + KKT_g_SIZE_BYTES / sizeof(T) * prob,
+                d_c, // d_c + KKT_c_SIZE_BYTES / sizeof(T) * prob,
+                d_S, // d_S + 3*states_sq*knot_points * prob,
+                d_Pinv, // d_Pinv + 3*states_sq*knot_points * prob,
+                d_gamma, // d_gamma + state_size*knot_points * prob,
+                rho // not sure if instanced?
             );
             gpuErrchk(cudaPeekAtLastError());
             if (sqpTimecheck()){ break; }
@@ -218,14 +219,14 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
         #endif // #if TIME_LINSYS
 
             void *pcgKernelArgs[] = {
-                (void *)&d_S,
-                (void *)&d_Pinv,
-                (void *)&d_gamma, 
-                (void *)&d_lambda,
-                (void *)&d_r,
-                (void *)&d_p,
-                (void *)&d_v_temp,
-                (void *)&d_eta_new_temp,
+                (void *)&d_S, // &(d_S + 3*states_sq * knot_points * prob),
+                (void *)&d_Pinv, // &(d_Pinv + 3*states_sq * knot_points * prob),
+                (void *)&d_gamma, // &(d_gamma + state_size * knot_points * prob),
+                (void *)&d_lambda, // &(d_lambda + states_size * knot_points * prob),
+                (void *)&d_r, // &(d_r + state_size * knot_points * prob),
+                (void *)&d_p, // &(d_p + state_size * knot_points * prob),
+                (void *)&d_v_temp, // &(d_v_temp + knot_points * prob),
+                (void *)&d_eta_new_temp, // &(d_eta_new_temp + knot_points * prob),
                 (void *)&d_pcg_iters,
                 (void *)&d_pcg_exit,
                 (void *)&config.pcg_max_iter,
@@ -256,11 +257,11 @@ auto sqpSolvePcg(const uint32_t solve_count, const uint32_t state_size, const ui
                 state_size,
                 control_size,
                 knot_points,
-                d_Ginv_dense, 
-                d_C_dense, 
-                d_g, 
-                d_lambda, 
-                d_dz
+                d_Ginv_dense, // d_Ginv_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_C_dense,  // d_G_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob,
+                d_g, // d_g + KKT_g_SIZE_BYTES / sizeof(T) * prob,
+                d_lambda, // d_lambda + states_size * knot_points * prob,
+                d_dz // d_dz + DZ_SIZE_BYTES / sizeof(T) * prob
             );
             gpuErrchk(cudaPeekAtLastError());
             if (sqpTimecheck()){ break; }
