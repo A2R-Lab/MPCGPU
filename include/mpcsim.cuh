@@ -254,7 +254,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 
 
 #if LIVE_PRINT_PATH
-        grid::end_effector_positions_kernel<T><<<1,128>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
+        grid::end_effector_positions_kernel<T><<<1,128,144*sizeof(T)>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
         gpuErrchk(cudaMemcpy(h_eePos, d_eePos, 6*sizeof(T), cudaMemcpyDeviceToHost));
         for (uint32_t i = 0; i < 6; i++){
             std::cout << h_eePos[i] << (i < 5 ? " " : "\n");
@@ -297,7 +297,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
         if (!shifted && time_since_timestep > shift_threshold){
             
             // record tracking error
-            grid::end_effector_positions_kernel<T><<<1,128>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
+            grid::end_effector_positions_kernel<T><<<1,128,144*sizeof(T)>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
             gpuErrchk(cudaMemcpy(h_eePos, d_eePos, 6*sizeof(T), cudaMemcpyDeviceToHost));
             gpuErrchk(cudaMemcpy(h_eePos_goal, d_eePos_goal, 6*sizeof(T), cudaMemcpyDeviceToHost));
             cur_tracking_error = 0.0;
@@ -401,7 +401,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 #endif
     
 
-    grid::end_effector_positions_kernel<T><<<1,128>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
+    grid::end_effector_positions_kernel<T><<<1,128,144*sizeof(T)>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
     gpuErrchk(cudaMemcpy(h_eePos, d_eePos, 6*sizeof(T), cudaMemcpyDeviceToHost));
     gpuErrchk(cudaMemcpy(h_eePos_goal, d_eePos_goal, 6*sizeof(T), cudaMemcpyDeviceToHost));
     cur_tracking_error = 0.0;
