@@ -98,7 +98,7 @@ namespace grid {
     const int NUM_EES = 1;
     const int ID_DYNAMIC_SHARED_MEM_COUNT = 770;
     const int MINV_DYNAMIC_SHARED_MEM_COUNT = 1395;
-    const int FD_DYNAMIC_SHARED_MEM_COUNT = 1444;
+    const int FD_DYNAMIC_SHARED_MEM_COUNT = 1724;
     const int ID_DU_DYNAMIC_SHARED_MEM_COUNT = 2450;
     const int FD_DU_DYNAMIC_SHARED_MEM_COUNT = 2450;
     const int ID_DU_MAX_SHARED_MEM_COUNT = 2695;

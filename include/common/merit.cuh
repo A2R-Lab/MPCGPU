@@ -9,7 +9,8 @@
 template <typename T>
 size_t get_merit_smem_size(uint32_t state_size, uint32_t control_size)
 {
-    return sizeof(T) * ((4 * state_size + 2 * control_size ) + grid::EE_POS_SHARED_MEM_COUNT + max((2 * state_size + control_size), state_size + gato_plant::forwardDynamics_TempMemSize_Shared()));
+    return sizeof(T) * (6 + (2 * state_size + control_size ) + 
+                        ((int) 1.5 * state_size) + gato_plant::forwardDynamics_TempMemSize_Shared());
 }
 
 // cost compute for line search

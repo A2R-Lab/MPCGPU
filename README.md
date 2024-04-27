@@ -6,17 +6,18 @@ Numerical experiments and the open-source solver from the paper ["MPCGPU: Real-T
 
 ```
 git clone https://github.com/A2R-Lab/MPCGPU
+cd MPCGPU
 git submodule update --init --recursive
 make build_qdldl
 make examples
 mkdir -p tmp/results
+```
+Either install the qdldl shared library by running ```cd qdldl/build && make install``` or modify the ```LD_LIBRARY_PATH``` environment variable to include the path to ```MPCGPU/qdldl/build/out```.
+
+```
 ./examples/pcg.exe
 ./examples/qdldl.exe
 ```
-
-The track_iiwa_pcg file outlines how you could setup a tracking problem with underlying linear system solver as pcg.
-
-The track_iiwa_qdldl file outlines how you could setup a tracking problem with underlying linear system solver as qdldl.
 
 ### Setting parameters
 
