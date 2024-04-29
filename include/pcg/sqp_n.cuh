@@ -37,7 +37,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
     std::vector<std::vector<int>> pcg_iter_vec;
     std::vector<std::vector<bool>> pcg_exit_vec;
     std::vector<std::vector<double>> linsys_time_vec;
-    bool sqp_time_exit = 1;     // for data recording, not a flag, not sure what this does?
+    std::vector<bool> sqp_time_exit(solve_count, 1);     // indicator for if line search fails then stop
 
 
     // sqp timing
@@ -61,7 +61,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
     // line search things
     const float mu = 10.0f;
     const uint32_t num_alphas = 8;
-    T h_merit_news[solve_count*num_alphas];
+    T h_merit_news[num_alphas];
     void *ls_merit_kernel = (void *) ls_gato_compute_merit<T>;
     const size_t merit_smem_size = get_merit_smem_size<T>(state_size, control_size);
     T h_merit_initial[solve_count], min_merit[solve_count];
@@ -95,16 +95,13 @@ auto sqpSolvePcg(const uint32_t solve_count,
     
     T rhos[solve_count];
     T drhos[solve_count];
-    for (int i = 0; i < solve_count; i++) {
+    for (uint32_t i = 0; i < solve_count; i++) {
         rhos[i] = rho;
         drhos[i] = 1.0;
     }
     T rho_factor = RHO_FACTOR;
     T rho_max = RHO_MAX;
     T rho_min = RHO_MIN;
-
-    
-
 
     gpuErrchk(cudaMalloc(&d_G_dense,  KKT_G_DENSE_SIZE_BYTES * solve_count));
     gpuErrchk(cudaMalloc(&d_C_dense,  KKT_C_DENSE_SIZE_BYTES * solve_count));
@@ -122,7 +119,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
     for (uint32_t i = 0; i < solve_count; i++) {
         gpuErrchk(cudaMemcpy(d_xs, d_xu + i * traj_len,  state_size * sizeof(T), cudaMemcpyDeviceToDevice));
     }
-    gpuErrchk(cudaMalloc(&d_merit_news, num_alphas * sizeof(T) * solve_count));
+    gpuErrchk(cudaMalloc(&d_merit_news, num_alphas * sizeof(T)));
     gpuErrchk(cudaMalloc(&d_merit_temp, num_alphas * knot_points * sizeof(T) * solve_count));
     // pcg iterates
 
@@ -183,10 +180,11 @@ auto sqpSolvePcg(const uint32_t solve_count,
             d_dynMem_const, 
             d_merit_initial + prob
         );
-        gpuErrchk(cudaMemcpyAsync(&h_merit_initial[prob], d_merit_initial + prob, sizeof(T), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaPeekAtLastError());
     }
+    gpuErrchk(cudaMemcpyAsync(&h_merit_initial, d_merit_initial, solve_count * sizeof(T), cudaMemcpyDeviceToHost));
+    gpuErrchk(cudaPeekAtLastError());
 
+    
     //
     //      SQP LOOP
     //
@@ -195,17 +193,20 @@ auto sqpSolvePcg(const uint32_t solve_count,
         std::vector<bool> pcg_exit_vec_temp;
         std::vector<double> linsys_time_vec_temp;
 
-        for (uint32_t prob = 0; prob < 1; prob++){
-            T *d_S_i = d_S + 3*states_sq * knot_points * prob;
+        for (uint32_t prob = 0; prob < solve_count; prob++) {
+            if (!sqp_time_exit[prob]) {
+                continue;
+            }
+            T *d_S_i = d_S + 3 * states_sq * knot_points * prob;
             T *d_G_dense_i = d_G_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob;
-            T *d_Ginv_dense_i = d_Ginv_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob;
+            T *d_Ginv_dense_i = d_G_dense_i;
             T * d_C_dense_i = d_C_dense + KKT_C_DENSE_SIZE_BYTES / sizeof(T) * prob;
             T *d_g_i = d_g + KKT_g_SIZE_BYTES / sizeof(T) * prob;
             T *d_c_i = d_c + KKT_c_SIZE_BYTES / sizeof(T) * prob;
             T *d_eePos_traj_i = d_eePos_traj + 6 * knot_points * prob;
             T *d_xs_i = d_xs + state_size * prob;
             T *d_xu_i = d_xu + traj_len * prob;
-            T *d_Pinv_i = d_Pinv + 3*states_sq * knot_points * prob;
+            T *d_Pinv_i = d_Pinv + 3 * states_sq * knot_points * prob;
             T *d_gamma_i = d_gamma + state_size * knot_points * prob;
             T *d_lambda_i = d_lambda + state_size * knot_points * prob;
             T *d_r_i = d_r + state_size * knot_points * prob;
@@ -213,10 +214,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
             T *d_v_temp_i = d_v_temp + knot_points * prob;
             T *d_eta_new_temp_i = d_eta_new_temp + knot_points * prob;
             T *d_dz_i = d_dz + DZ_SIZE_BYTES / sizeof(T) * prob;
-            T *d_merit_news_i = d_merit_news + num_alphas * prob;
             T *d_merit_temp_i = d_merit_temp  + num_alphas * knot_points * prob;
-            T *rho_i = &(rhos[prob]);
-            T *drho_i = &(drhos[prob]);
 
             generate_kkt_submatrices<T><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
                 state_size,
@@ -246,7 +244,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
                 d_S_i,
                 d_Pinv_i,
                 d_gamma_i,
-                *rho_i
+                rhos[prob]
             );
             gpuErrchk(cudaPeekAtLastError());
             if (sqpTimecheck()){ break; }
@@ -266,7 +264,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
                 (void *)&d_r_i,
                 (void *)&d_p_i,
                 (void *)&d_v_temp_i,
-                (void *)&d_eta_new_temp,
+                (void *)&d_eta_new_temp_i,
                 (void *)&d_pcg_iters,
                 (void *)&d_pcg_exit,
                 (void *)&config.pcg_max_iter,
@@ -298,13 +296,16 @@ auto sqpSolvePcg(const uint32_t solve_count,
                 control_size,
                 knot_points,
                 d_Ginv_dense_i,
-                d_G_dense_i,
+                d_C_dense_i,
                 d_g_i,
                 d_lambda_i,
                 d_dz_i
             );
             gpuErrchk(cudaPeekAtLastError());
             if (sqpTimecheck()){ break; }
+
+            T h_dz[DZ_SIZE_BYTES / sizeof(T)];
+            cudaMemcpy(h_dz, d_dz_i, DZ_SIZE_BYTES / sizeof(T), cudaMemcpyDeviceToHost);
             
 
             // line search
@@ -321,7 +322,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
                     (void *)&d_dynMem_const,
                     (void *)&d_dz_i,
                     (void *)&p,
-                    (void *)&d_merit_news_i,
+                    (void *)&d_merit_news,
                     (void *)&d_merit_temp_i
                 };
                 gpuErrchk(cudaLaunchCooperativeKernel(ls_merit_kernel, knot_points, MERIT_THREADS, kernelArgs, get_merit_smem_size<T>(state_size, knot_points), streams[p]));
@@ -331,7 +332,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
             gpuErrchk(cudaDeviceSynchronize());
             
             
-            cudaMemcpy(h_merit_news + num_alphas * prob, d_merit_news + num_alphas * prob, num_alphas * sizeof(T), cudaMemcpyDeviceToHost);
+            cudaMemcpy(h_merit_news, d_merit_news, num_alphas * sizeof(T), cudaMemcpyDeviceToHost);
             if (sqpTimecheck()){ break; }
             gpuErrchk(cudaPeekAtLastError());
 
@@ -341,30 +342,29 @@ auto sqpSolvePcg(const uint32_t solve_count,
             for(int i = 0; i < 8; i++){
             //     std::cout << h_merit_news[i] << (i == 7 ? "\n" : " ");
                 ///TODO: reduction ratio
-                if(h_merit_news[i + num_alphas * prob] < min_merit[prob]){
-                    min_merit[prob] = h_merit_news[i + num_alphas * prob];
+                if(h_merit_news[i] < min_merit[prob]){
+                    min_merit[prob] = h_merit_news[i];
                     line_search_step = i;
                 }
             }
 
-
             if(min_merit[prob] == h_merit_initial[prob]){
                 // line search failure
-                *drho_i = max(*drho_i*rho_factor, rho_factor);
-                *rho_i = max((*rho_i)*(*drho_i), rho_min);
+                drhos[prob]= max(drhos[prob] * rho_factor, rho_factor);
+                rhos[prob] = max(rhos[prob] * drhos[prob], rho_min);
                 sqp_iter++;
-                if(*rho_i > rho_max){
-                    sqp_time_exit = 0;
-                    *rho_i = rho_reset;
-                    break; 
+                if(rhos[prob] > rho_max){
+                    sqp_time_exit[prob] = 0;
+                    rhos[prob] = rho_reset;
+                    // break; do not break, just continue
                 }
                 continue;
             }
             // std::cout << "line search accepted\n";
             alphafinal = -1.0 / (1 << line_search_step);        // alpha sign
 
-            *drho_i = min(*drho_i/rho_factor, 1/rho_factor);
-            *rho_i = max(*rho_i*(*drho_i), rho_min);
+            drhos[prob] = min(drhos[prob]/rho_factor, 1/rho_factor);
+            rhos[prob] = max(rhos[prob]*drhos[prob], rho_min);
             
     
     #if USE_DOUBLES
@@ -437,5 +437,5 @@ auto sqpSolvePcg(const uint32_t solve_count,
 
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
 
-    return std::make_tuple(pcg_iter_vec[0], linsys_time_vec[0], sqp_solve_time, sqp_iter, sqp_time_exit, pcg_exit_vec[0]);
+    return std::make_tuple(pcg_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, pcg_exit_vec);
 }
