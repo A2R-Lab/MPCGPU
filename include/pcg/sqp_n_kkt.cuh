@@ -117,7 +117,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
     gpuErrchk(cudaMalloc(&d_dz,       DZ_SIZE_BYTES * solve_count));
     gpuErrchk(cudaMalloc(&d_xs,       state_size * sizeof(T) * solve_count));
     for (uint32_t i = 0; i < solve_count; i++) {
-        gpuErrchk(cudaMemcpy(d_xs, d_xu + i * traj_len,  state_size * sizeof(T), cudaMemcpyDeviceToDevice));
+        gpuErrchk(cudaMemcpy(d_xs + state_size * i, d_xu + traj_len * i,  state_size * sizeof(T), cudaMemcpyDeviceToDevice));
     }
     gpuErrchk(cudaMalloc(&d_merit_news, num_alphas * sizeof(T)));
     gpuErrchk(cudaMalloc(&d_merit_temp, num_alphas * knot_points * sizeof(T) * solve_count));
