@@ -117,7 +117,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
     gpuErrchk(cudaMalloc(&d_dz,       DZ_SIZE_BYTES * solve_count));
     gpuErrchk(cudaMalloc(&d_xs,       state_size * sizeof(T) * solve_count));
     for (uint32_t i = 0; i < solve_count; i++) {
-        gpuErrchk(cudaMemcpy(d_xs, d_xu + i * traj_len,  state_size * sizeof(T), cudaMemcpyDeviceToDevice));
+        gpuErrchk(cudaMemcpy(d_xs + state_size * i, d_xu + traj_len * i,  state_size * sizeof(T), cudaMemcpyDeviceToDevice));
     }
     gpuErrchk(cudaMalloc(&d_merit_news, num_alphas * sizeof(T)));
     gpuErrchk(cudaMalloc(&d_merit_temp, num_alphas * knot_points * sizeof(T) * solve_count));
@@ -199,7 +199,7 @@ auto sqpSolvePcg(const uint32_t solve_count,
             }
             T *d_S_i = d_S + 3 * states_sq * knot_points * prob;
             T *d_G_dense_i = d_G_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob;
-            T *d_Ginv_dense_i = d_G_dense_i;
+            T *d_Ginv_dense_i = d_Ginv_dense + KKT_G_DENSE_SIZE_BYTES / sizeof(T) * prob;
             T * d_C_dense_i = d_C_dense + KKT_C_DENSE_SIZE_BYTES / sizeof(T) * prob;
             T *d_g_i = d_g + KKT_g_SIZE_BYTES / sizeof(T) * prob;
             T *d_c_i = d_c + KKT_c_SIZE_BYTES / sizeof(T) * prob;
@@ -303,10 +303,6 @@ auto sqpSolvePcg(const uint32_t solve_count,
             );
             gpuErrchk(cudaPeekAtLastError());
             if (sqpTimecheck()){ break; }
-
-            T h_dz[DZ_SIZE_BYTES / sizeof(T)];
-            cudaMemcpy(h_dz, d_dz_i, DZ_SIZE_BYTES / sizeof(T), cudaMemcpyDeviceToHost);
-            
 
             // line search
             for(uint32_t p = 0; p < num_alphas; p++){
