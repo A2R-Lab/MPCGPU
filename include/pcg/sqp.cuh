@@ -17,6 +17,8 @@
 #include "merit.cuh"
 #include "gpu_pcg.cuh"
 #include "settings.cuh"
+//timing 
+
 
 template <typename T>
 auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config<T>& config, T &rho, T rho_reset){
@@ -168,7 +170,7 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
     auto sqpTimecheck = [&]() { return false; };
 #endif
 
-
+///207-247
     ///TODO: atomic race conditions here aren't fixed but don't seem to be problematic
     compute_merit<T><<<knot_points, MERIT_THREADS, merit_smem_size>>>(
         state_size, control_size, knot_points,
@@ -220,7 +222,7 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
         
-
+//this is where  time 
     #if TIME_LINSYS    
         gpuErrchk(cudaDeviceSynchronize());
         if (sqpTimecheck()){ break; }
