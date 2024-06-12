@@ -154,25 +154,25 @@ int main(){
 		}
 		std::cout << "************************************************\n\n";
 
-		// Specify the CSV file path
-		const std::string csvFilePath = test_output_prefix + "_" + "overall_stats.csv";
+		// // Specify the CSV file path
+		// const std::string csvFilePath = test_output_prefix + "_" + "overall_stats.csv";
 
-		// Open the CSV file for writing
-		std::ofstream csvFile(csvFilePath);
-		if (!csvFile.is_open()) {
-		std::cerr << "Error opening CSV file for writing." << std::endl;
-		return 1;
-		}
+		// // Open the CSV file for writing
+		// std::ofstream csvFile(csvFilePath);
+		// if (!csvFile.is_open()) {
+		// std::cerr << "Error opening CSV file for writing." << std::endl;
+		// return 1;
+		// }
 
-		// Write the header row
-		csvFile << "Average,Std Dev, Min, Max, Median, Q1, Q3\n";
+		// // Write the header row
+		// csvFile << "Average,Std Dev, Min, Max, Median, Q1, Q3\n";
 
-		// Write the data rows
-		csvFile << getStatsString(trackingStats) << "\n";
-		csvFile << getStatsString(linsysOrSqpStats) << "\n";
+		// // Write the data rows
+		// csvFile << getStatsString(trackingStats) << "\n";
+		// csvFile << getStatsString(linsysOrSqpStats) << "\n";
 
-		// Close the CSV file
-		csvFile.close();
+		// // Close the CSV file
+		// csvFile.close();
 	}
         break;
     }
