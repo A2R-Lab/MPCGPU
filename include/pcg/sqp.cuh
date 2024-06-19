@@ -54,10 +54,21 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
     const uint32_t KKT_FSTATES_SIZE_BYTES = static_cast<uint32_t>(fstates_size * sizeof(T));
     const uint32_t KKT_FCONTROL_SIZE_BYTES = static_cast<uint32_t>(fcontrol_size * sizeof(T));
     // BCHOL F initialization to 0 (NoT SURE IF NEEDED)
-    T F_lambda, F_state, F_input;
-    // set_const(fstates_size, F_lambda, 0);
-    // set_const(fstates_size, F_state, 0);
-    // set_const(fcontrol_size, F_input, 0);
+    // Creating Factorization
+    float F_lambda[fstates_size];
+    float F_state[fstates_size];
+    for (uint32_t n = 0; n < fstates_size; n++)
+    {
+        F_lambda[n] = 0;
+        F_state[n] = 0;
+    }
+
+    float F_input[fcontrol_size];
+    for (uint32_t n = 0; n < fcontrol_size; n++)
+    {
+        F_input[n] = 0;
+    }
+
     ///////////////////**************************////////////////////////////////
 
     // line search things
@@ -175,16 +186,22 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
 #endif
     //////////////////////////
     // BCHOL addition for cudaMalloc and kernel settings
-    T *d_F_lambda, d_F_state, d_F_input;
+    T *d_F_lambda, *d_F_state, *d_F_input;
 
     gpuErrchk(cudaMalloc((void **)&d_F_lambda, KKT_FSTATES_SIZE_BYTES));
     gpuErrchk(cudaMalloc((void **)&d_F_state, KKT_FSTATES_SIZE_BYTES));
     gpuErrchk(cudaMalloc((void **)&d_F_input, KKT_FCONTROL_SIZE_BYTES));
+    // copy to GPU
+    gpuErrchk(cudaMemcpy(d_F_lambda, F_lambda, KKT_FSTATES_SIZE_BYTES, cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(d_F_state, F_state, KKT_FSTATES_SIZE_BYTES, cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(d_F_input, F_input, KKT_FCONTROL_SIZE_BYTES, cudaMemcpyHostToDevice));
+
     // CgANge it later to allign with Emre's
-    std::uint32_t bchol_blockSizel = 32;
+    std::uint32_t bchol_blockSize = 32;
     std::uint32_t bchol_gridSize = 8;
     uint32_t bchol_shared_mem_size = KKT_C_DENSE_SIZE_BYTES + KKT_G_DENSE_SIZE_BYTES + KKT_c_SIZE_BYTES + KKT_g_SIZE_BYTES +
                                      KKT_FCONTROL_SIZE_BYTES + KKT_FSTATES_SIZE_BYTES + KKT_FSTATES_SIZE_BYTES + (knot_points * 2 * sizeof(int));
+
     const void *bchol_kernelFunc = reinterpret_cast<const void *>(solve_BCHOL<float>);
     void *bcholKernelArgs[] = {// prepare the kernel arguments
                                (void *)&knot_points,
@@ -237,11 +254,32 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         gpuErrchk(cudaPeekAtLastError());
         /////////////YANA's EXPERIMENT until here worked fine/////////////////////
 
-
-
         // call kernel
-        std::uint32_t bchol_blockSize = 32;
-        std::uint32_t bchol_gridSize = 8;
+        // std::cout << "Launching blocks " << bchol_gridSize << " launching threads" << bchol_blockSize << "shared memory" << bchol_shared_mem_size << std::endl;
+
+        // Get device properties
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, 0); // Assuming you're using device 0
+        if (!prop.cooperativeLaunch)
+        {
+            std::cerr << "Error: Cooperative kernel launches are not supported on this device." << std::endl;
+        }
+
+        // Check if device supports 96 KB shared memory per block
+        if (prop.major >= 6)
+        {                                                                                               // Assuming compute capability 6.0 or higher supports this
+            cudaFuncSetAttribute(bchol_kernelFunc, cudaFuncAttributeMaxDynamicSharedMemorySize, 98304); // 96 KB
+            std::cout << "Set kernel to use 96 KB shared memory per block." << std::endl;
+        }
+        else
+        {
+            std::cerr << "Device does not support 96 KB shared memory per block." << std::endl;
+        }
+        // Calculate max blocks for cooperative launch
+        int numBlocksPerSm;
+        cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, bchol_kernelFunc, bchol_blockSize, bchol_shared_mem_size);
+        int maxBlocks = numBlocksPerSm * prop.multiProcessorCount;
+        std::cout << "Max blocks for cooperative kernel launch: " << maxBlocks << std::endl;
 
         gpuErrchk(cudaDeviceSynchronize());
         gpuErrchk(cudaLaunchCooperativeKernel(bchol_kernelFunc, bchol_gridSize, bchol_blockSize, bcholKernelArgs, bchol_shared_mem_size));
@@ -282,7 +320,8 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         }
         clock_gettime(CLOCK_MONOTONIC, &linsys_start);
 #endif // #if TIME_LINSYS
-
+       // std::cout << "my shared mem " << bchol_shared_mem_size << std::endl;
+       // std::cout << "Emre's shared mem " << ppcg_kernel_smem_size << std::endl;
         gpuErrchk(cudaLaunchCooperativeKernel(pcg_kernel, knot_points, PCG_NUM_THREADS, pcgKernelArgs, ppcg_kernel_smem_size));
         gpuErrchk(cudaMemcpy(&pcg_iters, d_pcg_iters, sizeof(uint32_t), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaMemcpy(&pcg_exit, d_pcg_exit, sizeof(bool), cudaMemcpyDeviceToHost));
