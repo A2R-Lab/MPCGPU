@@ -27,7 +27,7 @@
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <cooperative_groups.h>
-#include "iiwa_eepos_grid.cuh"
+#include "grid.cuh"
 #include "settings.cuh"
 
 #include "glass.cuh"
@@ -41,7 +41,7 @@
 namespace gato_plant{
 
 
-	const unsigned SUGGESTED_THREADS = grid::SUGGESTED_THREADS;
+	const unsigned SUGGESTED_THREADS = grid::MAX_PERF_LEVEL_THREADS;   // was grid::SUGGESTED_THREADS (renamed in GRiD)
 
 	template<class T>
 	__host__ __device__
@@ -101,17 +101,18 @@ namespace gato_plant{
 	__device__
 	void forwardDynamics(T *s_qdd, T *s_q, T *s_qd, T *s_u, T *s_XITemp, void *d_dynMem_const, cooperative_groups::thread_block block){
 
-		T *s_XImats = s_XITemp; T *s_temp = &s_XITemp[1008];
-    	grid::load_update_XImats_helpers<T>(s_XImats, s_q, (grid::robotModel<float> *) d_dynMem_const, s_temp);
+		// TOPOLOGY_HELPERS_COUNT == 0 for iiwa14 (fixed serial chain); d_workspace/d_f_ext null,
+		// gravity is now the trailing arg. XImats arena is 504 (matches GATO's regenerated grid.cuh).
+		int *s_topology_helpers = nullptr;
+		T *s_XImats = s_XITemp; T *s_temp = &s_XITemp[504];
+    	grid::load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, (grid::robotModel<T> *) d_dynMem_const, s_temp);
     	__syncthreads();
 
-    	grid::forward_dynamics_inner<T>(s_qdd, s_q, s_qd, s_u, s_XImats, s_temp, gato_plant::GRAVITY<T>());
-		
-		// grid::forward_dynamics_device<T>(s_qdd,s_q,s_qd,s_u,(grid::robotModel<T>*)d_dynMem_const,GRAVITY<T>());
+    	grid::forward_dynamics_inner<T>(s_qdd, s_q, s_qd, s_u, s_XImats, s_topology_helpers, s_temp, /*d_workspace*/nullptr, /*d_f_ext*/nullptr, gato_plant::GRAVITY<T>());
 	}
 
 	__host__ __device__
-	constexpr unsigned forwardDynamics_TempMemSize_Shared(){return grid::FD_DYNAMIC_SHARED_MEM_COUNT;}
+	constexpr unsigned forwardDynamics_TempMemSize_Shared(){return grid::FORWARD_DYNAMICS_DYNAMIC_SHARED_MEM_COUNT;}
 
 	// template <typename T>
 	// __device__
@@ -130,15 +131,16 @@ namespace gato_plant{
 		T *s_XITemp = s_temp_in;
 		grid::robotModel<T> *d_robotModel = (grid::robotModel<T> *) d_dynMem_const;
 
+        int *s_topology_helpers = nullptr;   // TOPOLOGY_HELPERS_COUNT == 0 (iiwa14 fixed chain)
         T *s_XImats = s_XITemp; T *s_vaf = &s_XITemp[504]; T *s_dc_du = &s_vaf[126]; T *s_Minv = &s_dc_du[98]; T *s_temp = &s_Minv[49];
-        grid::load_update_XImats_helpers<T>(s_XImats, s_q, d_robotModel, s_temp); __syncthreads();
+        grid::load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_temp); __syncthreads();
         //TODO: there is a slightly faster way as s_v does not change -- thus no recompute needed
-        grid::direct_minv_inner<T>(s_Minv, s_q, s_XImats, s_temp); __syncthreads();
+        grid::minv_inner<T>(s_Minv, s_q, s_XImats, s_topology_helpers, s_temp, /*d_workspace*/nullptr); __syncthreads();
         T *s_c = s_temp;
-        grid::inverse_dynamics_inner<T>(s_c, s_vaf, s_q, s_qd, s_XImats, &s_temp[7], GRAVITY<T>()); __syncthreads();
+        grid::inverse_dynamics_inner<T>(s_c, s_vaf, s_q, s_qd, s_XImats, s_topology_helpers, &s_temp[7], /*d_f_ext*/nullptr, GRAVITY<T>()); __syncthreads();
         grid::forward_dynamics_finish<T>(s_qdd, s_u, s_c, s_Minv); __syncthreads();
-        grid::inverse_dynamics_inner_vaf<T>(s_vaf, s_q, s_qd, s_qdd, s_XImats, s_temp, GRAVITY<T>()); __syncthreads();
-        grid::inverse_dynamics_gradient_inner<T>(s_dc_du, s_q, s_qd, s_vaf, s_XImats, s_temp, GRAVITY<T>()); __syncthreads();
+        grid::inverse_dynamics_inner_vaf<T>(s_vaf, s_q, s_qd, s_qdd, s_XImats, s_topology_helpers, s_temp, /*d_f_ext*/nullptr, GRAVITY<T>()); __syncthreads();
+        grid::inverse_dynamics_gradient_inner<T>(s_dc_du, s_q, s_qd, s_vaf, s_XImats, s_topology_helpers, s_temp, /*d_temp_spill*/nullptr, GRAVITY<T>()); __syncthreads();
         for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 98; ind += blockDim.x*blockDim.y){
             int row = ind % 7; int dc_col_offset = ind - row;
             // account for the fact that Minv is an SYMMETRIC_UPPER triangular matrix
@@ -233,7 +235,8 @@ namespace gato_plant{
 
 	__host__
 	unsigned trackingcost_TempMemCt_Shared(uint32_t state_size, uint32_t control_size, uint32_t knot_points){
-		return state_size/2 + control_size + 3 + 6 + grid::EE_POS_SHARED_MEM_COUNT;
+		// s_cost_vec (threadsNeeded+3) + s_eePos_cost (6) + s_extra_temp (EE-pose arena >= 144+32).
+		return state_size/2 + control_size + 3 + 6 + grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT;
 	}
 
 	///TODO: get rid of divergence
@@ -271,9 +274,19 @@ namespace gato_plant{
 		}
 
         __syncthreads();
-        grid::end_effector_positions_device<T>(s_eePos_cost, s_xu, s_extra_temp, d_robotModel);
+        // EE pose via the caller-scratch _inner path (the 3-arg _device declares its own
+        // extern __shared__, which would alias the kernel's). s_extra_temp holds s_XmatsHom[144]
+        // + s_ee_temp; topology/workspace/linalg are null (counts are 0). Only xyz (first 3 of the
+        // 6-wide pose) is used by the position cost below.
+        {
+            int *s_ee_topo = nullptr;
+            T *s_XmatsHom = s_extra_temp;
+            T *s_ee_temp = s_XmatsHom + 144;
+            grid::load_update_XmatsHom_helpers<T>(s_XmatsHom, s_ee_topo, s_xu, d_robotModel, s_ee_temp);
+            grid::end_effector_pose_inner<T, true>(s_eePos_cost, s_xu, s_XmatsHom, s_ee_topo, s_ee_temp, /*d_workspace*/nullptr, /*s_linalg_smem*/nullptr);
+        }
         __syncthreads();
-        
+
 		// if(threadIdx.x==0){
 		// 	printf("block %d with input %f,%f,%f,%f,%f,%f,%f\n", blockIdx.x, s_xu[7],s_xu[8],s_xu[9],s_xu[10],s_xu[11],s_xu[12],s_xu[13]);
 		// }
@@ -317,9 +330,20 @@ namespace gato_plant{
 		uint32_t offset;
 		T x_err, y_err, z_err, err;
 
-		grid::end_effector_positions_device<T>(s_eePos, s_xu, s_scratch, (grid::robotModel<T> *)d_robotModel);
-        __syncthreads();
-		grid::end_effector_positions_gradient_device<T>(s_eePos_grad, s_xu, s_scratch, (grid::robotModel<T> *)d_robotModel);
+		// EE pose + gradient via the caller-scratch _inner path (3-arg _device overloads declare
+		// their own extern __shared__). s_scratch holds s_XmatsHom[144] + s_ee_temp (32 for pose,
+		// 190 for gradient; the larger bounds it). dXhom computed internally (nullptr). Each call
+		// re-loads XmatsHom (matches grid's device wrappers). Only xyz columns are used below.
+		{
+			int *s_ee_topo = nullptr;
+			T *s_XmatsHom = s_scratch;
+			T *s_ee_temp = s_XmatsHom + 144;
+			grid::load_update_XmatsHom_helpers<T>(s_XmatsHom, s_ee_topo, s_xu, (grid::robotModel<T> *)d_robotModel, s_ee_temp);
+			grid::end_effector_pose_inner<T, true>(s_eePos, s_xu, s_XmatsHom, s_ee_topo, s_ee_temp, /*d_workspace*/nullptr, /*s_linalg_smem*/nullptr);
+			__syncthreads();
+			grid::load_update_XmatsHom_helpers<T>(s_XmatsHom, s_ee_topo, s_xu, (grid::robotModel<T> *)d_robotModel, s_ee_temp);
+			grid::end_effector_pose_gradient_inner<T, true>(s_eePos_grad, s_xu, s_XmatsHom, /*s_dXhom*/nullptr, s_ee_topo, s_ee_temp, /*d_workspace*/nullptr, /*s_linalg_smem*/nullptr);
+		}
         __syncthreads();
 
 		// if(threadIdx.x==0){

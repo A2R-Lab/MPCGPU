@@ -12,7 +12,7 @@ size_t get_kkt_smem_size(uint32_t state_size, uint32_t control_size){
                                   7 * state_size + 
                                   3 * control_size + 
                                   state_size*control_size + 
-                                  max(grid::EE_POS_SHARED_MEM_COUNT, grid::DEE_POS_SHARED_MEM_COUNT) + 
+                                  max(grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT, grid::END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_COUNT) +
                                   max((state_size/2)*(state_size + control_size + 1) + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared(), 3 + (state_size/2)*6));
 
     return smem_size;
