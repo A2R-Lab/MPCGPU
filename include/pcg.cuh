@@ -100,10 +100,12 @@ void pcg(
 
     bool max_iter_exit = true;
 
-    // populate shared memory
+    // populate shared memory. Zero the absent L (block 0) / R (last block) strips so
+    // bdmv runs one uniform full-width [L|D|R] matvec (glass::gemv) with no boundary
+    // cases — the zeroed strip multiplies the zeroed halo pad slot (see loadbdVec).
     for (unsigned ind = thread_id; ind < 3*states_sq; ind += block_dim){
-        if(block_id == 0 && ind < states_sq){ continue; }
-        if(block_id == knot_points-1 && ind >= 2*states_sq){ continue; }
+        if(block_id == 0 && ind < states_sq){ s_S[ind] = static_cast<T>(0); s_Pinv[ind] = static_cast<T>(0); continue; }
+        if(block_id == knot_points-1 && ind >= 2*states_sq){ s_S[ind] = static_cast<T>(0); s_Pinv[ind] = static_cast<T>(0); continue; }
 
         s_S[ind] = d_S[block_id*states_sq*3 + ind];
         s_Pinv[ind] = d_Pinv[block_id*states_sq*3 + ind];
@@ -140,11 +142,14 @@ void pcg(
     }
 
 
-    // eta = r * r_tilde
-    glass::dot<T, state_size>(s_eta_new_b, s_r_b, s_r_tilde);
+    // eta = r * r_tilde  (dot_lowmem leaves s_r_b / s_r_tilde intact; result in s_eta_new_b[0])
+    glass::dot_lowmem<T>(state_size, s_r_b, s_r_tilde, s_eta_new_b);
     if(thread_id == 0){ d_eta_new_temp[block_id] = s_eta_new_b[0]; }
     grid.sync(); //-------------------------------------
-    glass::reduce<T>(s_eta_new_b, knot_points, d_eta_new_temp);
+    // cross-block sum: load the per-block partials into shared, then in-place reduce → [0]
+    glass::copy<T>(knot_points, d_eta_new_temp, s_eta_new_b);
+    __syncthreads();
+    glass::reduce<T>(knot_points, s_eta_new_b);
     __syncthreads();
     eta = s_eta_new_b[0];
     
@@ -159,12 +164,14 @@ void pcg(
         bdmv<T>(s_upsilon,  s_S, s_p,state_size, knot_points-1, block_id);
         __syncthreads();
 
-        // alpha = eta / p * upsilon
-        glass::dot<T, state_size>(s_v_b, s_p_b, s_upsilon);
+        // alpha = eta / (p * upsilon)
+        glass::dot_lowmem<T>(state_size, s_p_b, s_upsilon, s_v_b);
         __syncthreads();
         if(thread_id == 0){ d_v_temp[block_id] = s_v_b[0]; }
         grid.sync(); //-------------------------------------
-        glass::reduce<T>(s_v_b, knot_points, d_v_temp);
+        glass::copy<T>(knot_points, d_v_temp, s_v_b);
+        __syncthreads();
+        glass::reduce<T>(knot_points, s_v_b);
         __syncthreads();
         alpha = eta / s_v_b[0];
         // lambda = lambda + alpha * p
@@ -183,12 +190,14 @@ void pcg(
         bdmv<T>(s_r_tilde, s_Pinv, s_r, state_size, knot_points-1, block_id);
         __syncthreads();
 
-        // eta = r * r_tilde
-        glass::dot<T, state_size>(s_eta_new_b, s_r_b, s_r_tilde);
+        // eta_new = r * r_tilde  (inputs preserved; result in s_eta_new_b[0])
+        glass::dot_lowmem<T>(state_size, s_r_b, s_r_tilde, s_eta_new_b);
         __syncthreads();
         if(thread_id == 0){ d_eta_new_temp[block_id] = s_eta_new_b[0]; }
         grid.sync(); //-------------------------------------
-        glass::reduce<T>(s_eta_new_b, knot_points, d_eta_new_temp);
+        glass::copy<T>(knot_points, d_eta_new_temp, s_eta_new_b);
+        __syncthreads();
+        glass::reduce<T>(knot_points, s_eta_new_b);
         __syncthreads();
         eta_new = s_eta_new_b[0];
 
