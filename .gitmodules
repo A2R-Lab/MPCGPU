@@ -7,3 +7,7 @@
 [submodule "GLASS"]
 	path = GLASS
 	url = git@github.com:A2R-lab/GLASS.git
+[submodule "GRiD"]
+	path = GRiD
+	url = git@github.com:A2R-Lab/GRiD.git
+	branch = modernizing-tests
