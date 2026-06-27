@@ -34,22 +34,17 @@ void compute_dz_kernel(uint32_t state_size, uint32_t control_size, uint32_t knot
             __syncthreads();
 
             // // compute BkT*lkp1
-            gato_ATx<T>(s_scratch,
-                    s_BkT,
-                    d_lambda+(set+1)*state_size,
-                    state_size,
-                    control_size);
+            glass::gemv<T, true, false>(state_size, control_size, static_cast<T>(1),
+                    s_BkT, d_lambda+(set+1)*state_size, s_scratch);
             __syncthreads();
 
             // subtract from rk
-            gato_vec_dif(s_scratch,
-                        d_g_val+set*(states_s_controls)+state_size,
-                        s_scratch,
-                        control_size);
+            glass::axpby<T>(control_size, static_cast<T>(1), d_g_val+set*(states_s_controls)+state_size,
+                        static_cast<T>(-1), s_scratch, s_scratch);
             __syncthreads();
 
             // multiply Rk_i*scratch in scratch + C
-            mat_vec_prod<T>( control_size, control_size,s_Rk_i,
+            glass::gemv<T, false, false>(control_size, control_size, static_cast<T>(1), s_Rk_i,
                                                             s_scratch,
                                                             s_scratch+control_size);
             __syncthreads();
@@ -79,11 +74,8 @@ void compute_dz_kernel(uint32_t state_size, uint32_t control_size, uint32_t knot
                 __syncthreads();
                             
                 // // compute AkT*lkp1 in scratch
-                gato_ATx(s_scratch,
-                        s_AkT,
-                        d_lambda+(set+1)*state_size,
-                        state_size,
-                        state_size);
+                glass::gemv<T, true, false>(state_size, state_size, static_cast<T>(1),
+                        s_AkT, d_lambda+(set+1)*state_size, s_scratch);
                 __syncthreads();
             }
             else{
@@ -94,22 +86,18 @@ void compute_dz_kernel(uint32_t state_size, uint32_t control_size, uint32_t knot
             
 
             // add lk to scratch
-            gato_vec_sum<T>(s_scratch,     // out
-                        d_lambda+set*state_size,
-                        s_scratch,
-                        state_size);
+            glass::axpby<T>(state_size, static_cast<T>(1), d_lambda+set*state_size,
+                        static_cast<T>(1), s_scratch, s_scratch);
             __syncthreads();
 
             // subtract from qk in scratch
-            gato_vec_dif<T>(s_scratch,
-                        d_g_val+set*(states_s_controls),
-                        s_scratch,
-                        state_size);
+            glass::axpby<T>(state_size, static_cast<T>(1), d_g_val+set*(states_s_controls),
+                        static_cast<T>(-1), s_scratch, s_scratch);
             __syncthreads();
-            
-            
+
+
             // multiply Qk_i(scratch) in Akt
-            mat_vec_prod<T>( state_size, state_size,s_Qk_i,
+            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Qk_i,
                                                         s_scratch,
                                                         s_AkT);
             __syncthreads();

@@ -71,8 +71,8 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             __syncthreads();//----------------------------------------------------------------
 
-            add_identity<T>(s_Q0, state_size, rho);
-            add_identity<T>(s_QN, state_size, rho);
+            glass::addI<T>(state_size, s_Q0, rho);
+            glass::addI<T>(state_size, s_QN, rho);
             
             __syncthreads();//----------------------------------------------------------------
             
@@ -83,9 +83,9 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 
             // invert Q_N, Q_0
-            loadIdentity<T>( state_size,state_size,s_Q0_i, s_QN_i);
+            glass::loadIdentity<T>(state_size, s_Q0_i); glass::loadIdentity<T>(state_size, s_QN_i);
             __syncthreads();//----------------------------------------------------------------
-            invertMatrix<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
+            glass::invertMatrix<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
             
             __syncthreads();//----------------------------------------------------------------
 
@@ -95,11 +95,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             
 
             // compute gamma
-            mat_vec_prod<T>( state_size, state_size,
-                s_Q0_i,                                    
-                s_q0,                                       
-                s_gamma_k 
-            );
+            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_gamma_k);
             __syncthreads();//----------------------------------------------------------------
             
             // save -Q0_i in spot 00 in S
@@ -109,11 +105,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 
             // compute Q0^{-1}q0
-            mat_vec_prod<T>( state_size, state_size,
-                s_Q0_i,
-                s_q0,
-                s_Q0
-            );
+            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_Q0);
             __syncthreads();//----------------------------------------------------------------
 
 
@@ -168,18 +160,14 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             __syncthreads();//----------------------------------------------------------------
 
-            add_identity<T>(s_Qk, state_size, rho);
-            add_identity<T>(s_Qkp1, state_size, rho);
-            add_identity<T>(s_Rk, control_size, rho);
+            glass::addI<T>(state_size, s_Qk, rho);
+            glass::addI<T>(state_size, s_Qkp1, rho);
+            glass::addI<T>(control_size, s_Rk, rho);
             
             // Invert Q, Qp1, R 
-            loadIdentity<T>( state_size,state_size,control_size,
-                s_Qk_i, 
-                s_Qkp1_i, 
-                s_Rk_i
-            );
+            glass::loadIdentity<T>(state_size, s_Qk_i); glass::loadIdentity<T>(state_size, s_Qkp1_i); glass::loadIdentity<T>(control_size, s_Rk_i);
             __syncthreads();//----------------------------------------------------------------
-            invertMatrix<T>( state_size,state_size,control_size,state_size,
+            glass::invertMatrix<T>( state_size,state_size,control_size,state_size,
                 s_Qk, 
                 s_Qkp1, 
                 s_Rk, 
@@ -238,32 +226,20 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // compute Q_{k+1}^{-1}q_{k+1} - IntegratorError in gamma
-            mat_vec_prod<T>( state_size, state_size,
-                s_Qkp1_i,
-                s_qkp1,
-                s_gamma_k
-            );
+            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Qkp1_i, s_qkp1, s_gamma_k);
             for(unsigned i = threadIdx.x; i < state_size; i += blockDim.x){
                 s_gamma_k[i] -= d_c[(blockrow*state_size)+i];
             }
             __syncthreads();//----------------------------------------------------------------
 
             // compute -AQ^{-1}q for gamma         temp storage in extra temp
-            mat_vec_prod<T>( state_size, state_size,
-                s_phi_k,
-                s_qk,
-                s_extra_temp
-            );
+            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_phi_k, s_qk, s_extra_temp);
             
 
             __syncthreads();//----------------------------------------------------------------
             
             // compute -BR^{-1}r for gamma           temp storage in extra temp + states
-            mat_vec_prod<T>( state_size, control_size,
-                s_Qkp1,
-                s_rk,
-                s_extra_temp + state_size
-            );
+            glass::gemv<T, false, false>(state_size, control_size, static_cast<T>(1), s_Qkp1, s_rk, s_extra_temp + state_size);
 
             __syncthreads();//----------------------------------------------------------------
             
