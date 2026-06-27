@@ -90,7 +90,16 @@ typedef float linsys_t;
 #endif
 
 #ifndef QD_COST
-#define QD_COST .0001 
+#define QD_COST .0001
+#endif
+
+// Joint-position (posture) regularization toward q_nom=0. The EE-position-only task leaves the
+// arm's redundant DOFs (e.g. iiwa joint 7, whose EE-position gradient is identically zero) in the
+// cost nullspace; with the correct stiff dynamics (Minv up to ~392) those joints are unstable free
+// integrators. A small Q_COST anchors them without perturbing the strongly EE-constrained joints.
+// Default 0 preserves the original EE-only cost; set >0 (e.g. 1e-3) to stabilize the corrected robot.
+#ifndef Q_COST
+#define Q_COST 0.0
 #endif
 
 

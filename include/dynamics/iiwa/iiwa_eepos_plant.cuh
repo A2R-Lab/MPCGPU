@@ -51,9 +51,9 @@ namespace gato_plant{
 	constexpr T GRAVITY() {return static_cast<T>(0.0);}
 
 
-	// template<class T>
-	// __host__ __device__
-	// constexpr T COST_Q1() {return static_cast<T>(Q_COST);}
+	template<class T>
+	__host__ __device__
+	constexpr T COST_Q1() {return static_cast<T>(Q_COST);}
 	
 	template<class T>
 	__host__ __device__
@@ -244,16 +244,16 @@ namespace gato_plant{
 	__device__
 	T trackingcost(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *s_xu, T *s_eePos_traj, T *s_temp, const grid::robotModel<T> *d_robotModel){
 		
-        // const T Q_cost = COST_Q1<T>();
+        const T Q_cost = COST_Q1<T>();
 		const T QD_cost = COST_QD<T>();
 		const T R_cost = COST_R<T>();
-        
+
         T err;
         T val = 0;
-		
+
         // QD and R penalty
 		const uint32_t threadsNeeded = state_size/2 + control_size * (blockIdx.x < knot_points - 1);
-        
+
 		T *s_cost_vec = s_temp;
 		T *s_eePos_cost = s_cost_vec + threadsNeeded + 3;
         T *s_extra_temp = s_eePos_cost + 6;
@@ -263,8 +263,11 @@ namespace gato_plant{
 
         for(int i = threadIdx.x; i < threadsNeeded; i += blockDim.x){
 			if(i < state_size/2){
+                // joint-velocity penalty + joint-position (posture) regularization toward q_nom=0
                 err = s_xu[i + state_size/2];
                 val = QD_cost * err * err;
+                T q_err = s_xu[i];
+                val += Q_cost * q_err * q_err;
 			}
 			else{
 				err = s_xu[i+state_size/2];
@@ -318,7 +321,7 @@ namespace gato_plant{
 										T *s_temp,
 										void *d_robotModel)
 	{	
-		// const T Q_cost = COST_Q1<T>();
+		const T Q_cost = COST_Q1<T>();
 		const T QD_cost = COST_QD<T>();
 		const T R_cost = COST_R<T>();
 
@@ -384,7 +387,14 @@ namespace gato_plant{
 				//hessian
 				for(int j = 0; j < state_size; j++){
 					if(j < state_size / 2 && i < state_size / 2){
-						s_Qk[i*state_size + j] = s_qk[i] * s_qk[j];
+						// EE-position Gauss-Newton Hessian J^T J (J = 3xNQ position Jacobian, rows xyz)
+						// + posture (Q_cost) regularization on the diagonal. NOTE: this is the true
+						// J^T J; the legacy code used the rank-1 outer product (J^T e)(J^T e)^T of the
+						// gradient, a degenerate curvature that destabilized the corrected stiff robot.
+						T jtj = s_eePos_grad[6*i + 0] * s_eePos_grad[6*j + 0]
+						      + s_eePos_grad[6*i + 1] * s_eePos_grad[6*j + 1]
+						      + s_eePos_grad[6*i + 2] * s_eePos_grad[6*j + 2];
+						s_Qk[i*state_size + j] = jtj + ((i == j) ? Q_cost : static_cast<T>(0));
 					}
 					else{
 						s_Qk[i*state_size + j] = (i == j) ? QD_cost : static_cast<T>(0);
@@ -398,6 +408,14 @@ namespace gato_plant{
 					s_Rk[offset*control_size+j] = (offset == j) ? R_cost : static_cast<T>(0);
 				}
 			}
+		}
+		__syncthreads();
+
+		// Add the posture-regularization gradient (Q_cost*(q - q_nom), q_nom=0) to the joint-position
+		// rows of s_qk. Done AFTER the Hessian loop so the EE Gauss-Newton outer product above reads
+		// the unpolluted EE-only gradient; the QP consumes the full gradient here.
+		for (int i = threadIdx.x; i < state_size / 2; i += blockDim.x){
+			s_qk[i] += Q_cost * s_xu[i];
 		}
 	}
 
