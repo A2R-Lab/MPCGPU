@@ -3,3 +3,6 @@
 *.exe
 *.o
 *.so
+
+# Runtime experiment output (track_iiwa_* writes results here)
+tmp/
