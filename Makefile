@@ -21,6 +21,12 @@ examples/qdldl.exe:
 test_fd_parity:
 	$(NVCC) $(CFLAGS) examples/test_fd_parity.cu -o examples/test_fd_parity.exe
 
+# Self-consistent reference generator (grid.cuh FK+ID at the corrected robot). Run from repo root:
+#   ./tools/gen_reference.exe examples/trajfiles/0_0 <amp_scale> <period_s>
+# amp_scale 0 => regulation/hold; reference dt is locked to TIMESTEP in settings.cuh.
+gen_ref:
+	$(NVCC) $(CFLAGS) tools/gen_reference.cu -o tools/gen_reference.exe
+
 # Pull GRiD/GLASS/GBD-PCG (and their nested submodules) to the pinned commits
 submodules:
 	git submodule update --init --recursive

@@ -53,6 +53,13 @@ typedef float linsys_t;
  *******************************************************************************/
 
 
+// Reference/integration timestep (seconds). The reference trajectory is spaced at TIMESTEP and the
+// simulator integrates the real robot with the same TIMESTEP, so the generator (tools/gen_reference.cu)
+// and the tracker MUST share this value — both read it from here. Aligned to GATO's iiwa14 fig8 (0.01).
+#ifndef TIMESTEP
+#define TIMESTEP 0.01
+#endif
+
 #ifndef CONST_UPDATE_FREQ
 #define CONST_UPDATE_FREQ 1
 #endif
@@ -92,6 +99,12 @@ typedef float linsys_t;
 #endif
 #ifndef N_COST
 #define N_COST 50.0          // terminal EE-position weight
+#endif
+#ifndef Q_COST
+#define Q_COST 0.0           // joint-POSITION cost toward q_nom (0 => EE-only). A small value makes the
+                             // state Hessian full-rank PD (the EE-position term alone is rank<=3 → the
+                             // Schur complement is only PSD → cooperative PCG can break down on it); a
+                             // larger value turns this into a joint-SPACE tracking cost. See iiwa plant.
 #endif
 #ifndef QD_COST
 #define QD_COST 1e-2         // joint-velocity regularization

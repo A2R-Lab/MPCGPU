@@ -1,14 +1,17 @@
-// Generate a SELF-CONSISTENT reference trajectory for the corrected iiwa14 + gravity, using
-// grid.cuh's own inverse dynamics (controls) and forward kinematics (EE pose) — so the reference
-// is an exact, dynamically-feasible trajectory of the same model the solver and sim use. A smooth
-// per-joint sinusoid keeps it inside joint limits. Writes MPCGPU trajfiles:
-//   <prefix>_eepos.traj : per-row 6-wide EE pose (xyz + orientation; cost uses xyz)
-//   <prefix>_traj.csv   : per-row 21-wide [q(7) qd(7) u(7)]  (state + gravity-consistent control)
+// Generate an EE-SPACE figure-8 tracking problem for the corrected iiwa14 + gravity, mirroring GATO's
+// run_mpc_fig8: the reference is a smooth Cartesian figure-8 of the END-EFFECTOR POSITION (it does NOT
+// command any joint motion — critical, see the nullspace note in main), and the warm-start is a
+// gravity-compensated HOLD at q_start. grid.cuh's own FK gives the EE center and ID gives the hold
+// control, so everything is consistent with the model the solver and sim use. Writes MPCGPU trajfiles:
+//   <prefix>_eepos.traj : per-row 6-wide EE pose (figure-8 xyz + held orientation; cost uses xyz)
+//   <prefix>_traj.csv   : per-row 21-wide [q(7) qd(7) u(7)]  (constant hold warm-start)
+// Args: <prefix> <amp_scale: 0=>regulation/hold, 1=>full figure-8> <period_s>.
 #include <cstdio>
 #include <cmath>
 #include <vector>
 #include <string>
 #include "dynamics/rbd_plant.cuh"
+#include "settings.cuh"   // TIMESTEP — keep the reference spacing locked to the tracker's integration dt
 
 template<typename T>
 __global__ void k_id(T* d_u, const T* d_q, const T* d_qd, const T* d_qdd, void* d_rm, T gravity){
@@ -32,18 +35,29 @@ __global__ void k_fk(T* d_ee, const T* d_q, void* d_rm){
 int main(int argc, char** argv){
     using T = float;
     const int NSTEPS = 700;
-    const double dt = 0.015625;
+    const double dt = TIMESTEP;   // shared with the tracker via settings.cuh
     const T gravity = gato_plant::GRAVITY<T>();
     std::string prefix = (argc > 1) ? argv[1] : "examples/trajfiles/0_0";
 
-    // start config (within iiwa14 joint limits) + smooth per-joint sinusoid
-    double q0[7]   = {0.40, 0.80, 0.30, -1.10, 0.50, 0.60, 0.30};
-    double amp[7]  = {0.35, 0.30, 0.35, 0.30, 0.40, 0.45, 0.50};
-    double period  = 4.0;                // seconds
-    // argv[2] = amplitude scale (0 => regulation/hold); argv[3] = period seconds.
+    // ---------------------------------------------------------------------------------------------
+    // EE-SPACE figure-8 reference + constant "hold" warm-start (mirrors GATO's run_mpc_fig8 setup).
+    // RATIONALE: the iiwa is a 7-DOF arm tracking a 3-DOF EE-POSITION task, so there is a 4-D cost
+    // nullspace — including joint 7, whose EE-position Jacobian column is ~0 and whose position is
+    // NOT penalized (s_Q[q-block]=0). A reference that COMMANDS joint motion (esp. on joint 7, the
+    // stiff Minv[6,6]≈392 mode) is untrackable by an EE-only cost → the nullspace runs away → the
+    // closed loop diverges (verified: even the exact QDLDL solve diverges on a joint-space sinusoid).
+    // So the reference must live in EE space and NEVER command the nullspace joints; the solver then
+    // discovers a joint trajectory and the nullspace stays bounded (qd_cost damps it). The warm-start
+    // is a gravity-compensated hold at q_start — the solver bends it toward the moving EE figure-8.
+    double q0[7] = {0.40, 0.80, 0.30, -1.10, 0.50, 0.60, 0.30};   // start config (within iiwa14 limits)
+    // EE figure-8 (GATO figure8): dx = A*sin(wt), dz = A*sin(2wt)/2, rotated theta about z, added to
+    // the q_start EE position so it stays in the reachable workspace. amp_scale 0 => pure hold/regulation.
+    double A_default = 0.12;              // figure-8 amplitude (m); modest => reachable + gently trackable
+    double period    = 4.0;              // seconds per figure-8 cycle
+    double theta     = M_PI/4.0;          // rotation of the figure-8 plane about z (GATO default)
     double amp_scale = (argc > 2) ? atof(argv[2]) : 1.0;
     if (argc > 3) period = atof(argv[3]);
-    for(int j=0;j<7;j++) amp[j] *= amp_scale;
+    double A = A_default * amp_scale;
     double omega = 2.0 * M_PI / period;
 
     auto* d_rm = grid::init_robotModel<T>();
@@ -51,37 +65,47 @@ int main(int argc, char** argv){
     cudaMalloc(&d_q,7*sizeof(T)); cudaMalloc(&d_qd,7*sizeof(T)); cudaMalloc(&d_qdd,7*sizeof(T));
     cudaMalloc(&d_u,7*sizeof(T)); cudaMalloc(&d_ee,6*sizeof(T));
 
+    // --- compute the EE center (FK at q_start) and the hold control (ID at q_start, qd=qdd=0) ONCE ---
+    T hq0[7], hqz[7] = {0,0,0,0,0,0,0};
+    for(int j=0;j<7;j++) hq0[j] = (T)q0[j];
+    size_t id_smem = grid::INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_COUNT*sizeof(T);
+    size_t fk_smem = grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT*sizeof(T);
+    cudaMemcpy(d_q,hq0,7*sizeof(T),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_qd,hqz,7*sizeof(T),cudaMemcpyHostToDevice);
+    cudaMemcpy(d_qdd,hqz,7*sizeof(T),cudaMemcpyHostToDevice);
+    k_fk<T><<<1,32,fk_smem>>>(d_ee,d_q,d_rm);
+    k_id<T><<<1,32,id_smem>>>(d_u,d_q,d_qd,d_qdd,d_rm,gravity);
+    cudaDeviceSynchronize();
+    T center[6], u_hold[7];
+    cudaMemcpy(center,d_ee,6*sizeof(T),cudaMemcpyDeviceToHost);
+    cudaMemcpy(u_hold,d_u,7*sizeof(T),cudaMemcpyDeviceToHost);
+
     FILE* fee = fopen((prefix+"_eepos.traj").c_str(), "w");
     FILE* fxu = fopen((prefix+"_traj.csv").c_str(), "w");
     if(!fee || !fxu){ printf("cannot open output files\n"); return 1; }
 
     for(int t=0; t<NSTEPS; t++){
         double tm = t*dt;
-        T hq[7],hqd[7],hqdd[7];
-        for(int j=0;j<7;j++){
-            hq[j]   = (T)(q0[j] + amp[j]*sin(omega*tm + j*M_PI/4.0));
-            hqd[j]  = (T)(amp[j]*omega*cos(omega*tm + j*M_PI/4.0));
-            hqdd[j] = (T)(-amp[j]*omega*omega*sin(omega*tm + j*M_PI/4.0));
-        }
-        cudaMemcpy(d_q,hq,7*sizeof(T),cudaMemcpyHostToDevice);
-        cudaMemcpy(d_qd,hqd,7*sizeof(T),cudaMemcpyHostToDevice);
-        cudaMemcpy(d_qdd,hqdd,7*sizeof(T),cudaMemcpyHostToDevice);
-        size_t id_smem = grid::INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_COUNT*sizeof(T);
-        size_t fk_smem = grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT*sizeof(T);
-        k_id<T><<<1,32,id_smem>>>(d_u,d_q,d_qd,d_qdd,d_rm,gravity);
-        k_fk<T><<<1,32,fk_smem>>>(d_ee,d_q,d_rm);
-        cudaDeviceSynchronize();
-        T hu[7],hee[6];
-        cudaMemcpy(hu,d_u,7*sizeof(T),cudaMemcpyDeviceToHost);
-        cudaMemcpy(hee,d_ee,6*sizeof(T),cudaMemcpyDeviceToHost);
-        // eepos.traj row
+        // figure-8 delta in the (x,z) plane, rotated theta about z, added to the held EE center
+        double dx_u = A*sin(omega*tm);
+        double dz   = A*sin(2.0*omega*tm)/2.0;
+        double dx   =  cos(theta)*dx_u;   // rotate [dx_u, 0, dz] about z (z-component unchanged)
+        double dy   =  sin(theta)*dx_u;
+        T hee[6];
+        hee[0] = (T)(center[0] + dx);
+        hee[1] = (T)(center[1] + dy);
+        hee[2] = (T)(center[2] + dz);
+        hee[3] = center[3]; hee[4] = center[4]; hee[5] = center[5];   // hold orientation (cost uses xyz)
+        // eepos.traj row (6-wide EE pose; cost reads xyz)
         for(int i=0;i<6;i++) fprintf(fee, "%.9g%s", hee[i], i<5?",":"\n");
-        // xu_traj row: q, qd, u
-        for(int j=0;j<7;j++) fprintf(fxu, "%.9g,", hq[j]);
-        for(int j=0;j<7;j++) fprintf(fxu, "%.9g,", hqd[j]);
-        for(int j=0;j<7;j++) fprintf(fxu, "%.9g%s", hu[j], j<6?",":"\n");
+        // xu_traj row: constant hold warm-start [q_start, 0, gravity-comp(q_start)]
+        for(int j=0;j<7;j++) fprintf(fxu, "%.9g,", q0[j]);
+        for(int j=0;j<7;j++) fprintf(fxu, "%.9g,", 0.0);
+        for(int j=0;j<7;j++) fprintf(fxu, "%.9g%s", u_hold[j], j<6?",":"\n");
     }
     fclose(fee); fclose(fxu);
-    printf("wrote %s_eepos.traj + %s_traj.csv (%d steps, gravity=%.3f)\n", prefix.c_str(), prefix.c_str(), NSTEPS, gravity);
+    printf("wrote %s_eepos.traj + %s_traj.csv (%d steps, EE fig-8 A=%.3f m, period=%.2f s, gravity=%.3f)\n",
+           prefix.c_str(), prefix.c_str(), NSTEPS, A, period, gravity);
+    printf("  EE center (FK q_start) = [%.4f %.4f %.4f]\n", center[0], center[1], center[2]);
     return 0;
 }

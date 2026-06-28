@@ -15,7 +15,7 @@ int main(){
     constexpr uint32_t state_size = grid::NUM_JOINTS*2;
     constexpr uint32_t control_size = grid::NUM_JOINTS;
     constexpr uint32_t knot_points = KNOT_POINTS;
-    const linsys_t timestep = .015625;
+    const linsys_t timestep = TIMESTEP;
 
     const uint32_t traj_test_iters = TEST_ITERS;
 

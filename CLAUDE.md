@@ -49,12 +49,23 @@ Parameters in `include/common/settings.cuh` are all `#ifndef`-guarded → overri
 ## ⚠ Corrected dynamics + the tracking benchmark
 
 The regenerated grid is **pinocchio-exact**; the *old vendored* grid had a ~2×-wrong mass matrix. The
-correct iiwa is **stiff** (last-joint inertia ≈ 0.003 → `Minv[6,6] ≈ 392`). The shipped
-`examples/trajfiles/` (warm-start + reference) were generated for the *wrong* robot, so the EE-position-only
-MPC is **closed-loop unstable** on them with the corrected dynamics (verified: per-step SQP converges, all
-gradients FD-exact, yet the closed loop diverges; not fixable by cost weights). **Tracking quality is NOT a
-valid gate for the modernization.** Reproducing the tracking benchmark needs regenerated trajectories for the
-correct robot (no in-repo trajopt) or a controller redesign — logged as a follow-up.
+correct iiwa is **stiff** (last-joint inertia ≈ 0.003 → `Minv[6,6] ≈ 392`). The shipped `examples/trajfiles/`
+were generated for the *wrong* robot, so the MPC is closed-loop **unstable** on them. **Tracking quality is
+NOT a gate for the modernization** (the dynamics/gradient gates are; all green).
+
+**Why it diverged, and the fix (diagnosed 2026-06-28).** The iiwa is 7-DOF tracking a 3-DOF EE-*position*
+task → a 4-D cost nullspace that includes **joint 7** (its EE-position Jacobian column is ~0, and `s_Q[q-block]
+= 0` so its position is uncosted). On the stiff robot joint 7 is a high-gain free integrator. A reference that
+**commands joint motion** — as the old `gen_reference.cu` joint-space sinusoid did, with the *largest* sweep on
+joint 7 — is untrackable by an EE-only cost → the nullspace runs away → **even the exact QDLDL solve diverges**
+(the cooperative PCG just NaNs instead, harder divergence; it is NOT a PCG or co-residency bug — this GPU's
+co-resident cap is 850 blocks ≫ N). Regulation/hold tracks ~0 fine; only commanded nullspace motion diverges.
+GATO tracks fig8 with the *identical* cost because its reference is a **pure EE-space figure-8** that never
+commands joints. So `tools/gen_reference.cu` now generates an **EE-space figure-8 reference + a constant
+gravity-comp hold warm-start** (mirrors GATO's `run_mpc_fig8`); `make gen_ref`, then
+`./tools/gen_reference.exe examples/trajfiles/0_0 <amp_scale> <period_s>` (amp_scale 0 ⇒ regulation). The
+reference dt is locked to `TIMESTEP` (settings.cuh, default 0.01, shared with the tracker). Validate with
+`tools/validate_track.cu` (single run, prefix arg, reports mean/max/final tracking).
 
 Cost notes (`iiwa_eepos_plant.cuh`): the EE-position cost Hessian is the true Gauss-Newton `JᵀJ` (the legacy
 code used the rank-1 gradient outer product `(Jᵀe)(Jᵀe)ᵀ`, fixed). `Q_COST` (default 0) adds joint-posture
