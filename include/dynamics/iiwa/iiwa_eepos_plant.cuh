@@ -48,7 +48,10 @@ namespace gato_plant{
 	constexpr T PI() {return static_cast<T>(3.14159);}
 	template<class T>
 	__host__ __device__
-	constexpr T GRAVITY() {return static_cast<T>(0.0);}
+	// Physical gravity, matching GATO and the pinocchio sim convention (GRiD applies +g as an
+	// upward base accel, so -9.81 = physical downward gravity). The solver and the sim both use
+	// this value, and the shared reference trajectory is generated with it, so all are consistent.
+	constexpr T GRAVITY() {return static_cast<T>(-9.81);}
 
 	// Dimension aliases for the grid_plant::tracking_cost adapters (mirror GATO's plant).
 	inline constexpr int NQ  = grid::NUM_JOINTS;      // joints
