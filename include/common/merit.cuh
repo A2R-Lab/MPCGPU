@@ -9,8 +9,11 @@
 template <typename T>
 size_t get_merit_smem_size(uint32_t state_size, uint32_t control_size)
 {
-    return sizeof(T) * (6 + (2 * state_size + control_size ) + 
-                        ((int) 1.5 * state_size) + gato_plant::forwardDynamics_TempMemSize_Shared());
+    // s_temp is shared by integratorError (state_size + forwardDynamics scratch) and the cost
+    // value adapter (trackingCostValue_TempMemCt, which includes the EE-pose arena).
+    return sizeof(T) * ((6 + 2 * state_size + control_size) +
+                        max((size_t)(state_size + gato_plant::forwardDynamics_TempMemSize_Shared()),
+                            (size_t)gato_plant::trackingCostValue_TempMemCt<T>()));
 }
 
 // cost compute for line search
@@ -98,7 +101,7 @@ void ls_gato_compute_merit(uint32_t state_size,
 // cost compute for non line search
 template <typename T, unsigned INTEGRATOR_TYPE = 0, bool ANGLE_WRAP = false>
 __global__
-void compute_merit(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *d_xu, T *d_eePos_traj, T mu, T dt, void *d_dynMem_const, T *d_merit_out)
+void compute_merit(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *d_xu, T *d_eePos_traj, T mu, T dt, void *d_dynMem_const, T *d_merit_temp)
 {
     grid::robotModel<T> *d_robotModel = (grid::robotModel<T> *)d_dynMem_const;
     const cooperative_groups::thread_block block = cooperative_groups::this_thread_block();
@@ -137,7 +140,20 @@ void compute_merit(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 
         if(thread_id == 0){
             pointmerit = Jk + mu*ck;
-            atomicAdd(d_merit_out, pointmerit);
+            // Deterministic: write this knot's merit to its own slot (no atomicAdd, whose
+            // cross-block float accumulation order varied run-to-run). reduce_merit sums in
+            // a fixed order. This entropy source was amplified by an unstable closed loop.
+            d_merit_temp[knot] = pointmerit;
         }
     }
+}
+
+// Fixed-order reduction of the per-knot merits (deterministic replacement for the atomicAdd).
+template <typename T>
+__global__
+void reduce_merit(uint32_t knot_points, T *d_merit_temp, T *d_merit_out)
+{
+    glass::reduce<T>(knot_points, d_merit_temp);
+    __syncthreads();
+    if(threadIdx.x == 0){ d_merit_out[0] = d_merit_temp[0]; }
 }

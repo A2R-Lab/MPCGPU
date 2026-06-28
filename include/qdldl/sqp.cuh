@@ -214,16 +214,17 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 #endif
 
 
-    ///TODO: atomic race conditions here aren't fixed but don't seem to be problematic
+    // Deterministic merit: per-knot temp (no atomicAdd) + fixed-order reduce.
     compute_merit<T><<<knot_points, MERIT_THREADS, merit_smem_size>>>(
         state_size, control_size, knot_points,
-        d_xu, 
-        d_eePos_traj, 
-        static_cast<T>(10), 
-        timestep, 
-        d_dynMem_const, 
-        d_merit_initial
+        d_xu,
+        d_eePos_traj,
+        static_cast<T>(10),
+        timestep,
+        d_dynMem_const,
+        d_merit_temp
     );
+    reduce_merit<T><<<1, MERIT_THREADS>>>(knot_points, d_merit_temp, d_merit_initial);
     gpuErrchk(cudaMemcpyAsync(&h_merit_initial, d_merit_initial, sizeof(T), cudaMemcpyDeviceToHost));
     gpuErrchk(cudaPeekAtLastError());
 

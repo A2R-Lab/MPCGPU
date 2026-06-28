@@ -7,13 +7,16 @@ size_t get_kkt_smem_size(uint32_t state_size, uint32_t control_size){
     const uint32_t states_sq = state_size * state_size;
     const uint32_t controls_sq = control_size * control_size;
 
-    size_t smem_size = sizeof(T)*(3*states_sq + 
-                                  controls_sq + 
-                                  7 * state_size + 
-                                  3 * control_size + 
-                                  state_size*control_size + 
-                                  max(grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT, grid::END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_COUNT) +
-                                  max((state_size/2)*(state_size + control_size + 1) + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared(), 3 + (state_size/2)*6));
+    // s_extra_temp is shared (sequentially) by integratorAndGradient and the cost grad/hess. The
+    // grid_plant cost adapter's TempMemCt already includes the EE-pose-gradient arena; the
+    // _lastblock terminal call carves a throwaway R/r (controls_sq + control_size) from its head.
+    size_t smem_size = sizeof(T)*(3*states_sq +
+                                  controls_sq +
+                                  7 * state_size +
+                                  3 * control_size +
+                                  state_size*control_size +
+                                  max((state_size/2)*(state_size + control_size + 1) + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared(),
+                                      controls_sq + control_size + gato_plant::trackingCostGradHess_TempMemCt<T>()));
 
     return smem_size;
 }

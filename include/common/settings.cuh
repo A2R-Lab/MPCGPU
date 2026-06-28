@@ -81,25 +81,37 @@ typedef float linsys_t;
 #endif 
 
 
-#ifndef R_COST
-	#if KNOT_POINTS == 64
-#define R_COST .001 
-	#else 
-#define R_COST .0001 
-	#endif
+// ---------------------------------------------------------------------------------------------
+// Cost weights for grid_plant::tracking_cost (the unified GATO/MPCGPU cost recipe: EE-position +
+// quadratic state/input regularization + joint/velocity/torque barriers). Defaults are GATO's
+// iiwa14 FIG8 values so MPCGPU, GATO, and the CPU baseline solve the IDENTICAL problem. All are
+// -D overridable. EE_COST is the running EE-position weight; N_COST is the (stronger) terminal
+// weight — the terminal emphasis the legacy EE-only cost lacked.
+#ifndef EE_COST
+#define EE_COST 2.0          // q_cost: running EE-position weight
 #endif
-
+#ifndef N_COST
+#define N_COST 50.0          // terminal EE-position weight
+#endif
 #ifndef QD_COST
-#define QD_COST .0001
+#define QD_COST 1e-2         // joint-velocity regularization
+#endif
+#ifndef U_COST
+#define U_COST 2e-6          // control regularization
+#endif
+#ifndef Q_LIM_COST
+#define Q_LIM_COST 0.01      // joint-position barrier weight
+#endif
+#ifndef VEL_LIM_COST
+#define VEL_LIM_COST 0.0     // joint-velocity barrier weight
+#endif
+#ifndef CTRL_LIM_COST
+#define CTRL_LIM_COST 0.0    // control barrier weight
 #endif
 
-// Joint-position (posture) regularization toward q_nom=0. The EE-position-only task leaves the
-// arm's redundant DOFs (e.g. iiwa joint 7, whose EE-position gradient is identically zero) in the
-// cost nullspace; with the correct stiff dynamics (Minv up to ~392) those joints are unstable free
-// integrators. A small Q_COST anchors them without perturbing the strongly EE-constrained joints.
-// Default 0 preserves the original EE-only cost; set >0 (e.g. 1e-3) to stabilize the corrected robot.
-#ifndef Q_COST
-#define Q_COST 0.0
+// Legacy alias: the old EE-only cost used R_COST for the control weight. Kept for any external -D.
+#ifndef R_COST
+#define R_COST U_COST
 #endif
 
 
