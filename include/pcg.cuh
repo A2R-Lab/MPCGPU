@@ -64,9 +64,10 @@ void pcg(
          T *d_eta_new_temp,
          uint32_t *d_iters, 
          bool *d_max_iter_exit,
-         uint32_t max_iter, 
-         T exit_tol)
-{   
+         uint32_t max_iter,
+         T exit_tol,
+         T rel_tol)
+{
 
     const cgrps::thread_block block = cgrps::this_thread_block();	 
     const cgrps::grid_group grid = cgrps::this_grid();
@@ -166,6 +167,13 @@ void pcg(
         return;
     }
 
+    // Capture the initial preconditioned residual for the RELATIVE stopping test below.
+    // glass::pcg (the single-block analog) stops on |rho| < abs_tol + rel_tol*|rho_init|;
+    // GBD-PCG must use the SAME relative criterion or it over-solves: an absolute-only
+    // threshold demands |eta_init|/exit_tol orders of reduction, which on a large-RHS
+    // (moving-reference) system is thousands of iters vs the ~100-200 a relative test needs.
+    const T eta_init = abs(eta);
+
 
     // MAIN PCG LOOP
 
@@ -214,7 +222,7 @@ void pcg(
         __syncthreads();
         eta_new = s_eta_new_b[0];
 
-        if(abs(eta_new) < exit_tol){ iter++; max_iter_exit = false; break; }
+        if(abs(eta_new) < exit_tol + rel_tol * eta_init){ iter++; max_iter_exit = false; break; }
 
         // beta = eta_new / eta
         // eta = eta_new

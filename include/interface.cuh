@@ -123,6 +123,7 @@ uint32_t solvePCG(const uint32_t state_size,
         (void *)&d_pcg_exit,
         (void *)&config->pcg_max_iter,
         (void *)&config->pcg_exit_tol,
+        (void *)&config->pcg_rel_tol,
 		(void *)&config->empty_pinv
     };
     uint32_t h_pcg_iters;

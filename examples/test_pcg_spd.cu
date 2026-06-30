@@ -93,6 +93,7 @@ int main() {
 
     pcg_config<float> config;
     config.pcg_exit_tol = 1e-8f;
+    config.pcg_rel_tol = 1e-10f;   // correctness gate: solve fully (not a convergence-rate test)
     config.pcg_max_iter = d * N * 4;
 
     uint32_t iters = solvePCG<float>(d, N, d_S, d_Pinv, d_gamma, d_lambda,
