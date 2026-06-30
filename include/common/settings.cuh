@@ -172,9 +172,17 @@ LINSYS_SOLVE = 0 uses qdldl as the underlying linear system solver */
 		#endif	
 	#else 
 #define PCG_MAX_ITER -1
-#define PCG_EXIT_TOL -1 
+#define PCG_EXIT_TOL -1
 	#endif
 
+#endif
+
+// Relative tolerance on the preconditioned residual: PCG stops when
+// |eta| < pcg_exit_tol + PCG_RES_TOL*|eta_init| (matches glass::pcg's rel_tol).
+// A relative test is scale-invariant; an absolute-only threshold over-solves
+// large-RHS (moving-reference) systems by thousands of iterations.
+#ifndef PCG_RES_TOL
+#define PCG_RES_TOL 1e-5
 #endif
 
 

@@ -165,7 +165,8 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         (void *)&d_pcg_iters,
         (void *)&d_pcg_exit,
         (void *)&config.pcg_max_iter,
-        (void *)&config.pcg_exit_tol
+        (void *)&config.pcg_exit_tol,
+        (void *)&config.pcg_rel_tol
     };
     size_t ppcg_kernel_smem_size = pcgSharedMemSize<T>(state_size, knot_points);
 

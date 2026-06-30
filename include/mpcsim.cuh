@@ -212,7 +212,8 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 #if LINSYS_SOLVE == 1
     pcg_config<T> config;
     config.pcg_block = PCG_NUM_THREADS;
-    config.pcg_exit_tol = linsys_exit_tol;
+    config.pcg_exit_tol = linsys_exit_tol;   // absolute floor on preconditioned residual eta
+    config.pcg_rel_tol = PCG_RES_TOL;        // relative tol (eta vs eta_init), matches glass::pcg
     config.pcg_max_iter = PCG_MAX_ITER;
 #endif
 
@@ -222,14 +223,16 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 #if REMOVE_JITTERS
 	#if LINSYS_SOLVE == 1
     config.pcg_exit_tol = 1e-11;
+    config.pcg_rel_tol = 1e-11;   // tight one-time warm-start solve (preserve original intent)
     config.pcg_max_iter = 10000;
-    
+
     for(int j = 0; j < 100; j++){
         sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, 1e-3);
         gpuErrchk(cudaMemcpy(d_xu, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
     }
     rho = 1e-3;
     config.pcg_exit_tol = linsys_exit_tol;
+    config.pcg_rel_tol = PCG_RES_TOL;
     config.pcg_max_iter = PCG_MAX_ITER;
 	#else
     for(int j = 0; j < 100; j++){
@@ -396,8 +399,18 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 
     }
 #if SAVE_DATA
-    dump_tracking_data(&linsys_iters, &linsys_exits, &linsys_times, &sqp_times, &sqp_iters, &sqp_exits, &tracking_errors, &tracking_path, 
+    dump_tracking_data(&linsys_iters, &linsys_exits, &linsys_times, &sqp_times, &sqp_iters, &sqp_exits, &tracking_errors, &tracking_path,
             traj_offset, control_update_step, start_state_ind, goal_state_ind, test_iter, test_output_prefix);
+#endif
+#ifdef PRINT_LINSYS_ITERS
+    if(!linsys_iters.empty()){
+        long sum = 0; int mn = linsys_iters[0], mx = linsys_iters[0];
+        for(int v : linsys_iters){ sum += v; mn = std::min(mn,v); mx = std::max(mx,v); }
+        long capped = std::accumulate(linsys_exits.begin(), linsys_exits.end(), 0L);
+        printf("PCG_ITERS solves=%zu avg=%.1f min=%d max=%d  maxiter_exit=%.1f%%\n",
+               linsys_iters.size(), (double)sum/linsys_iters.size(), mn, mx,
+               100.0*capped/linsys_exits.size());
+    }
 #endif
     
 
