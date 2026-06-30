@@ -463,7 +463,23 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         }
         __syncthreads();//----------------------------------------------------------------
 
-        // save phi_k into left off-diagonal of S, 
+        // Symmetrize theta_k. Mathematically theta = A Q^-1 A^T + B R^-1 B^T + Q_{k+1}^-1 is symmetric
+        // (the inputs are), but the on-GPU gemm sequence above leaves a ~1% asymmetry that makes the
+        // block-tridiagonal Schur S non-symmetric → CG (which assumes symmetry) stagnates and caps
+        // (~800 iters vs ~28 when symmetric). Averaging the (i,j)/(j,i) pair restores symmetry of BOTH
+        // S's main diagonal AND its Pinv (built from theta^-1 below). Each unordered pair is owned by one
+        // thread (col-major idx c*d+r with r<c) → no race.
+        for(unsigned ind = threadIdx.x; ind < state_size*state_size; ind += blockDim.x){
+            unsigned r = ind % state_size, c = ind / state_size;
+            if(r < c){
+                T avg = static_cast<T>(0.5) * (s_theta_k[c*state_size+r] + s_theta_k[r*state_size+c]);
+                s_theta_k[c*state_size+r] = avg;
+                s_theta_k[r*state_size+c] = avg;
+            }
+        }
+        __syncthreads();//----------------------------------------------------------------
+
+        // save phi_k into left off-diagonal of S,
         store_block_bd<T>( state_size, knot_points,
             s_phi_k,                        // src             
             d_S,                            // dst             
@@ -516,18 +532,13 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
         __syncthreads();//----------------------------------------------------------------
 
-        //transpose phi_k
-        glass::loadIdentity<T>(state_size, s_Ak);
-        __syncthreads();//----------------------------------------------------------------
-        glass::gemm<T, true>(
-            state_size, 
-            state_size, 
-            state_size,
-            static_cast<T>(1.0), 
-            s_Ak, 
-            s_phi_k, 
-            s_Qkp1
-        );
+        // transpose phi_k -> s_Qkp1 (the right off-diagonal of block k-1 must be EXACTLY the transpose of
+        // block k's left off-diagonal phi_k, or S is non-symmetric and CG breaks down). The old
+        // glass::gemm<T,true>(I, phi_k) transpose left a ~6% inconsistency; an explicit element transpose
+        // is exact. Col-major: dst(c,r) = src(r,c)  =>  s_Qkp1[ind] = s_phi_k[(ind%d)*d + ind/d].
+        for(unsigned ind = threadIdx.x; ind < state_size*state_size; ind += blockDim.x){
+            s_Qkp1[ind] = s_phi_k[(ind % state_size) * state_size + (ind / state_size)];
+        }
         __syncthreads();//----------------------------------------------------------------
 
         // save phi_k_T into right off-diagonal of S,
