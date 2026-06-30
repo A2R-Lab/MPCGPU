@@ -152,7 +152,20 @@ void pcg(
     glass::reduce<T>(knot_points, s_eta_new_b);
     __syncthreads();
     eta = s_eta_new_b[0];
-    
+
+    // Converged-start / zero-RHS guard (mirrors glass::pcg solve.cuh). If the initial preconditioned
+    // residual is already below tolerance, lambda (the warm start) IS the solution — skip the loop.
+    // Without this, iter 0 computes alpha = eta / (pᵀSp) = 0/0 → NaN whenever the residual starts at
+    // ~0: regulation (γ≈0), or any well-tracked warm start (this is the offset-6 NaN on moving refs).
+    // All blocks share the grid-reduced eta, so the early return is uniform — no grid.sync mismatch.
+    if(abs(eta) < exit_tol){
+        if(block_id == 0 && thread_id == 0){ d_iters[0] = 0; d_max_iter_exit[0] = false; }
+        __syncthreads();
+        glass::copy<T>(state_size, s_lambda_b, &d_lambda[block_x_statesize]);
+        grid.sync();
+        return;
+    }
+
 
     // MAIN PCG LOOP
 
