@@ -18,6 +18,25 @@
 #include "gpu_pcg.cuh"
 #include "settings.cuh"
 
+#ifdef PCG_DEBUG
+template <typename T>
+__global__ void k_count_nonfinite(const T* d, int n, int* d_cnt){
+    int c = 0;
+    for(int i = threadIdx.x + blockIdx.x*blockDim.x; i < n; i += blockDim.x*gridDim.x)
+        if(!isfinite((double)d[i])) c++;
+    atomicAdd(d_cnt, c);
+}
+template <typename T>
+static inline int count_nonfinite(const char* label, const T* d, int n){
+    static int* d_cnt = nullptr; if(!d_cnt) cudaMalloc(&d_cnt, sizeof(int));
+    cudaMemset(d_cnt, 0, sizeof(int));
+    k_count_nonfinite<T><<<32,128>>>(d, n, d_cnt);
+    int h=0; cudaMemcpy(&h, d_cnt, sizeof(int), cudaMemcpyDeviceToHost);
+    if(h) printf("[PCG_DEBUG] %s: %d / %d non-finite\n", label, h, n);
+    return h;
+}
+#endif
+
 template <typename T>
 auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config<T>& config, T &rho, T rho_reset){
     
@@ -219,10 +238,20 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
             rho
         );
         gpuErrchk(cudaPeekAtLastError());
+#ifdef PCG_DEBUG
+        { static int dbg=0; if(dbg<2){ cudaDeviceSynchronize();
+            int b = 3*state_size*state_size*knot_points;
+            int nk = count_nonfinite("d_G_dense", d_G_dense, knot_points*(state_size*state_size+control_size*control_size));
+            int nc = count_nonfinite("d_C_dense", d_C_dense, knot_points*(state_size*state_size+state_size*control_size));
+            int ns = count_nonfinite("d_S", d_S, b);
+            int np = count_nonfinite("d_Pinv", d_Pinv, b);
+            int ng = count_nonfinite("d_gamma", d_gamma, state_size*knot_points);
+            printf("[PCG_DEBUG] solve %d after form_S: G=%d C=%d S=%d Pinv=%d gamma=%d\n", dbg, nk,nc,ns,np,ng); dbg++; } }
+#endif
         if (sqpTimecheck()){ break; }
-        
 
-    #if TIME_LINSYS    
+
+    #if TIME_LINSYS
         gpuErrchk(cudaDeviceSynchronize());
         if (sqpTimecheck()){ break; }
         clock_gettime(CLOCK_MONOTONIC,&linsys_start);
@@ -232,6 +261,11 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         gpuErrchk(cudaMemcpy(&pcg_iters, d_pcg_iters, sizeof(uint32_t), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaMemcpy(&pcg_exit, d_pcg_exit, sizeof(bool), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaPeekAtLastError());
+#ifdef PCG_DEBUG
+        { static int dbg2=0; if(dbg2<2){ cudaDeviceSynchronize();
+            int nl = count_nonfinite("d_lambda_after_pcg", d_lambda, state_size*knot_points);
+            printf("[PCG_DEBUG] solve %d after PCG: lambda=%d iters=%u\n", dbg2, nl, pcg_iters); dbg2++; } }
+#endif
 
     #if TIME_LINSYS
         gpuErrchk(cudaDeviceSynchronize());

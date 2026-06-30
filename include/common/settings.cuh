@@ -220,6 +220,12 @@ LINSYS_SOLVE = 0 uses qdldl as the underlying linear system solver */
 #define RHO_MIN 1e-3
 #endif
 
+// Initial (and reset) SQP regularization rho. Overridable to probe how much regularization the stiff
+// Schur system needs for the cooperative PCG to stay well-conditioned.
+#ifndef RHO_INIT
+#define RHO_INIT 1e-3
+#endif
+
 //TODO: get rid of rho in defines
 #ifndef RHO_FACTOR
 #define RHO_FACTOR 1.2 

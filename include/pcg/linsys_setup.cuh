@@ -483,6 +483,13 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         );          
         __syncthreads();//----------------------------------------------------------------
 
+        // invert theta (for the block-Jacobi preconditioner). Regularize the position block of theta
+        // with rho FIRST (matches GATO's schur_linsys.cuh) — on the stiff robot the rank-deficient
+        // EE-only cost makes Q^{-1}~1/rho huge and the dynamics (Minv~392) drive theta~1e8, so an
+        // unregularized invert overflows to NaN. S already holds the un-regularized theta (stored
+        // above), so only the preconditioner inverse sees the +rho; the solved system is unchanged.
+        glass::addI_partial<T>(state_size, s_theta_k, rho, state_size/2);
+        __syncthreads();//----------------------------------------------------------------
         // invert theta
         glass::loadIdentity<T>(state_size, s_thetaInv_k);
         __syncthreads();//----------------------------------------------------------------

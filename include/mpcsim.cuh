@@ -216,8 +216,8 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     config.pcg_max_iter = PCG_MAX_ITER;
 #endif
 
-    T rho = 1e-3;
-    T rho_reset = 1e-3;
+    T rho = RHO_INIT;
+    T rho_reset = RHO_INIT;
 
 #if REMOVE_JITTERS
 	#if LINSYS_SOLVE == 1
