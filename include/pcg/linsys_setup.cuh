@@ -419,14 +419,18 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         }
         __syncthreads();//----------------------------------------------------------------
 
-        // compute AQ^{-1}AT   -   Qkp1^{-1} for theta
-        glass::gemm<T, true>(
-            state_size, 
-            state_size, 
+        // compute A Q^{-1} A^T for theta. s_phi_k = A Q^{-1} (m x k = state x state); we need
+        // (A Q^{-1}) @ A^T, i.e. TRANSPOSE_B. The glass gemm template is <T, TRANSPOSE_A, TRANSPOSE_B>,
+        // so this must be gemm<T,false,true> — the old gemm<T,true> transposes the FIRST operand
+        // (Q^{-1} A^T @ A), which is the wrong product and left theta asymmetric+wrong (the glass
+        // transpose-flag convention changed under the modernization; symmetrizing theta only masked it).
+        glass::gemm<T, false, true>(
             state_size,
-            static_cast<T>(1.0), 
-            s_phi_k, 
-            s_Ak, 
+            state_size,
+            state_size,
+            static_cast<T>(1.0),
+            s_phi_k,
+            s_Ak,
             s_theta_k
         );
 
@@ -445,11 +449,16 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         
         __syncthreads();//----------------------------------------------------------------
 
-        // compute BR^{-1}BT for theta            temp storage in QKp1{-1}
-        glass::gemm<T, true>(
+        // compute B R^{-1} B^T for theta. s_Qkp1 = B R^{-1} (state x control); we need (B R^{-1}) @ B^T,
+        // i.e. TRANSPOSE_B with result state x state contracting over control => gemm<T,false,true>
+        // (m=state, n=state, k=control). The old gemm<T,true>(state,control,state) both transposed the
+        // WRONG operand AND had n,k swapped, so it wrote a state x control slab (contracting over state,
+        // reading past B's control columns) and accumulated garbage over the stale Q_{k+1}^{-1} in the
+        // scratch — corrupting the dominant (stiff-joint) term of theta. This is THE Schur-formation bug.
+        glass::gemm<T, false, true>(
+            state_size,
             state_size,
             control_size,
-            state_size,
             static_cast<T>(1.0),
             s_Qkp1,
             s_Bk,

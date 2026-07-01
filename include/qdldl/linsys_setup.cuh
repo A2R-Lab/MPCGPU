@@ -249,14 +249,15 @@ void form_schur_qdl_kernel(uint32_t state_size,
             }
             __syncthreads();//----------------------------------------------------------------
 
-            // compute AQ^{-1}AT   -   Qkp1^{-1} for theta
-            glass::gemm<T, true>(
-                state_size, 
-                state_size, 
+            // compute A Q^{-1} A^T for theta — TRANSPOSE_B (glass gemm<T,TRANSPOSE_A,TRANSPOSE_B>);
+            // gemm<T,true> transposes the wrong operand (see pcg/linsys_setup.cuh for the full note).
+            glass::gemm<T, false, true>(
+                state_size,
+                state_size,
                 state_size,
                 static_cast<T>(1.0),
-                s_phi_k, 
-                s_Ak, 
+                s_phi_k,
+                s_Ak,
                 s_theta_k
             );
 
@@ -269,14 +270,15 @@ void form_schur_qdl_kernel(uint32_t state_size,
             
             __syncthreads();//----------------------------------------------------------------
 
-            // compute BR^{-1}BT for theta            temp storage in QKp1{-1}
-            glass::gemm<T, true>(
-                state_size, 
+            // compute B R^{-1} B^T for theta — TRANSPOSE_B, result state x state contracting over
+            // control => gemm<T,false,true>(state, state, control) (n,k were also swapped before).
+            glass::gemm<T, false, true>(
+                state_size,
+                state_size,
                 control_size,
-                state_size, 
                 static_cast<T>(1.0),
-                s_Qkp1, 
-                s_Bk, 
+                s_Qkp1,
+                s_Bk,
                 s_Qkp1_i
             );
 
