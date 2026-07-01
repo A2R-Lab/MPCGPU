@@ -38,7 +38,7 @@ static inline int count_nonfinite(const char* label, const T* d, int n){
 #endif
 
 template <typename T>
-auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config<T>& config, T &rho, T rho_reset){
+auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config<T>& config, T &rho, T rho_reset, T *d_xs_goal = nullptr){
     
     // data storage
     std::vector<int> pcg_iter_vec;
@@ -197,7 +197,8 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         static_cast<T>(10),
         timestep,
         d_dynMem_const,
-        d_merit_temp
+        d_merit_temp,
+        d_xs_goal
     );
     reduce_merit<T><<<1, MERIT_THREADS>>>(knot_points, d_merit_temp, d_merit_initial);
     gpuErrchk(cudaMemcpyAsync(&h_merit_initial, d_merit_initial, sizeof(T), cudaMemcpyDeviceToHost));
@@ -220,7 +221,8 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
             timestep,
             d_eePos_traj,
             d_xs,
-            d_xu
+            d_xu,
+            d_xs_goal
         );
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
@@ -248,6 +250,24 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
             int np = count_nonfinite("d_Pinv", d_Pinv, b);
             int ng = count_nonfinite("d_gamma", d_gamma, state_size*knot_points);
             printf("[PCG_DEBUG] solve %d after form_S: G=%d C=%d S=%d Pinv=%d gamma=%d\n", dbg, nk,nc,ns,np,ng); dbg++; } }
+#endif
+#ifdef DUMP_KKT
+        { static int dumped=0; if(dumped==0){ dumped=1; gpuErrchk(cudaDeviceSynchronize());
+            auto dump=[&](const char* fn, T* d, size_t n){
+                std::vector<T> h(n); gpuErrchk(cudaMemcpy(h.data(), d, n*sizeof(T), cudaMemcpyDeviceToHost));
+                FILE* f=fopen(fn,"wb"); fwrite(h.data(),sizeof(T),n,f); fclose(f);
+            };
+            // G = [Q_k(states_sq) R_k(controls_sq)] per knot (last knot Q only); C = [A_k(states_sq) B_k(states*ctrl)] per non-terminal knot
+            dump("/tmp/mpc_G.bin",     d_G_dense, (states_sq+controls_sq)*knot_points-controls_sq);
+            dump("/tmp/mpc_C.bin",     d_C_dense, (states_sq+states_p_controls)*(knot_points-1));
+            dump("/tmp/mpc_S.bin",     d_S,       3*states_sq*knot_points);   // [L|D|R] strips per knot
+            dump("/tmp/mpc_Pinv.bin",  d_Pinv,    3*states_sq*knot_points);
+            dump("/tmp/mpc_gamma.bin", d_gamma,   state_size*knot_points);
+            dump("/tmp/mpc_g.bin",     d_g,       (state_size+control_size)*knot_points-control_size);
+            dump("/tmp/mpc_c.bin",     d_c,       state_size*knot_points);
+            printf("[DUMP_KKT] wrote /tmp/mpc_{G,C,S,Pinv,gamma}.bin (state=%u ctrl=%u N=%u rho=%g)\n",
+                   state_size, control_size, knot_points, (double)rho);
+        } }
 #endif
         if (sqpTimecheck()){ break; }
 
@@ -295,7 +315,16 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         );
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
-        
+#ifdef SQP_DEBUG
+        {
+            uint32_t dzn = (state_size+control_size)*knot_points - control_size;
+            std::vector<T> hdz(dzn); cudaMemcpy(hdz.data(), d_dz, dzn*sizeof(T), cudaMemcpyDeviceToHost);
+            double nn=0; for(auto v:hdz) nn+=(double)v*(double)v;
+            std::vector<T> hg(dzn); cudaMemcpy(hg.data(), d_g, dzn*sizeof(T), cudaMemcpyDeviceToHost);
+            double gn=0; for(auto v:hg) gn+=(double)v*(double)v;
+            printf("[SQP_DEBUG] iter=%u ||dz||=%.4e ||d_g(cost grad)||=%.4e rho=%.3e\n", sqp_iter, sqrt(nn), sqrt(gn), (double)rho);
+        }
+#endif
 
         // line search
         for(uint32_t p = 0; p < num_alphas; p++){
@@ -312,7 +341,8 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
                 (void *)&d_dz,
                 (void *)&p,
                 (void *)&d_merit_news,
-                (void *)&d_merit_temp
+                (void *)&d_merit_temp,
+                (void *)&d_xs_goal
             };
             gpuErrchk(cudaLaunchCooperativeKernel(ls_merit_kernel, knot_points, MERIT_THREADS, kernelArgs, get_merit_smem_size<T>(state_size, knot_points), streams[p]));
         }
@@ -335,6 +365,12 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
                 line_search_step = i;
             }
         }
+#ifdef SQP_DEBUG
+        printf("[SQP_DEBUG] iter=%u merit_init=%.6e min_merit=%.6e step=%d news=[%.4e %.4e %.4e %.4e %.4e %.4e %.4e %.4e]\n",
+               sqp_iter, (double)h_merit_initial, (double)min_merit, line_search_step,
+               (double)h_merit_news[0],(double)h_merit_news[1],(double)h_merit_news[2],(double)h_merit_news[3],
+               (double)h_merit_news[4],(double)h_merit_news[5],(double)h_merit_news[6],(double)h_merit_news[7]);
+#endif
 
 
         if(min_merit == h_merit_initial){

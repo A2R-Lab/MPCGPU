@@ -13,6 +13,7 @@ size_t get_kkt_smem_size(uint32_t state_size, uint32_t control_size){
     size_t smem_size = sizeof(T)*(3*states_sq +
                                   controls_sq +
                                   7 * state_size +
+                                  2 * state_size +          // s_x_goal: per-knot state goal (knots k, k+1)
                                   3 * control_size +
                                   state_size*control_size +
                                   max((state_size/2)*(state_size + control_size + 1) + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared(),
@@ -33,9 +34,10 @@ void generate_kkt_submatrices(uint32_t state_size,
                               T *d_c,
                               void *d_dynMem_const, 
                               T timestep,
-                              T *d_eePos_traj, 
-                              T *d_xs, 
-                              T *d_xu)
+                              T *d_eePos_traj,
+                              T *d_xs,
+                              T *d_xu,
+                              T *d_xs_goal)   // per-knot state goal (NX/knot) for joint-space tracking; nullptr => EE-only
 {
 
     const cgrps::thread_block block = cgrps::this_thread_block();
@@ -52,7 +54,8 @@ void generate_kkt_submatrices(uint32_t state_size,
 
     extern __shared__ T s_temp[];
 
-    T *s_xux = s_temp;
+    T *s_x_goal = s_temp;                              // per-knot state goal (knots k, k+1), 2*state_size
+    T *s_xux = s_x_goal + 2*state_size;
     T *s_eePos_traj = s_xux + 2*state_size + control_size;
     T *s_Qk = s_eePos_traj + 6;
     T *s_Rk = s_Qk + states_sq;
@@ -60,13 +63,16 @@ void generate_kkt_submatrices(uint32_t state_size,
     T *s_rk = s_qk + state_size;
     T *s_end = s_rk + control_size;
 
-    
+    // null when EE-only (no joint-space goal) => cost falls back to constant Q_NOM.
+    T *s_x_goal_k = (d_xs_goal != nullptr) ? s_x_goal : nullptr;
+
     for(unsigned k = block_id; k < knot_points-1; k += num_blocks){
 
         glass::copy<T>(2*state_size + control_size, &d_xu[k*states_s_controls], s_xux);
         glass::copy<T>(2 * 6, &d_eePos_traj[k*6], s_eePos_traj);
-        
-        __syncthreads();    
+        if(d_xs_goal != nullptr){ glass::copy<T>(2*state_size, &d_xs_goal[k*state_size], s_x_goal); }
+
+        __syncthreads();
 
         if(k==knot_points-2){          // last block
 
@@ -95,6 +101,7 @@ void generate_kkt_submatrices(uint32_t state_size,
                 control_size,
                 s_xux,
                 s_eePos_traj,
+                s_x_goal_k,
                 s_Qk,
                 s_qk,
                 s_Rk,
@@ -146,6 +153,7 @@ void generate_kkt_submatrices(uint32_t state_size,
                                                   control_size,
                                                   s_xux,
                                                   s_eePos_traj,
+                                                  s_x_goal_k,
                                                   s_Qk,
                                                   s_qk,
                                                   s_Rk,

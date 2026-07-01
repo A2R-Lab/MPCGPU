@@ -1,11 +1,21 @@
-// Generate an EE-SPACE figure-8 tracking problem for the corrected iiwa14 + gravity, mirroring GATO's
-// run_mpc_fig8: the reference is a smooth Cartesian figure-8 of the END-EFFECTOR POSITION (it does NOT
-// command any joint motion — critical, see the nullspace note in main), and the warm-start is a
-// gravity-compensated HOLD at q_start. grid.cuh's own FK gives the EE center and ID gives the hold
-// control, so everything is consistent with the model the solver and sim use. Writes MPCGPU trajfiles:
-//   <prefix>_eepos.traj : per-row 6-wide EE pose (figure-8 xyz + held orientation; cost uses xyz)
-//   <prefix>_traj.csv   : per-row 21-wide [q(7) qd(7) u(7)]  (constant hold warm-start)
-// Args: <prefix> <amp_scale: 0=>regulation/hold, 1=>full figure-8> <period_s>.
+// Generate the SHARED iiwa14 EE-space figure-8 tracking reference for the fair 3-way benchmark
+// (GATO / MPCGPU / BatchThneed all track the IDENTICAL fig8). Authored directly in EE space so it
+// never commands joint motion (an EE-position-only cost has a 4-D nullspace incl. the stiff joint 7;
+// a joint-commanding reference excites it and diverges — see docs/modernization.md). The MPC discovers
+// the joints that realize the EE path. Mirrors GATO's run_mpc_fig8:
+//   - goal:       ee(t) = center + [A*sin(wt), 0, 0.5*A*sin(2wt)]   (theta=0 vertical fig8, y=const)
+//                 center = FK(q0); so ee(0)=center => ZERO initial tracking error.
+//   - warm-start: x_curr replicated with ZERO controls: every knot = [q0, 0, 0]. This EXACTLY mirrors
+//                 GATO's run_mpc_fig8 (XU state=x_curr, controls=0) and the CPU baseline. It is
+//                 dynamically INFEASIBLE (zero torque vs gravity) ON PURPOSE: a gravity-comp feasible
+//                 hold is a strict local MINIMUM of the SQP merit (any step raises the integrator
+//                 defect -> line search rejects it -> the solver is trapped and never tracks). The
+//                 infeasible start gives the line search a large defect to reduce, so the first step
+//                 is a descent direction toward feasibility+tracking (this is why GATO/CPU track).
+// Writes MPCGPU trajfiles (consumed by track_iiwa_pcg.cu / validate_track.cu):
+//   <prefix>_eepos.traj : per-row 6-wide EE pose [x y z 0 0 0] (cost reads xyz)
+//   <prefix>_traj.csv   : per-row 21-wide [q(7) qd(7) u(7)] = static hold (d_xs = first row's [q,qd])
+// Args: <prefix> <A: EE amplitude m, default 0.15> <period_s: default 6.0>.
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -34,78 +44,60 @@ __global__ void k_fk(T* d_ee, const T* d_q, void* d_rm){
 
 int main(int argc, char** argv){
     using T = float;
-    const int NSTEPS = 700;
     const double dt = TIMESTEP;   // shared with the tracker via settings.cuh
     const T gravity = gato_plant::GRAVITY<T>();
     std::string prefix = (argc > 1) ? argv[1] : "examples/trajfiles/0_0";
+    double A      = (argc > 2) ? atof(argv[2]) : 0.15;   // EE fig8 amplitude (m)
+    double period = (argc > 3) ? atof(argv[3]) : 6.0;    // seconds per fig8 cycle
+    double omega  = 2.0 * M_PI / period;
+    const int NSTEPS = (int)(2.0 * period / dt) + 2;      // ~2 fig8 cycles of reference
 
-    // ---------------------------------------------------------------------------------------------
-    // EE-SPACE figure-8 reference + constant "hold" warm-start (mirrors GATO's run_mpc_fig8 setup).
-    // RATIONALE: the iiwa is a 7-DOF arm tracking a 3-DOF EE-POSITION task, so there is a 4-D cost
-    // nullspace — including joint 7, whose EE-position Jacobian column is ~0 and whose position is
-    // NOT penalized (s_Q[q-block]=0). A reference that COMMANDS joint motion (esp. on joint 7, the
-    // stiff Minv[6,6]≈392 mode) is untrackable by an EE-only cost → the nullspace runs away → the
-    // closed loop diverges (verified: even the exact QDLDL solve diverges on a joint-space sinusoid).
-    // So the reference must live in EE space and NEVER command the nullspace joints; the solver then
-    // discovers a joint trajectory and the nullspace stays bounded (qd_cost damps it). The warm-start
-    // is a gravity-compensated hold at q_start — the solver bends it toward the moving EE figure-8.
-    double q0[7] = {0.40, 0.80, 0.30, -1.10, 0.50, 0.60, 0.30};   // start config (within iiwa14 limits)
-    // EE figure-8 (GATO figure8): dx = A*sin(wt), dz = A*sin(2wt)/2, rotated theta about z, added to
-    // the q_start EE position so it stays in the reachable workspace. amp_scale 0 => pure hold/regulation.
-    double A_default = 0.12;              // figure-8 amplitude (m); modest => reachable + gently trackable
-    double period    = 4.0;              // seconds per figure-8 cycle
-    double theta     = M_PI/4.0;          // rotation of the figure-8 plane about z (GATO default)
-    double amp_scale = (argc > 2) ? atof(argv[2]) : 1.0;
-    if (argc > 3) period = atof(argv[3]);
-    double A = A_default * amp_scale;
-    double omega = 2.0 * M_PI / period;
+    // start config "readyC" — bent, EE ~ [0.51, 0, 0.51] (mid forward workspace; matches GATO tune).
+    double q0d[7] = {0.0, 0.30, 0.0, -1.60, 0.0, 1.20, 0.0};
+    T q0[7]; for(int j=0;j<7;j++) q0[j]=(T)q0d[j];
 
     auto* d_rm = grid::init_robotModel<T>();
     T *d_q,*d_qd,*d_qdd,*d_u,*d_ee;
     cudaMalloc(&d_q,7*sizeof(T)); cudaMalloc(&d_qd,7*sizeof(T)); cudaMalloc(&d_qdd,7*sizeof(T));
     cudaMalloc(&d_u,7*sizeof(T)); cudaMalloc(&d_ee,6*sizeof(T));
-
-    // --- compute the EE center (FK at q_start) and the hold control (ID at q_start, qd=qdd=0) ONCE ---
-    T hq0[7], hqz[7] = {0,0,0,0,0,0,0};
-    for(int j=0;j<7;j++) hq0[j] = (T)q0[j];
     size_t id_smem = grid::INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_COUNT*sizeof(T);
     size_t fk_smem = grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT*sizeof(T);
-    cudaMemcpy(d_q,hq0,7*sizeof(T),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_qd,hqz,7*sizeof(T),cudaMemcpyHostToDevice);
-    cudaMemcpy(d_qdd,hqz,7*sizeof(T),cudaMemcpyHostToDevice);
+
+    // center = FK(q0); u_grav = ID(q0, 0, 0) (gravity-comp hold torque)
+    T zero7[7] = {0,0,0,0,0,0,0};
+    cudaMemcpy(d_q,  q0,   7*sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_qd, zero7,7*sizeof(T), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_qdd,zero7,7*sizeof(T), cudaMemcpyHostToDevice);
     k_fk<T><<<1,32,fk_smem>>>(d_ee,d_q,d_rm);
     k_id<T><<<1,32,id_smem>>>(d_u,d_q,d_qd,d_qdd,d_rm,gravity);
     cudaDeviceSynchronize();
-    T center[6], u_hold[7];
-    cudaMemcpy(center,d_ee,6*sizeof(T),cudaMemcpyDeviceToHost);
-    cudaMemcpy(u_hold,d_u,7*sizeof(T),cudaMemcpyDeviceToHost);
+    T center[6], u_grav[7];
+    cudaMemcpy(center, d_ee, 6*sizeof(T), cudaMemcpyDeviceToHost);
+    cudaMemcpy(u_grav, d_u,  7*sizeof(T), cudaMemcpyDeviceToHost);
 
     FILE* fee = fopen((prefix+"_eepos.traj").c_str(), "w");
     FILE* fxu = fopen((prefix+"_traj.csv").c_str(), "w");
     if(!fee || !fxu){ printf("cannot open output files\n"); return 1; }
 
     for(int t=0; t<NSTEPS; t++){
-        double tm = t*dt;
-        // figure-8 delta in the (x,z) plane, rotated theta about z, added to the held EE center
-        double dx_u = A*sin(omega*tm);
-        double dz   = A*sin(2.0*omega*tm)/2.0;
-        double dx   =  cos(theta)*dx_u;   // rotate [dx_u, 0, dz] about z (z-component unchanged)
-        double dy   =  sin(theta)*dx_u;
-        T hee[6];
-        hee[0] = (T)(center[0] + dx);
-        hee[1] = (T)(center[1] + dy);
-        hee[2] = (T)(center[2] + dz);
-        hee[3] = center[3]; hee[4] = center[4]; hee[5] = center[5];   // hold orientation (cost uses xyz)
-        // eepos.traj row (6-wide EE pose; cost reads xyz)
-        for(int i=0;i<6;i++) fprintf(fee, "%.9g%s", hee[i], i<5?",":"\n");
-        // xu_traj row: constant hold warm-start [q_start, 0, gravity-comp(q_start)]
-        for(int j=0;j<7;j++) fprintf(fxu, "%.9g,", q0[j]);
-        for(int j=0;j<7;j++) fprintf(fxu, "%.9g,", 0.0);
-        for(int j=0;j<7;j++) fprintf(fxu, "%.9g%s", u_hold[j], j<6?",":"\n");
+        double wt = omega * (t*dt);
+        double ee_x = center[0] + A*sin(wt);
+        double ee_y = center[1];
+        double ee_z = center[2] + 0.5*A*sin(2.0*wt);
+        // goal row (6-wide EE pose; cost reads xyz, orientation target zeroed like GATO)
+        fprintf(fee, "%.9g,%.9g,%.9g,0,0,0\n", ee_x, ee_y, ee_z);
+        // warm-start row: x_curr replicated with ZERO controls [q0, 0, 0] — mirrors GATO/CPU (see
+        // header). Infeasible on purpose so the SQP has a defect to reduce and the first step is a
+        // descent direction (a gravity-comp hold is a strict merit min and traps the solver).
+        for(int j=0;j<7;j++) fprintf(fxu, "%.9g,", (double)q0[j]);
+        for(int j=0;j<7;j++) fprintf(fxu, "0,");
+        for(int j=0;j<7;j++) fprintf(fxu, "%s", j<6?"0,":"0\n");
     }
     fclose(fee); fclose(fxu);
-    printf("wrote %s_eepos.traj + %s_traj.csv (%d steps, EE fig-8 A=%.3f m, period=%.2f s, gravity=%.3f)\n",
+    printf("wrote %s_eepos.traj + %s_traj.csv (%d steps, EE fig8 A=%.3f period=%.2fs, gravity=%.3f)\n",
            prefix.c_str(), prefix.c_str(), NSTEPS, A, period, gravity);
-    printf("  EE center (FK q_start) = [%.4f %.4f %.4f]\n", center[0], center[1], center[2]);
+    printf("  center=FK(q0)=[%.4f %.4f %.4f]  ee(0)=[%.4f %.4f %.4f]  u_grav=[%.3f %.3f %.3f %.3f %.3f %.3f %.3f]\n",
+           center[0],center[1],center[2], center[0]+A*sin(0.0),center[1],center[2],
+           u_grav[0],u_grav[1],u_grav[2],u_grav[3],u_grav[4],u_grav[5],u_grav[6]);
     return 0;
 }

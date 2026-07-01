@@ -172,6 +172,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     std::vector<bool> sqp_exits;
     std::vector<bool> linsys_exits;
     std::vector<T> tracking_errors;
+    std::vector<T> joint_errors;   // JOINT_COST_MODE: |q_actual - q_ref| (positions) at each goal step
     std::vector<int> cur_linsys_iters;
     std::vector<bool> cur_linsys_exits;
     std::vector<double> cur_linsys_times;
@@ -191,6 +192,20 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     gpuErrchk(cudaMemcpy(d_eePos_goal, d_eePos_traj, 6*knot_points*sizeof(T), cudaMemcpyDeviceToDevice));
     gpuErrchk(cudaMemcpy(d_xu_old, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
     gpuErrchk(cudaMemcpy(d_xu, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
+
+    // Per-knot STATE goal for joint-space tracking. Extract the state-only reference from d_xu_traj
+    // (xu-layout, stride state_size+control_size) into a contiguous (traj_steps*state_size) buffer,
+    // and slide a knot_points window (d_xs_goal) exactly like d_eePos_goal. Passed to the solver only
+    // in JOINT_COST_MODE; otherwise d_xs_goal stays nullptr => EE-only cost (the existing path).
+    T *d_xs_goal = nullptr, *d_xs_goal_full = nullptr;
+#if JOINT_COST_MODE
+    gpuErrchk(cudaMalloc(&d_xs_goal,      state_size*knot_points*sizeof(T)));
+    gpuErrchk(cudaMalloc(&d_xs_goal_full, state_size*traj_steps*sizeof(T)));
+    gpuErrchk(cudaMemcpy2D(d_xs_goal_full, state_size*sizeof(T),
+                           d_xu_traj, (state_size+control_size)*sizeof(T),
+                           state_size*sizeof(T), traj_steps, cudaMemcpyDeviceToDevice));
+    gpuErrchk(cudaMemcpy(d_xs_goal, d_xs_goal_full, state_size*knot_points*sizeof(T), cudaMemcpyDeviceToDevice));
+#endif
 
 
     void *d_dynmem = gato_plant::initializeDynamicsConstMem<T>();
@@ -223,23 +238,26 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 #if REMOVE_JITTERS
 	#if LINSYS_SOLVE == 1
     config.pcg_exit_tol = 1e-11;
-    config.pcg_rel_tol = 1e-11;   // tight one-time warm-start solve (preserve original intent)
+    config.pcg_rel_tol = 1e-11;   // tight warm-start solve
     config.pcg_max_iter = 10000;
 
+    // Converge the initial trajectory on goal window 0 and KEEP it (mirrors GATO warm-starting XU and
+    // keeping the solved trajectory). A good warm-start is essential: with SQP=1 real-time iteration the
+    // tracking loop can only REFINE the trajectory, not build it, so starting cold from the raw
+    // zero-control hold diverges on the stiff iiwa. (Previously each warm solve was discarded by resetting
+    // d_xu to d_xu_traj — that left tracking starting cold.)
     for(int j = 0; j < 100; j++){
-        sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, 1e-3);
-        gpuErrchk(cudaMemcpy(d_xu, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
+        sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, RHO_INIT, d_xs_goal);
     }
-    rho = 1e-3;
+    rho = RHO_INIT;
     config.pcg_exit_tol = linsys_exit_tol;
     config.pcg_rel_tol = PCG_RES_TOL;
     config.pcg_max_iter = PCG_MAX_ITER;
 	#else
     for(int j = 0; j < 100; j++){
-        sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, 1e-3);
-        gpuErrchk(cudaMemcpy(d_xu, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
+        sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, RHO_INIT, d_xs_goal);
     }
-    rho = 1e-3;
+    rho = RHO_INIT;
 	#endif
 
 #endif // #if REMOVE_JITTERS
@@ -267,9 +285,9 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 
 
 #if LINSYS_SOLVE == 1
-        sqp_stats = sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, rho_reset);
+        sqp_stats = sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, rho_reset, d_xs_goal);
 #else 
-	    sqp_stats = sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, rho_reset);
+	    sqp_stats = sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, rho_reset, d_xs_goal);
 #endif
 
         cur_linsys_iters = std::get<0>(sqp_stats);
@@ -308,23 +326,29 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
                 cur_tracking_error += abs(h_eePos[i] - h_eePos_goal[i]);
             }
             // std::cout << cur_tracking_error << std::endl;;
-            tracking_errors.push_back(cur_tracking_error);                                            
-            
+            tracking_errors.push_back(cur_tracking_error);
+#if JOINT_COST_MODE
+            // joint-space tracking error: |q_actual - q_ref| over the NQ positions, vs the reference
+            // state at the current goal index (d_xs_goal_full holds the per-step q_ref/qd_ref).
+            {
+                T h_q[64]; T h_qref[64];
+                const uint32_t nq = state_size/2;
+                gpuErrchk(cudaMemcpy(h_q, d_xs, nq*sizeof(T), cudaMemcpyDeviceToHost));
+                gpuErrchk(cudaMemcpy(h_qref, &d_xs_goal_full[traj_offset*state_size], nq*sizeof(T), cudaMemcpyDeviceToHost));
+                T je = 0; for(uint32_t i=0;i<nq;i++) je += abs(h_q[i]-h_qref[i]);
+                joint_errors.push_back(je);
+            }
+#endif
+
             traj_offset++;
 
-            // shift xu
-            just_shift<T>(state_size, control_size, knot_points, d_xu);             // shift everything over one
-            if (traj_offset + knot_points < traj_steps){
-                // if within precomputed traj, fill in last state, control with precompute
-                gpuErrchk(cudaMemcpy(&d_xu[traj_len - (state_size + control_size)], &d_xu_traj[(state_size+control_size)*traj_offset - control_size], sizeof(T)*(state_size+control_size), cudaMemcpyDeviceToDevice));     // last state filled from precomputed trajectory
-            }
-            else{
-                // fill in last state with goal position, zero velocity, last control with zero control
-                gpuErrchk(cudaMemcpy(&d_xu[traj_len - state_size], &d_xu_traj[(traj_steps-1)*(state_size+control_size)], (state_size/2)*sizeof(T), cudaMemcpyDeviceToDevice));
-                gpuErrchk(cudaMemset(&d_xu[traj_len - state_size / 2], 0, (state_size/2) * sizeof(T)));
-                gpuErrchk(cudaMemset(&d_xu[traj_len - (state_size+control_size)], 0, control_size * sizeof(T)));
-            }
-            
+            // shift xu — warm-start = time-shift + DUPLICATE the last stage (real-time-iteration),
+            // matching GATO and the CPU baseline for the fair 3-way comparison. just_shift moves knots
+            // 0..N-2 <- 1..N-1 and leaves the old last stage [u_{N-2}, x_{N-1}] in place, which IS the
+            // duplicated tail. (Previously the tail was refilled from the reference d_xu_traj; with a
+            // static-hold reference that re-seeded "hold" every step and prevented cost-driven tracking.)
+            just_shift<T>(state_size, control_size, knot_points, d_xu);
+
             // shift goal
             just_shift(6, 0, knot_points, d_eePos_goal);
             if (traj_offset + knot_points < traj_steps){
@@ -335,6 +359,14 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
                 gpuErrchk(cudaMemcpy(&d_eePos_goal[(knot_points-1)*(6)], &d_eePos_traj[(traj_steps-1)*(6)], (6)*sizeof(T), cudaMemcpyDeviceToDevice));
                 // gpuErrchk(cudaMemset(&d_eePos_goal[(knot_points-1)*(6) + state_size / 2], 0, (state_size/2) * sizeof(T)));
             }
+#if JOINT_COST_MODE
+            // shift the per-knot state goal in lockstep with d_eePos_goal
+            just_shift<T>(state_size, 0, knot_points, d_xs_goal);
+            {
+                uint32_t src = (traj_offset + knot_points < traj_steps) ? (traj_offset+knot_points-1) : (traj_steps-1);
+                gpuErrchk(cudaMemcpy(&d_xs_goal[(knot_points-1)*state_size], &d_xs_goal_full[src*state_size], state_size*sizeof(T), cudaMemcpyDeviceToDevice));
+            }
+#endif
             
             // shift lambda
             just_shift(state_size, 0, knot_points, d_lambda);
@@ -412,6 +444,14 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
                100.0*capped/linsys_exits.size());
     }
 #endif
+#if JOINT_COST_MODE
+    if(!joint_errors.empty()){
+        double js = 0; T jmx = joint_errors[0];
+        for(T v : joint_errors){ js += v; if(v>jmx) jmx=v; }
+        printf("JOINT_ERR steps=%zu mean=%.6f max=%.6f final=%.6f  (sum|q_actual-q_ref| over %d joints)\n",
+               joint_errors.size(), js/joint_errors.size(), (double)jmx, (double)joint_errors.back(), state_size/2);
+    }
+#endif
     
 
     grid::end_effector_pose_kernel<T><<<1,128,grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT*sizeof(T)>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
@@ -427,6 +467,10 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     gpuErrchk(cudaFree(d_lambda));
     gpuErrchk(cudaFree(d_xu));
     gpuErrchk(cudaFree(d_eePos_goal));
+#if JOINT_COST_MODE
+    gpuErrchk(cudaFree(d_xs_goal));
+    gpuErrchk(cudaFree(d_xs_goal_full));
+#endif
     gpuErrchk(cudaFree(d_xu_old));
 
     gpuErrchk(cudaFree(d_eePos));

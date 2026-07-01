@@ -307,15 +307,17 @@ namespace gato_plant{
 	__device__ void buildTrackingCostBuffers(
 	    T* s_Q, T* s_R, T* s_W, T* s_x_des, T* s_u_des, T* s_ee_des,
 	    T* s_q_lo, T* s_q_hi, T* s_qd_lo, T* s_qd_hi, T* s_u_lo, T* s_u_hi,
-	    const T* s_eePos_traj, T q_state_cost, T qd_cost, T u_cost, T ee_weight)
+	    const T* s_eePos_traj, const T* s_x_goal, T q_state_cost, T qd_cost, T u_cost, T ee_weight)
 	{
 		const int tid = threadIdx.x + threadIdx.y * blockDim.x;
 		const int nth = blockDim.x * blockDim.y;
-		// s_Q: q_state_cost on the q-block (joint-posture toward Q_NOM; 0 => EE-only), qd_cost on the
-		// qd-block. A nonzero q_state_cost makes the state Hessian full-rank PD (PCG-robust).
+		// s_Q: q_state_cost on the q-block, qd_cost on the qd-block. State target s_x_des: per-knot
+		// s_x_goal when provided (joint-space tracking of a moving reference), else the constant Q_NOM
+		// posture (q-block) / zero (qd-block) — EE-only mode. A nonzero q_state_cost makes the state
+		// Hessian full-rank PD (PCG-robust), so joint-space tracking conditions the Schur well.
 		for (int i = tid; i < NX; i += nth) {
-			if (i < NQ) { s_Q[i] = q_state_cost; s_x_des[i] = Q_NOM<T>()[i]; }
-			else        { s_Q[i] = qd_cost;      s_x_des[i] = static_cast<T>(0); }
+			if (i < NQ) { s_Q[i] = q_state_cost; s_x_des[i] = s_x_goal ? s_x_goal[i] : Q_NOM<T>()[i]; }
+			else        { s_Q[i] = qd_cost;      s_x_des[i] = s_x_goal ? s_x_goal[i] : static_cast<T>(0); }
 		}
 		for (int i = tid; i < NU; i += nth) { s_R[i] = u_cost; s_u_des[i] = static_cast<T>(0); }
 		for (int i = tid; i < 3;  i += nth) { s_W[i] = ee_weight; s_ee_des[i] = s_eePos_traj[i]; }
@@ -329,7 +331,7 @@ namespace gato_plant{
 	// VALUE adapter. is_terminal picks N_cost EE weight + drops control reg/barrier.
 	template<typename T>
 	__device__ T trackingCostValue(
-	    const T* s_x, const T* s_u, const T* s_eePos_traj, T* s_temp,
+	    const T* s_x, const T* s_u, const T* s_eePos_traj, const T* s_x_goal, T* s_temp,
 	    const grid::robotModel<T>* d_robotModel,
 	    T q_cost, T q_state_cost, T qd_cost, T u_cost, T N_cost,
 	    T q_lim_cost, T vel_lim_cost, T ctrl_lim_cost, bool is_terminal)
@@ -346,7 +348,7 @@ namespace gato_plant{
 		const T mu_u = is_terminal ? static_cast<T>(0) : ctrl_lim_cost;
 		buildTrackingCostBuffers<T>(s_Q, s_R, s_W, s_x_des, s_u_des, s_ee_des,
 		                            s_q_lo, s_q_hi, s_qd_lo, s_qd_hi, s_u_lo, s_u_hi,
-		                            s_eePos_traj, q_state_cost, qd_cost, u_w, ee_w);
+		                            s_eePos_traj, s_x_goal, q_state_cost, qd_cost, u_w, ee_w);
 		__syncthreads();
 		__shared__ T s_out[1];
 		grid_plant::tracking_cost<T, 0>(s_out, s_x, s_u, s_x_des, s_u_des, s_ee_des,
@@ -361,7 +363,7 @@ namespace gato_plant{
 	// For a terminal R-less call, pass throwaway s_rk/s_Rk.
 	template<typename T>
 	__device__ void trackingCostGradHess(
-	    const T* s_x, const T* s_u, const T* s_eePos_traj,
+	    const T* s_x, const T* s_u, const T* s_eePos_traj, const T* s_x_goal,
 	    T* s_Qk, T* s_qk, T* s_Rk, T* s_rk, T* s_temp,
 	    const grid::robotModel<T>* d_robotModel,
 	    T q_state_cost, T qd_cost, T u_cost, T q_lim_cost, T vel_lim_cost, T ctrl_lim_cost, T ee_weight)
@@ -376,7 +378,7 @@ namespace gato_plant{
 
 		buildTrackingCostBuffers<T>(s_Q, s_R, s_W, s_x_des, s_u_des, s_ee_des,
 		                            s_q_lo, s_q_hi, s_qd_lo, s_qd_hi, s_u_lo, s_u_hi,
-		                            s_eePos_traj, q_state_cost, qd_cost, u_cost, ee_weight);
+		                            s_eePos_traj, s_x_goal, q_state_cost, qd_cost, u_cost, ee_weight);
 		__syncthreads();
 		// grid_plant writes s_Qk/s_Rk column-major; the tracking Hessian is symmetric so the
 		// row-major consumers see an identical matrix.
@@ -401,8 +403,8 @@ namespace gato_plant{
 	// adapter; the terminal knot (blockIdx == knot_points-1) uses N_COST + drops control reg.
 	template <typename T>
 	__device__
-	T trackingcost(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *s_xu, T *s_eePos_traj, T *s_temp, const grid::robotModel<T> *d_robotModel){
-		return trackingCostValue<T>(s_xu, s_xu + state_size, s_eePos_traj, s_temp, d_robotModel,
+	T trackingcost(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *s_xu, T *s_eePos_traj, T *s_x_goal, T *s_temp, const grid::robotModel<T> *d_robotModel){
+		return trackingCostValue<T>(s_xu, s_xu + state_size, s_eePos_traj, s_x_goal, s_temp, d_robotModel,
 		                            static_cast<T>(EE_COST), static_cast<T>(Q_COST), static_cast<T>(QD_COST), static_cast<T>(U_COST),
 		                            static_cast<T>(N_COST), static_cast<T>(Q_LIM_COST), static_cast<T>(VEL_LIM_COST),
 		                            static_cast<T>(CTRL_LIM_COST), /*is_terminal=*/(blockIdx.x == knot_points - 1));
@@ -419,6 +421,7 @@ namespace gato_plant{
 										uint32_t control_size,
 										T *s_xu,
 										T *s_eePos_traj,
+										T *s_x_goal,
 										T *s_Qk,
 										T *s_qk,
 										T *s_Rk,
@@ -426,7 +429,7 @@ namespace gato_plant{
 										T *s_temp,
 										void *d_robotModel)
 	{
-		trackingCostGradHess<T>(s_xu, s_xu + state_size, s_eePos_traj, s_Qk, s_qk, s_Rk, s_rk, s_temp,
+		trackingCostGradHess<T>(s_xu, s_xu + state_size, s_eePos_traj, s_x_goal, s_Qk, s_qk, s_Rk, s_rk, s_temp,
 		                        (const grid::robotModel<T> *)d_robotModel,
 		                        static_cast<T>(Q_COST), static_cast<T>(QD_COST), static_cast<T>(U_COST), static_cast<T>(Q_LIM_COST),
 		                        static_cast<T>(VEL_LIM_COST), static_cast<T>(CTRL_LIM_COST), /*ee_weight=*/static_cast<T>(EE_COST));
@@ -441,6 +444,7 @@ namespace gato_plant{
 						    				  uint32_t control_size,
 						    				  T *s_xux,
 						    				  T *s_eePos_traj,
+						    				  T *s_x_goal,
 						    				  T *s_Qk,
 						    				  T *s_qk,
 						    				  T *s_Rk,
@@ -452,8 +456,10 @@ namespace gato_plant{
 											  )
 	{
 		const grid::robotModel<T> *d_robotModel = (const grid::robotModel<T> *)d_dynMem_const;
+		// per-knot state goal for the terminal knot k+1 (NX past knot k's), nullptr-safe (EE mode)
+		T *s_xkp1_goal = s_x_goal ? &s_x_goal[NX] : nullptr;
 		// running knot k
-		trackingCostGradHess<T>(s_xux, s_xux + state_size, s_eePos_traj, s_Qk, s_qk, s_Rk, s_rk, s_temp,
+		trackingCostGradHess<T>(s_xux, s_xux + state_size, s_eePos_traj, s_x_goal, s_Qk, s_qk, s_Rk, s_rk, s_temp,
 		                        d_robotModel,
 		                        static_cast<T>(Q_COST), static_cast<T>(QD_COST), static_cast<T>(U_COST), static_cast<T>(Q_LIM_COST),
 		                        static_cast<T>(VEL_LIM_COST), static_cast<T>(CTRL_LIM_COST), /*ee_weight=*/static_cast<T>(EE_COST));
@@ -463,7 +469,7 @@ namespace gato_plant{
 		T *s_r_dummy = s_R_dummy + control_size * control_size;
 		T *s_temp2   = s_r_dummy + control_size;
 		T *s_xkp1    = s_xux + state_size + control_size;
-		trackingCostGradHess<T>(s_xkp1, s_xkp1, &s_eePos_traj[6], s_Qkp1, s_qkp1, s_R_dummy, s_r_dummy, s_temp2,
+		trackingCostGradHess<T>(s_xkp1, s_xkp1, &s_eePos_traj[6], s_xkp1_goal, s_Qkp1, s_qkp1, s_R_dummy, s_r_dummy, s_temp2,
 		                        d_robotModel,
 		                        static_cast<T>(Q_COST), static_cast<T>(QD_COST), static_cast<T>(U_COST), static_cast<T>(Q_LIM_COST),
 		                        static_cast<T>(VEL_LIM_COST), static_cast<T>(CTRL_LIM_COST), /*ee_weight=*/static_cast<T>(N_COST));

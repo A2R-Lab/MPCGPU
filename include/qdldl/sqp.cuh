@@ -50,7 +50,7 @@ void qdldl_solve_schur(const QDLDL_int An,
 
 
 template <typename T>
-auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, T &rho, T rho_reset){
+auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, T &rho, T rho_reset, T *d_xs_goal = nullptr){
     
     // data storage
     std::vector<int> linsys_iter_vec;
@@ -222,7 +222,8 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
         static_cast<T>(10),
         timestep,
         d_dynMem_const,
-        d_merit_temp
+        d_merit_temp,
+        d_xs_goal
     );
     reduce_merit<T><<<1, MERIT_THREADS>>>(knot_points, d_merit_temp, d_merit_initial);
     gpuErrchk(cudaMemcpyAsync(&h_merit_initial, d_merit_initial, sizeof(T), cudaMemcpyDeviceToHost));
@@ -249,7 +250,8 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
             timestep,
             d_eePos_traj,
             d_xs,
-            d_xu
+            d_xu,
+            d_xs_goal
         );
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
@@ -314,7 +316,8 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
                 (void *)&d_dz,
                 (void *)&p,
                 (void *)&d_merit_news,
-                (void *)&d_merit_temp
+                (void *)&d_merit_temp,
+                (void *)&d_xs_goal
             };
             gpuErrchk(cudaLaunchCooperativeKernel(ls_merit_kernel, knot_points, MERIT_THREADS, kernelArgs, get_merit_smem_size<T>(state_size, knot_points), streams[p]));
         }
