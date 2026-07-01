@@ -10,6 +10,16 @@
 
 namespace cgrps = cooperative_groups;
 
+// Residual replacement period: every K iterations recompute the TRUE residual r = gamma - S*lambda
+// instead of trusting the drifting recurrence r -= alpha*S*p. In float32 the recurrence residual
+// decouples from the true residual after many iterations, so the preconditioned residual eta plateaus
+// above the tolerance and the relative exit can never fire (the solver caps regardless of conditioning).
+// A periodic true-residual recompute restores eta as a faithful convergence measure. 0 => off (pure
+// recurrence, byte-identical to before); a typical value is 25-50.
+#ifndef PCG_RESIDUAL_REPLACE_PERIOD
+#define PCG_RESIDUAL_REPLACE_PERIOD 0
+#endif
+
 template <typename T>
 size_t pcgSharedMemSize(uint32_t state_size, uint32_t knot_points){
     return sizeof(T) * max(
@@ -201,9 +211,28 @@ void pcg(
             s_lambda_b[ind] += alpha * s_p_b[ind];
             s_r_b[ind] -= alpha * s_upsilon[ind];
             d_r[block_x_statesize + ind] = s_r_b[ind];
+#if PCG_RESIDUAL_REPLACE_PERIOD
+            d_lambda[block_x_statesize + ind] = s_lambda_b[ind];   // expose lambda for the periodic recompute
+#endif
         }
 
         grid.sync(); //-------------------------------------
+
+#if PCG_RESIDUAL_REPLACE_PERIOD
+        // periodic true-residual replacement: r = gamma - S*lambda (defeats float recurrence drift so eta
+        // stays a real convergence measure). iter is uniform across blocks, so the grid.sync is uniform.
+        if(((iter+1) % PCG_RESIDUAL_REPLACE_PERIOD) == 0){
+            loadbdVec<T, state_size, knot_points-1>(s_lambda, block_id, &d_lambda[block_x_statesize]);
+            __syncthreads();
+            bdmv<T>(s_upsilon, s_S, s_lambda, state_size, knot_points-1, block_id);   // s_upsilon = (S*lambda)_block
+            __syncthreads();
+            for(uint32_t ind = thread_id; ind < state_size; ind += block_dim){
+                s_r_b[ind] = s_gamma[ind] - s_upsilon[ind];
+                d_r[block_x_statesize + ind] = s_r_b[ind];
+            }
+            grid.sync(); //-------------------------------------
+        }
+#endif
 
         // r_tilde = Pinv * r
         loadbdVec<T, state_size, knot_points-1>(s_r, block_id, &d_r[block_x_statesize]);
