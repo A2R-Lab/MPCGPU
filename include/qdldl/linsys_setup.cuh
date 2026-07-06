@@ -71,8 +71,14 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             __syncthreads();//----------------------------------------------------------------
 
+#ifdef GATO_REG_PATTERN
+            // GATO convention: rho on the POSITION half of Q only; R unregularized.
+            glass::add_identity_partial<T>(state_size, s_Q0, rho, state_size/2);
+            glass::add_identity_partial<T>(state_size, s_QN, rho, state_size/2);
+#else
             glass::add_identity<T>(state_size, s_Q0, rho);
             glass::add_identity<T>(state_size, s_QN, rho);
+#endif
             
             __syncthreads();//----------------------------------------------------------------
             
@@ -160,9 +166,16 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             __syncthreads();//----------------------------------------------------------------
 
+#ifdef GATO_REG_PATTERN
+            // GATO convention: rho on the POSITION half of Q only; R unregularized.
+            glass::add_identity_partial<T>(state_size, s_Qk, rho, state_size/2);
+            glass::add_identity_partial<T>(state_size, s_Qkp1, rho, state_size/2);
+            // R unregularized (GATO convention)
+#else
             glass::add_identity<T>(state_size, s_Qk, rho);
             glass::add_identity<T>(state_size, s_Qkp1, rho);
             glass::add_identity<T>(control_size, s_Rk, rho);
+#endif
             
             // Invert Q, Qp1, R 
             glass::set_identity<T>(state_size, s_Qk_i); glass::set_identity<T>(state_size, s_Qkp1_i); glass::set_identity<T>(control_size, s_Rk_i);

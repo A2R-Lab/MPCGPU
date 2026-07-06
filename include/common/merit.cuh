@@ -70,7 +70,7 @@ void ls_gato_compute_merit(uint32_t state_size,
         
         block.sync();
         if(knot < knot_points-1){
-            ck = integratorError<T>(state_size, s_xux_k, &s_xux_k[states_s_controls], s_temp, d_robotModel, dt, block);
+            ck = integratorError<T, MPCGPU_INTEGRATOR>(state_size, s_xux_k, &s_xux_k[states_s_controls], s_temp, d_robotModel, dt, block);
         }
         else{
             // diff xs vs xs_traj
@@ -138,7 +138,7 @@ void compute_merit(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 
         block.sync();
         if(knot < knot_points-1){
-            ck = integratorError<T>(state_size, s_xux_k, &s_xux_k[states_s_controls], s_temp, d_robotModel, dt, block);
+            ck = integratorError<T, MPCGPU_INTEGRATOR>(state_size, s_xux_k, &s_xux_k[states_s_controls], s_temp, d_robotModel, dt, block);
         }
         else{
             ck = 0;

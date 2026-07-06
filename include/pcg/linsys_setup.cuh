@@ -177,8 +177,14 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
         __syncthreads();//----------------------------------------------------------------
 
+#ifdef GATO_REG_PATTERN
+        // GATO convention: rho on the POSITION half of Q only; R unregularized.
+        glass::add_identity_partial<T>(state_size, s_Q0, rho, state_size/2);
+        glass::add_identity_partial<T>(state_size, s_QN, rho, state_size/2);
+#else
         glass::add_identity<T>(state_size, s_Q0, rho);
         glass::add_identity<T>(state_size, s_QN, rho);
+#endif
         // if(PRINT_THREAD){
         //     printf("Q0\n");
         //     printMat<state_size,state_size>(s_Q0,state_size);
@@ -318,9 +324,16 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
         __syncthreads();//----------------------------------------------------------------
 
+#ifdef GATO_REG_PATTERN
+        // GATO convention: rho on the POSITION half of Q only; R unregularized.
+        glass::add_identity_partial<T>(state_size, s_Qk, rho, state_size/2);
+        glass::add_identity_partial<T>(state_size, s_Qkp1, rho, state_size/2);
+        // R unregularized (GATO convention)
+#else
         glass::add_identity<T>(state_size, s_Qk, rho);
         glass::add_identity<T>(state_size, s_Qkp1, rho);
         glass::add_identity<T>(control_size, s_Rk, rho);
+#endif
 
 #if DEBUG_MODE    
         if(blockIdx.x==1 && threadIdx.x==0){

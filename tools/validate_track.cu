@@ -21,7 +21,11 @@ int main(int argc, char** argv){
     constexpr uint32_t knot_points = KNOT_POINTS;
     const linsys_t timestep = TIMESTEP;
 
+#ifdef VT_PCG_EXIT_TOL
+    float pcg_exit_tol = VT_PCG_EXIT_TOL;   // diagnostic override (e.g. 0.0f = run to PCG_MAX_ITER)
+#else
     float pcg_exit_tol = (knot_points==32) ? 5e-6 : (knot_points==64 ? 5e-5 : 1e-5);
+#endif
 
     std::string prefix = (argc > 1) ? argv[1] : "examples/trajfiles/0_0";
     std::vector<std::vector<linsys_t>> eePos_traj2d = readCSVToVecVec<linsys_t>((prefix+"_eepos.traj").c_str());

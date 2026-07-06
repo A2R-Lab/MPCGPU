@@ -36,7 +36,13 @@ void exec_integrator_error(uint32_t state_size, T *s_err, T *s_qkp1, T *s_qdkp1,
             new_qdkp1 = s_qd[ind] + dt*s_qdd[ind];
             new_qkp1 = s_q[ind] + dt*new_qdkp1;
         }
-        else {printf("Integrator [%d] not defined. Currently support [0: Euler and 1: Semi-Implicit Euler]",INTEGRATOR_TYPE);}
+        // trapezoidal (matches GATO's default INTEGRATOR_TYPE=2)
+        // qdkp1 = qdk + dt*qddk ; qkp1 = qk + dt*qdk + 0.5*dt^2*qddk
+        else if (INTEGRATOR_TYPE == 2){
+            new_qdkp1 = s_qd[ind] + dt*s_qdd[ind];
+            new_qkp1 = s_q[ind] + dt*s_qd[ind] + static_cast<T>(0.5)*dt*dt*s_qdd[ind];
+        }
+        else {printf("Integrator [%d] not defined. Currently support [0: Euler, 1: Semi-Implicit Euler, 2: Trapezoidal]",INTEGRATOR_TYPE);}
 
         // wrap angles if needed
         if(ANGLE_WRAP){ printf("ANGLE_WRAP!\n");
@@ -96,12 +102,27 @@ void exec_integrator_gradient(uint32_t state_size, uint32_t control_size, T *s_A
             }
         }
     }
-    else{printf("Integrator [%d] not defined. Currently support [0: Euler and 1: Semi-Implicit Euler]",INTEGRATOR_TYPE);}
+    else if (INTEGRATOR_TYPE == 2){
+        // trapezoidal (matches GATO)
+        // qdkp1 = qdk + dt*qddk ; qkp1 = qk + dt*qdk + 0.5*dt^2*qddk
+        // Ak = [[I + 0.5*dt^2*dqdd/dq, dt*I + 0.5*dt^2*dqdd/dqd], [dt*dqdd/dq, I + dt*dqdd/dqd]]
+        // Bk = [0.5*dt^2*dqdd/du; dt*dqdd/du]
+        for (unsigned ind = thread_id; ind < state_size*state_size; ind += block_dim){
+            int c = ind / state_size; int r = ind % state_size; int rdqdd = r % (state_size/2);
+            T dtVal = (r == rdqdd) ? static_cast<T>(0.5)*dt : static_cast<T>(1);
+            s_Ak[ind] = static_cast<T>((r == c) + dt*(r == c - state_size/2)) +
+                        dt * s_dqdd[c*state_size/2 + rdqdd] * dtVal;
+            if(c < control_size){
+                s_Bk[ind] = dt * s_dqdd[state_size*state_size/2 + c*state_size/2 + rdqdd] * dtVal;
+            }
+        }
+    }
+    else{printf("Integrator [%d] not defined. Currently support [0: Euler, 1: Semi-Implicit Euler, 2: Trapezoidal]",INTEGRATOR_TYPE);}
 }
 
 
 template <typename T, unsigned INTEGRATOR_TYPE = 0, bool ANGLE_WRAP = false>
-__device__ 
+__device__
 void exec_integrator(uint32_t state_size, T *s_qkp1, T *s_qdkp1, T *s_q, T *s_qd, T *s_qdd, T dt, cgrps::thread_block block){
 
     const uint32_t thread_id = threadIdx.x;
@@ -120,7 +141,12 @@ void exec_integrator(uint32_t state_size, T *s_qkp1, T *s_qdkp1, T *s_q, T *s_qd
             s_qdkp1[ind] = s_qd[ind] + dt*s_qdd[ind];
             s_qkp1[ind] = s_q[ind] + dt*s_qdkp1[ind];
         }
-        else{printf("Integrator [%d] not defined. Currently support [0: Euler and 1: Semi-Implicit Euler]",INTEGRATOR_TYPE);}
+        // trapezoidal (matches GATO)
+        else if (INTEGRATOR_TYPE == 2){
+            s_qdkp1[ind] = s_qd[ind] + dt*s_qdd[ind];
+            s_qkp1[ind] = s_q[ind] + dt*s_qd[ind] + static_cast<T>(0.5)*dt*dt*s_qdd[ind];
+        }
+        else{printf("Integrator [%d] not defined. Currently support [0: Euler, 1: Semi-Implicit Euler, 2: Trapezoidal]",INTEGRATOR_TYPE);}
 
         // wrap angles if needed
         if(ANGLE_WRAP){
@@ -284,7 +310,7 @@ void simple_integrator_kernel(uint32_t state_size, uint32_t control_size, T *d_x
     }
 
     block.sync();
-    integrator<T,0,0>(state_size, s_xkp1, s_xuk, s_temp, d_dynMem_const, dt, block);
+    integrator<T,MPCGPU_INTEGRATOR,0>(state_size, s_xkp1, s_xuk, s_temp, d_dynMem_const, dt, block);
     block.sync();
 
     for (unsigned ind = threadIdx.x; ind < state_size; ind += blockDim.x){

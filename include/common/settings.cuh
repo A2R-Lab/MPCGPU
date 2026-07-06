@@ -185,6 +185,13 @@ LINSYS_SOLVE = 0 uses qdldl as the underlying linear system solver */
 #define PCG_RES_TOL 1e-5
 #endif
 
+// Integrator used by the SOLVER's prediction model (KKT linearization + merit defect):
+// 0 = explicit Euler (MPCGPU historic), 1 = semi-implicit Euler, 2 = trapezoidal (GATO's
+// default). The mpcsim ground-truth simulator is unaffected (fine-substep Euler).
+#ifndef MPCGPU_INTEGRATOR
+#define MPCGPU_INTEGRATOR 0
+#endif
+
 // JOINT_COST_MODE = 1 drives a per-knot STATE goal (d_xs_goal, derived from the reference
 // trajectory) into the tracking cost, enabling joint-space tracking (set Q_COST>0, EE_COST=0).
 // 0 => EE-only cost (d_xs_goal stays nullptr; the cost falls back to the constant Q_NOM posture).

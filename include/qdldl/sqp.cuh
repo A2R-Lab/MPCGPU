@@ -238,7 +238,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     //
     for(uint32_t sqpiter = 0; sqpiter < SQP_MAX_ITER; sqpiter++){
         
-        generate_kkt_submatrices<T><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
+        generate_kkt_submatrices<T, MPCGPU_INTEGRATOR><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
             state_size,
             control_size,
             knot_points,
@@ -340,6 +340,15 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
                 line_search_step = i;
             }
         }
+#ifdef SQP_DEBUG
+        {
+            uint32_t dzn = (state_size+control_size)*knot_points - control_size;
+            std::vector<T> hdz(dzn); cudaMemcpy(hdz.data(), d_dz, dzn*sizeof(T), cudaMemcpyDeviceToHost);
+            double nn=0; for(auto v:hdz) nn+=(double)v*(double)v;
+            printf("[SQP_DEBUG] iter=%u ||dz||=%.4e rho=%.3e merit_init=%.6e min_merit=%.6e step=%d\n",
+                   sqp_iter, sqrt(nn), (double)rho, (double)h_merit_initial, (double)min_merit, line_search_step);
+        }
+#endif
 
 
         if(min_merit == h_merit_initial){

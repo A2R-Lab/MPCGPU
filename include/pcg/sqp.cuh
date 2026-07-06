@@ -207,9 +207,12 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
     //
     //      SQP LOOP
     //
+#ifdef DUMP_KKT
+    bool dump_this_solve = false;   // set by the pre-solve dump block; read by the post blocks
+#endif
     for(uint32_t sqpiter = 0; sqpiter < SQP_MAX_ITER; sqpiter++){
         
-        generate_kkt_submatrices<T><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
+        generate_kkt_submatrices<T, MPCGPU_INTEGRATOR><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
             state_size,
             control_size,
             knot_points,
@@ -252,7 +255,11 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
             printf("[PCG_DEBUG] solve %d after form_S: G=%d C=%d S=%d Pinv=%d gamma=%d\n", dbg, nk,nc,ns,np,ng); dbg++; } }
 #endif
 #ifdef DUMP_KKT
-        { static int dumped=0; if(dumped==0){ dumped=1; gpuErrchk(cudaDeviceSynchronize());
+// which solve (0-indexed, counted across the whole run) to dump — default first
+#ifndef DUMP_KKT_AT_SOLVE
+#define DUMP_KKT_AT_SOLVE 0
+#endif
+        { static int dumped=0; dump_this_solve = (dumped++==DUMP_KKT_AT_SOLVE); if(dump_this_solve){ gpuErrchk(cudaDeviceSynchronize());
             auto dump=[&](const char* fn, T* d, size_t n){
                 std::vector<T> h(n); gpuErrchk(cudaMemcpy(h.data(), d, n*sizeof(T), cudaMemcpyDeviceToHost));
                 FILE* f=fopen(fn,"wb"); fwrite(h.data(),sizeof(T),n,f); fclose(f);
@@ -265,6 +272,8 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
             dump("/tmp/mpc_gamma.bin", d_gamma,   state_size*knot_points);
             dump("/tmp/mpc_g.bin",     d_g,       (state_size+control_size)*knot_points-control_size);
             dump("/tmp/mpc_c.bin",     d_c,       state_size*knot_points);
+            dump("/tmp/mpc_lambda0.bin", d_lambda, state_size*knot_points);   // warm-start lambda (pre-solve)
+            dump("/tmp/mpc_xu_pre.bin", d_xu, (state_size+control_size)*knot_points-control_size);  // warm-start trajectory
             printf("[DUMP_KKT] wrote /tmp/mpc_{G,C,S,Pinv,gamma}.bin (state=%u ctrl=%u N=%u rho=%g)\n",
                    state_size, control_size, knot_points, (double)rho);
         } }
@@ -315,6 +324,19 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         );
         gpuErrchk(cudaPeekAtLastError());
         if (sqpTimecheck()){ break; }
+#ifdef DUMP_KKT
+        // post-solve state of the SAME dumped solve: lambda after PCG, Ginv, recovered dz
+        { if(dump_this_solve){ gpuErrchk(cudaDeviceSynchronize());
+            auto dump=[&](const char* fn, T* d, size_t n){
+                std::vector<T> h(n); gpuErrchk(cudaMemcpy(h.data(), d, n*sizeof(T), cudaMemcpyDeviceToHost));
+                FILE* f=fopen(fn,"wb"); fwrite(h.data(),sizeof(T),n,f); fclose(f);
+            };
+            dump("/tmp/mpc_lambda1.bin", d_lambda,     state_size*knot_points);
+            dump("/tmp/mpc_Ginv.bin",    d_Ginv_dense, (states_sq+controls_sq)*knot_points-controls_sq);
+            dump("/tmp/mpc_dz.bin",      d_dz,         (state_size+control_size)*knot_points-control_size);
+            printf("[DUMP_KKT] wrote /tmp/mpc_{lambda1,Ginv,dz}.bin (post-solve)\n");
+        } }
+#endif
 #ifdef SQP_DEBUG
         {
             uint32_t dzn = (state_size+control_size)*knot_points - control_size;
@@ -413,6 +435,18 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
         gpuErrchk(cudaPeekAtLastError());
         // if success increment after update
         sqp_iter++;
+#ifdef DUMP_KKT
+        // inputs + accepted step of the SAME dumped solve, for cross-solver replay
+        { if(dump_this_solve){ gpuErrchk(cudaDeviceSynchronize());
+            auto dump=[&](const char* fn, T* d, size_t n){
+                std::vector<T> h(n); gpuErrchk(cudaMemcpy(h.data(), d, n*sizeof(T), cudaMemcpyDeviceToHost));
+                FILE* f=fopen(fn,"wb"); fwrite(h.data(),sizeof(T),n,f); fclose(f);
+            };
+            dump("/tmp/mpc_xu_post.bin", d_xu, (state_size+control_size)*knot_points-control_size);
+            dump("/tmp/mpc_goal.bin", d_eePos_traj, 6*knot_points);
+            printf("[DUMP_KKT] wrote /tmp/mpc_{xu_post,goal}.bin (accepted alpha=%g)\n", (double)alphafinal);
+        } }
+#endif
 
         if (sqpTimecheck()){ break; }
 
