@@ -306,7 +306,14 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
         
 
         // simulate traj for current solve time, offset by previous solve time
+#ifdef APPLY_FRESH_CONTROL
+        // experiment: apply the CURRENT solve's controls, aligned to the position within the
+        // knot window (mirrors GATO's apply-fresh-control-immediately loop; the default path
+        // applies the PREVIOUS solve's trajectory at a fixed one-period offset).
+        simple_simulate<T>(state_size, control_size, knot_points, d_xs, d_xu, d_dynmem, timestep, time_since_timestep*1e6, simulation_time);
+#else
         simple_simulate<T>(state_size, control_size, knot_points, d_xs, d_xu_old, d_dynmem, timestep, prev_simulation_time, simulation_time);
+#endif
 
         // old xu = new xu
         gpuErrchk(cudaMemcpy(d_xu_old, d_xu, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
@@ -321,10 +328,14 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
             grid::end_effector_pose_kernel<T><<<1,128,grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT*sizeof(T)>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
             gpuErrchk(cudaMemcpy(h_eePos, d_eePos, 6*sizeof(T), cudaMemcpyDeviceToHost));
             gpuErrchk(cudaMemcpy(h_eePos_goal, d_eePos_goal, 6*sizeof(T), cudaMemcpyDeviceToHost));
+            // L2 position error — MUST match the GATO/BatchThneed harnesses (np.linalg.norm)
+            // for the 3-way comparison; the old L1 sum inflated MPCGPU's numbers 1.3-1.7x.
             cur_tracking_error = 0.0;
             for(uint32_t i=0; i < 3; i++){
-                cur_tracking_error += abs(h_eePos[i] - h_eePos_goal[i]);
+                T d = h_eePos[i] - h_eePos_goal[i];
+                cur_tracking_error += d*d;
             }
+            cur_tracking_error = sqrt(cur_tracking_error);
             // std::cout << cur_tracking_error << std::endl;;
             tracking_errors.push_back(cur_tracking_error);
 #if JOINT_COST_MODE
@@ -348,6 +359,19 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
             // duplicated tail. (Previously the tail was refilled from the reference d_xu_traj; with a
             // static-hold reference that re-seeded "hold" every step and prevented cost-driven tracking.)
             just_shift<T>(state_size, control_size, knot_points, d_xu);
+#ifdef CONSISTENT_SHIFT_TAIL
+            // Overwrite the duplicated tail state with a dynamically-consistent rollout
+            // x_{N-1} = f(x_{N-2}, u_{N-2}) under the SOLVER's integrator, so the warm start
+            // carries no artificial defect at the last constraint row (the dup-last-stage
+            // shift concentrates the ENTIRE warm-start defect there, and an exact QP solve
+            // spends its step closing that artifact instead of tracking).
+            {
+                const uint32_t ssc = state_size + control_size;
+                gpuErrchk(cudaMemcpy(&d_xu[(knot_points-1)*ssc], &d_xu[(knot_points-2)*ssc], state_size*sizeof(T), cudaMemcpyDeviceToDevice));
+                const size_t tail_smem = sizeof(T)*(2*state_size + control_size + state_size/2 + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared());
+                simple_integrator_kernel<T><<<1,32,tail_smem>>>(state_size, control_size, &d_xu[(knot_points-1)*ssc], &d_xu[(knot_points-2)*ssc+state_size], d_dynmem, timestep);
+            }
+#endif
 
             // shift goal
             just_shift(6, 0, knot_points, d_eePos_goal);
