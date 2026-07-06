@@ -13,8 +13,10 @@ GATO. Future GRiD/GLASS bumps are a `regen` + pin bump, not hand-patching.
   `iiwa14/grid.cuh` (the cross-check that catches URDF divergence). The adapter
   `include/dynamics/iiwa/iiwa_eepos_plant.cuh` wraps GRiD's `*_inner` kernels (forward/inverse dynamics,
   fd/id gradient, minv, end_effector_pose[_gradient]). No dynamics are hand-rolled.
-- **In-block linalg → GLASS.** The block-scoped primitives (`gemv`, `axpby`, `addI`, `loadIdentity`,
-  `invertMatrix`, `gemm`, `copy`, `reduce`, `dot`) come from the top-level `glass::` namespace. The old
+- **In-block linalg → GLASS.** The block-scoped primitives (`gemv`, `axpby`, `add_identity`,
+  `set_identity`, `inv`, `gemm`, `copy`, `reduce`, `dot`) come from the top-level `glass::`
+  namespace (GLASS naming r2, pin ≥5caa6d0: `addI→add_identity`, `loadIdentity→set_identity`,
+  `invertMatrix→inv`, `addI_partial→add_identity_partial`). The old
   hand-rolled `include/utils/matrix.cuh` primitives were migrated to `glass::` (bit-exact validated);
   only the host-side `write_device_matrix_to_file` debug dumper remains there.
 - **Cooperative PCG → GBD-PCG.** `GBD-PCG/` is the **cooperative, grid-wide** block-tridiagonal PCG
