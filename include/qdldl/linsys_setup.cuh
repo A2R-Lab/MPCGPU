@@ -71,8 +71,8 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             __syncthreads();//----------------------------------------------------------------
 
-            glass::addI<T>(state_size, s_Q0, rho);
-            glass::addI<T>(state_size, s_QN, rho);
+            glass::add_identity<T>(state_size, s_Q0, rho);
+            glass::add_identity<T>(state_size, s_QN, rho);
             
             __syncthreads();//----------------------------------------------------------------
             
@@ -83,9 +83,9 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 
             // invert Q_N, Q_0
-            glass::loadIdentity<T>(state_size, s_Q0_i); glass::loadIdentity<T>(state_size, s_QN_i);
+            glass::set_identity<T>(state_size, s_Q0_i); glass::set_identity<T>(state_size, s_QN_i);
             __syncthreads();//----------------------------------------------------------------
-            glass::invertMatrix<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
+            glass::inv<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
             
             __syncthreads();//----------------------------------------------------------------
 
@@ -160,14 +160,14 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             __syncthreads();//----------------------------------------------------------------
 
-            glass::addI<T>(state_size, s_Qk, rho);
-            glass::addI<T>(state_size, s_Qkp1, rho);
-            glass::addI<T>(control_size, s_Rk, rho);
+            glass::add_identity<T>(state_size, s_Qk, rho);
+            glass::add_identity<T>(state_size, s_Qkp1, rho);
+            glass::add_identity<T>(control_size, s_Rk, rho);
             
             // Invert Q, Qp1, R 
-            glass::loadIdentity<T>(state_size, s_Qk_i); glass::loadIdentity<T>(state_size, s_Qkp1_i); glass::loadIdentity<T>(control_size, s_Rk_i);
+            glass::set_identity<T>(state_size, s_Qk_i); glass::set_identity<T>(state_size, s_Qkp1_i); glass::set_identity<T>(control_size, s_Rk_i);
             __syncthreads();//----------------------------------------------------------------
-            glass::invertMatrix<T>( state_size,state_size,control_size,state_size,
+            glass::inv<T>( state_size,state_size,control_size,state_size,
                 s_Qk, 
                 s_Qkp1, 
                 s_Rk, 

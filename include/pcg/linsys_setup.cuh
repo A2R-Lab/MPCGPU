@@ -177,8 +177,8 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
         __syncthreads();//----------------------------------------------------------------
 
-        glass::addI<T>(state_size, s_Q0, rho);
-        glass::addI<T>(state_size, s_QN, rho);
+        glass::add_identity<T>(state_size, s_Q0, rho);
+        glass::add_identity<T>(state_size, s_QN, rho);
         // if(PRINT_THREAD){
         //     printf("Q0\n");
         //     printMat<state_size,state_size>(s_Q0,state_size);
@@ -212,9 +212,9 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
 
         // invert Q_N, Q_0
-        glass::loadIdentity<T>(state_size, s_Q0_i); glass::loadIdentity<T>(state_size, s_QN_i);
+        glass::set_identity<T>(state_size, s_Q0_i); glass::set_identity<T>(state_size, s_QN_i);
         __syncthreads();//----------------------------------------------------------------
-        glass::invertMatrix<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
+        glass::inv<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
         
         __syncthreads();//----------------------------------------------------------------
 
@@ -318,9 +318,9 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
         __syncthreads();//----------------------------------------------------------------
 
-        glass::addI<T>(state_size, s_Qk, rho);
-        glass::addI<T>(state_size, s_Qkp1, rho);
-        glass::addI<T>(control_size, s_Rk, rho);
+        glass::add_identity<T>(state_size, s_Qk, rho);
+        glass::add_identity<T>(state_size, s_Qkp1, rho);
+        glass::add_identity<T>(control_size, s_Rk, rho);
 
 #if DEBUG_MODE    
         if(blockIdx.x==1 && threadIdx.x==0){
@@ -346,9 +346,9 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 #endif /* #if DEBUG_MODE */
         
         // Invert Q, Qp1, R 
-        glass::loadIdentity<T>(state_size, s_Qk_i); glass::loadIdentity<T>(state_size, s_Qkp1_i); glass::loadIdentity<T>(control_size, s_Rk_i);
+        glass::set_identity<T>(state_size, s_Qk_i); glass::set_identity<T>(state_size, s_Qkp1_i); glass::set_identity<T>(control_size, s_Rk_i);
         __syncthreads();//----------------------------------------------------------------
-        glass::invertMatrix<T>( state_size,state_size,control_size,state_size,
+        glass::inv<T>( state_size,state_size,control_size,state_size,
             s_Qk, 
             s_Qkp1, 
             s_Rk, 
@@ -513,12 +513,12 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         // EE-only cost makes Q^{-1}~1/rho huge and the dynamics (Minv~392) drive theta~1e8, so an
         // unregularized invert overflows to NaN. S already holds the un-regularized theta (stored
         // above), so only the preconditioner inverse sees the +rho; the solved system is unchanged.
-        glass::addI_partial<T>(state_size, s_theta_k, rho, state_size/2);
+        glass::add_identity_partial<T>(state_size, s_theta_k, rho, state_size/2);
         __syncthreads();//----------------------------------------------------------------
         // invert theta
-        glass::loadIdentity<T>(state_size, s_thetaInv_k);
+        glass::set_identity<T>(state_size, s_thetaInv_k);
         __syncthreads();//----------------------------------------------------------------
-        glass::invertMatrix<T>(state_size,s_theta_k, s_extra_temp);
+        glass::inv<T>(state_size,s_theta_k, s_extra_temp);
         __syncthreads();//----------------------------------------------------------------
 
 
