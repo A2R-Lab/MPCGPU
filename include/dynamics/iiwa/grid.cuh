@@ -691,7 +691,7 @@ namespace grid {
     
     // Vendored from GLASS at codegen time (nested in this namespace).
     // Source repository: git@github.com:A2R-Lab/GLASS.git
-    // Pinned commit: 066d32decf415c1e08899f0be02d40e62f6c9e2e
+    // Pinned commit: 5caa6d0dfcf4ec086c0ad7a7e3d77b14aad6705e
     namespace glass {
     
     // BEGIN GLASS src/base/barrier.cuh
@@ -728,6 +728,28 @@ namespace grid {
             return blockDim.x * blockDim.y * blockDim.z;
         }
         __device__ __forceinline__ void sync() const { __syncthreads(); }
+    };
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // ct_size — compile-time size carrier for the factor/solve `*_impl` bodies.
+    //
+    // The shared impls take their dimension through a deduced `SizeT` template
+    // parameter instead of a hard `uint32_t`. The runtime public overloads pass a
+    // plain `uint32_t` (unchanged behavior); the compile-time-size overloads pass
+    // `ct_size<N>{}`, whose constexpr conversion makes every use of the dimension a
+    // compile-time constant after inlining — so nvcc unrolls the loops and
+    // strength-reduces the `%`/`/` indexing with NO body duplication (the same
+    // effect `gemm_impl_ct` gets from its dedicated body). A self-made carrier
+    // rather than std::integral_constant so no system header lands inside
+    // `namespace glass` (this file is included inside the namespace by glass.cuh).
+    // Defined here (not in trsv.cuh, its original home) because barrier.cuh is the
+    // FIRST header glass.cuh pulls in and the one downstream vendoring already
+    // carries — every factor/solve user (trsv/inv/syev/ldlt/…) sees it regardless
+    // of which subset of headers a consumer embeds.
+    // ─────────────────────────────────────────────────────────────────────────────
+    template <uint32_t V>
+    struct ct_size {
+        __host__ __device__ constexpr operator uint32_t() const { return V; }
     };
     // END GLASS src/base/barrier.cuh
     
@@ -1988,6 +2010,13 @@ namespace grid {
     // Each C[m,n] is written by exactly one thread/lane (serial-K inner loop, no
     // reduction) ⇒ trivially thread-count invariant. Column-major operands by default.
     //
+    // Fast path: when TRANSPOSE_A=false and ROW_MAJOR_C=false (any TRANSPOSE_B),
+    // threads own 4-row register tiles of a C column (B value reused across 4 FMAs,
+    // contiguous A rows vector-loaded when aligned) — same per-element ascending-k
+    // accumulation order, so results stay bit-identical across thread counts.
+    // A, B, C must not alias each other (C is written while A/B are read; declared
+    // __restrict__). A and B may point to the SAME data (both are read-only).
+    //
     // Row-major operands need no separate path: a row-major M×K matrix is exactly a
     // column-major K×M matrix, so pass it with the matching TRANSPOSE flag (see
     // examples/11_rowmajor_is_transpose.cu). That is why there is a single ROW_MAJOR_C
@@ -1996,13 +2025,224 @@ namespace grid {
     // NumPy: C = alpha*opA(A) @ opB(B) + beta*C ;
     // Eigen: C.noalias() = alpha*(opA(A)*opB(B)) + beta*C;  (column-major default)
     
+    // ─── shared 4-row register-tile helpers ──────────────────────────────────────
+    // Identical guarded copy lives in L2/gemv.cuh, L3/gemm.cuh, and L3/syrk.cuh:
+    // these base headers are #include'd inside `namespace glass { }` (with #pragma
+    // once), so whichever the umbrella pulls in first defines the block and the
+    // guard skips the twins — no dependency on include order.
+    #ifndef GRID_VENDORED_GLASS_TILE4_HELPERS_DEFINED
+    #define GRID_VENDORED_GLASS_TILE4_HELPERS_DEFINED
+    
+    // Scalar types with a 16-byte vector load (float4 / 2×double2).
+    template <typename T> struct tile4_has_vec { static constexpr bool value = false; };
+    template <> struct tile4_has_vec<float>  { static constexpr bool value = true; };
+    template <> struct tile4_has_vec<double> { static constexpr bool value = true; };
+    
+    // Load 4 consecutive elements p[0..3] into registers. The vector overloads
+    // require `p` 16-byte aligned. Loads only change HOW values reach registers —
+    // never any output's accumulation order — so vector vs scalar is bit-identical.
+    __device__ __forceinline__ void tile4_load(const float *p, float &a0, float &a1, float &a2, float &a3)
+    {
+        float4 v = *reinterpret_cast<const float4 *>(p);
+        a0 = v.x; a1 = v.y; a2 = v.z; a3 = v.w;
+    }
+    __device__ __forceinline__ void tile4_load(const double *p, double &a0, double &a1, double &a2, double &a3)
+    {
+        double2 v0 = *reinterpret_cast<const double2 *>(p);
+        double2 v1 = *reinterpret_cast<const double2 *>(p + 2);
+        a0 = v0.x; a1 = v0.y; a2 = v1.x; a3 = v1.y;
+    }
+    template <typename T>
+    __device__ __forceinline__ void tile4_load(const T *p, T &a0, T &a1, T &a2, T &a3)
+    {
+        a0 = p[0]; a1 = p[1]; a2 = p[2]; a3 = p[3];
+    }
+    
+    // Base-pointer half of the vector-load precondition: with a leading dimension
+    // that is a multiple of 4 (float; 2 suffices for double but we require 4
+    // uniformly) and 4-row tiles starting at row r ≡ 0 (mod 4), every tile start
+    // A + r + k*ld stays 16-byte aligned iff the base pointer is.
+    template <typename T>
+    __device__ __forceinline__ bool tile4_aligned(const T *p)
+    {
+        return (reinterpret_cast<uintptr_t>(p) & 0xFu) == 0u;
+    }
+    // 4-row tiles pay off only when every C column decomposes into WHOLE tiles
+    // and M is big enough for the B-register reuse to beat the 4x loss in
+    // parallel work units: an M%4 tail runs its rows serially inside one work
+    // unit and bottlenecks the whole block (measured sm_120: non-multiple-of-4
+    // M loses at every size probed — 5..81), and M=8 leaves too few tiles to
+    // feed more than one warp (loses at 64+ threads). Multiples of 4 from 12 up
+    // win at every probed thread count.
+    __host__ __device__ constexpr bool tile4_profitable(uint32_t m)
+    {
+        return (m % 4u == 0u) && (m >= 12u);
+    }
+    #endif  // GRID_VENDORED_GLASS_TILE4_HELPERS_DEFINED
+    
+    // ─── 4-row register-tiled gemm cores (TRANSPOSE_A=false, ROW_MAJOR_C=false) ──
+    // Each thread owns TILE=4 CONSECUTIVE ROWS of one C column: the flat M*N output
+    // element space becomes ceil(M/4)*N row-tiles, strided over the block exactly
+    // like gemm_impl strides elements (thread t handles tiles t, t+size, …). Per k,
+    // B[k,n] is loaded ONCE into a register and reused by 4 FMAs against the
+    // contiguous A[r..r+3, k] (one float4 / two double2 when M%4==0 and A is
+    // 16-byte aligned; scalar loads otherwise and for the M%4 tail rows). Each C
+    // element accumulates in its own register with the SAME serial ascending-k
+    // chain as the untiled loop and is written by exactly one thread, so
+    // thread-count invariance stays bit-identical. HAS_BETA folds the beta /
+    // implicit-beta=0 overloads into one body (beta unused and C never read when
+    // false). No interior sync needed — disjoint outputs, exactly like gemm_impl.
+    
+    template <typename T, bool TRANSPOSE_B, bool HAS_BETA, bool VEC>
+    __device__ __forceinline__ void gemm_tile4_loop(uint32_t rank, uint32_t size,
+                                                    uint32_t m_, uint32_t n_, uint32_t k_,
+                                                    T alpha, const T *__restrict__ A,
+                                                    const T *__restrict__ B,
+                                                    T beta, T *__restrict__ C)
+    {
+        const uint32_t tpc    = (m_ + 3u) / 4u;   // 4-row tiles per column of C
+        const uint32_t ntiles = tpc * n_;
+        for (uint32_t t = rank; t < ntiles; t += size) {
+            const uint32_t n = t / tpc;
+            const uint32_t r = (t % tpc) * 4u;
+            if (r + 4u <= m_) {                    // full 4-row tile
+                T acc0 = static_cast<T>(0), acc1 = static_cast<T>(0);
+                T acc2 = static_cast<T>(0), acc3 = static_cast<T>(0);
+                for (uint32_t k = 0; k < k_; k++) {
+                    const T b = TRANSPOSE_B ? B[n + k*n_] : B[k + n*k_];
+                    T a0, a1, a2, a3;
+                    if constexpr (VEC) {
+                        tile4_load(A + (r + k*m_), a0, a1, a2, a3);
+                    } else {
+                        a0 = A[r      + k*m_]; a1 = A[r + 1u + k*m_];
+                        a2 = A[r + 2u + k*m_]; a3 = A[r + 3u + k*m_];
+                    }
+                    acc0 += a0 * b; acc1 += a1 * b; acc2 += a2 * b; acc3 += a3 * b;
+                }
+                T *__restrict__ c = C + (r + n*m_);
+                if constexpr (HAS_BETA) {
+                    c[0] = alpha*acc0 + beta*c[0];
+                    c[1] = alpha*acc1 + beta*c[1];
+                    c[2] = alpha*acc2 + beta*c[2];
+                    c[3] = alpha*acc3 + beta*c[3];
+                } else {
+                    c[0] = alpha*acc0; c[1] = alpha*acc1;
+                    c[2] = alpha*acc2; c[3] = alpha*acc3;
+                }
+            } else {                               // m_%4 tail rows: scalar per row
+                for (uint32_t m = r; m < m_; m++) {
+                    T res = static_cast<T>(0);
+                    for (uint32_t k = 0; k < k_; k++) {
+                        const T b = TRANSPOSE_B ? B[n + k*n_] : B[k + n*k_];
+                        res += A[m + k*m_] * b;
+                    }
+                    if constexpr (HAS_BETA) C[m + n*m_] = alpha*res + beta*C[m + n*m_];
+                    else                    C[m + n*m_] = alpha*res;
+                }
+            }
+        }
+    }
+    
+    template <typename T, bool TRANSPOSE_B, bool HAS_BETA>
+    __device__ void gemm_tile4(uint32_t rank, uint32_t size,
+                               uint32_t m_, uint32_t n_, uint32_t k_,
+                               T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                               T beta, T *__restrict__ C)
+    {
+        if constexpr (tile4_has_vec<T>::value) {
+            if ((m_ % 4u == 0u) && tile4_aligned(A)) {
+                gemm_tile4_loop<T, TRANSPOSE_B, HAS_BETA, true>(rank, size, m_, n_, k_, alpha, A, B, beta, C);
+                return;
+            }
+        }
+        gemm_tile4_loop<T, TRANSPOSE_B, HAS_BETA, false>(rank, size, m_, n_, k_, alpha, A, B, beta, C);
+    }
+    
+    // compile-time twin: M, N, K as template params (magic-number div/mod, fully
+    // unrolled k loop; M%4 tail statically absent when M is a multiple of 4).
+    template <typename T, uint32_t M, uint32_t N, uint32_t K, bool TRANSPOSE_B, bool HAS_BETA, bool VEC>
+    __device__ __forceinline__ void gemm_tile4_loop_ct(uint32_t rank, uint32_t size,
+                                                       T alpha, const T *__restrict__ A,
+                                                       const T *__restrict__ B,
+                                                       T beta, T *__restrict__ C)
+    {
+        constexpr uint32_t TPC    = (M + 3u) / 4u;   // 4-row tiles per column of C
+        constexpr uint32_t NTILES = TPC * N;
+        for (uint32_t t = rank; t < NTILES; t += size) {
+            const uint32_t n = t / TPC;
+            const uint32_t r = (t % TPC) * 4u;
+            if (r + 4u <= M) {                     // full 4-row tile
+                T acc0 = static_cast<T>(0), acc1 = static_cast<T>(0);
+                T acc2 = static_cast<T>(0), acc3 = static_cast<T>(0);
+                for (uint32_t k = 0; k < K; k++) {
+                    const T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
+                    T a0, a1, a2, a3;
+                    if constexpr (VEC) {
+                        tile4_load(A + (r + k*M), a0, a1, a2, a3);
+                    } else {
+                        a0 = A[r      + k*M]; a1 = A[r + 1u + k*M];
+                        a2 = A[r + 2u + k*M]; a3 = A[r + 3u + k*M];
+                    }
+                    acc0 += a0 * b; acc1 += a1 * b; acc2 += a2 * b; acc3 += a3 * b;
+                }
+                T *__restrict__ c = C + (r + n*M);
+                if constexpr (HAS_BETA) {
+                    c[0] = alpha*acc0 + beta*c[0];
+                    c[1] = alpha*acc1 + beta*c[1];
+                    c[2] = alpha*acc2 + beta*c[2];
+                    c[3] = alpha*acc3 + beta*c[3];
+                } else {
+                    c[0] = alpha*acc0; c[1] = alpha*acc1;
+                    c[2] = alpha*acc2; c[3] = alpha*acc3;
+                }
+            } else {                               // M%4 tail rows: scalar per row
+                for (uint32_t m = r; m < M; m++) {
+                    T res = static_cast<T>(0);
+                    for (uint32_t k = 0; k < K; k++) {
+                        const T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
+                        res += A[m + k*M] * b;
+                    }
+                    if constexpr (HAS_BETA) C[m + n*M] = alpha*res + beta*C[m + n*M];
+                    else                    C[m + n*M] = alpha*res;
+                }
+            }
+        }
+    }
+    
+    template <typename T, uint32_t M, uint32_t N, uint32_t K, bool TRANSPOSE_B, bool HAS_BETA>
+    __device__ void gemm_tile4_ct(uint32_t rank, uint32_t size,
+                                  T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                                  T beta, T *__restrict__ C)
+    {
+        if constexpr (tile4_has_vec<T>::value && (M % 4u == 0u)) {
+            if (tile4_aligned(A)) {
+                gemm_tile4_loop_ct<T, M, N, K, TRANSPOSE_B, HAS_BETA, true>(rank, size, alpha, A, B, beta, C);
+                return;
+            }
+        }
+        gemm_tile4_loop_ct<T, M, N, K, TRANSPOSE_B, HAS_BETA, false>(rank, size, alpha, A, B, beta, C);
+    }
+    
     // ─── core impls: explicit rank/size + (TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C) ──
+    // No-transpose-A, column-major-C combos route to the 4-row register-tiled core
+    // when tile4_profitable(m) says the tiles win (M a multiple of 4, M >= 8 —
+    // measured sm_120 crossover); every other case takes the one-output-per-thread
+    // flat loop, byte-identical to before. Tiled and flat accumulate each C element
+    // with the same serial ascending-k chain, so the two paths agree bit-for-bit
+    // and the runtime gate cannot break thread-count invariance.
     
     template <typename T, bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C>
     __device__ void gemm_impl(uint32_t rank, uint32_t size,
                               uint32_t m_, uint32_t n_, uint32_t k_,
-                              T alpha, const T *A, const T *B, T beta, T *C)
+                              T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                              T beta, T *__restrict__ C)
     {
+        if constexpr (!TRANSPOSE_A && !ROW_MAJOR_C) {
+            if (tile4_profitable(m_)) {
+                gemm_tile4<T, TRANSPOSE_B, true>(rank, size, m_, n_, k_, alpha, A, B, beta, C);
+                return;
+            }
+        }
         const uint32_t maxel = m_ * n_;
         for (uint32_t el = rank; el < maxel; el += size) {
             uint32_t m = el % m_, n = el / m_;
@@ -2020,8 +2260,15 @@ namespace grid {
     template <typename T, bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C>
     __device__ void gemm_impl(uint32_t rank, uint32_t size,
                               uint32_t m_, uint32_t n_, uint32_t k_,
-                              T alpha, const T *A, const T *B, T *C)
+                              T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                              T *__restrict__ C)
     {
+        if constexpr (!TRANSPOSE_A && !ROW_MAJOR_C) {
+            if (tile4_profitable(m_)) {
+                gemm_tile4<T, TRANSPOSE_B, false>(rank, size, m_, n_, k_, alpha, A, B, static_cast<T>(0), C);
+                return;
+            }
+        }
         const uint32_t maxel = m_ * n_;
         for (uint32_t el = rank; el < maxel; el += size) {
             uint32_t m = el % m_, n = el / m_;
@@ -2042,38 +2289,48 @@ namespace grid {
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C>
     __device__ void gemm_impl_ct(uint32_t rank, uint32_t size,
-                                 T alpha, const T *A, const T *B, T beta, T *C)
+                                 T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                                 T beta, T *__restrict__ C)
     {
-        constexpr uint32_t maxel = M * N;
-        for (uint32_t el = rank; el < maxel; el += size) {
-            uint32_t m = el % M, n = el / M;
-            T res = static_cast<T>(0);
-            for (uint32_t k = 0; k < K; k++) {
-                T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
-                T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
-                res += a * b;
+        if constexpr (!TRANSPOSE_A && !ROW_MAJOR_C && tile4_profitable(M)) {
+            gemm_tile4_ct<T, M, N, K, TRANSPOSE_B, true>(rank, size, alpha, A, B, beta, C);
+        } else {
+            constexpr uint32_t maxel = M * N;
+            for (uint32_t el = rank; el < maxel; el += size) {
+                uint32_t m = el % M, n = el / M;
+                T res = static_cast<T>(0);
+                for (uint32_t k = 0; k < K; k++) {
+                    T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
+                    T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
+                    res += a * b;
+                }
+                uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
+                C[cidx] = alpha*res + beta*C[cidx];
             }
-            uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
-            C[cidx] = alpha*res + beta*C[cidx];
         }
     }
     
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C>
     __device__ void gemm_impl_ct(uint32_t rank, uint32_t size,
-                                 T alpha, const T *A, const T *B, T *C)
+                                 T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                                 T *__restrict__ C)
     {
-        constexpr uint32_t maxel = M * N;
-        for (uint32_t el = rank; el < maxel; el += size) {
-            uint32_t m = el % M, n = el / M;
-            T res = static_cast<T>(0);
-            for (uint32_t k = 0; k < K; k++) {
-                T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
-                T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
-                res += a * b;
+        if constexpr (!TRANSPOSE_A && !ROW_MAJOR_C && tile4_profitable(M)) {
+            gemm_tile4_ct<T, M, N, K, TRANSPOSE_B, false>(rank, size, alpha, A, B, static_cast<T>(0), C);
+        } else {
+            constexpr uint32_t maxel = M * N;
+            for (uint32_t el = rank; el < maxel; el += size) {
+                uint32_t m = el % M, n = el / M;
+                T res = static_cast<T>(0);
+                for (uint32_t k = 0; k < K; k++) {
+                    T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
+                    T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
+                    res += a * b;
+                }
+                uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
+                C[cidx] = alpha*res;
             }
-            uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
-            C[cidx] = alpha*res;
         }
     }
     
@@ -2099,7 +2356,8 @@ namespace grid {
      */
     template <typename T, bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
     __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
-                         T alpha, const T *A, const T *B, T beta, T *C)
+                         T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                         T beta, T *__restrict__ C)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -2124,7 +2382,8 @@ namespace grid {
      */
     template <typename T, bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
     __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
-                         T alpha, const T *A, const T *B, T *C)
+                         T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                         T *__restrict__ C)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -2155,7 +2414,7 @@ namespace grid {
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
-    __device__ void gemm(T alpha, const T *A, const T *B, T beta, T *C)
+    __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T beta, T *__restrict__ C)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -2180,7 +2439,7 @@ namespace grid {
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
-    __device__ void gemm(T alpha, const T *A, const T *B, T *C)
+    __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T *__restrict__ C)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -2211,7 +2470,7 @@ namespace grid {
          */
         template <typename T, uint32_t M, uint32_t N, uint32_t K,
                   bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false>
-        __device__ void gemm(T alpha, const T *A, const T *B, T beta, T *C)
+        __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T beta, T *__restrict__ C)
         {
             uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
             gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(lane, 32u, alpha, A, B, beta, C);
@@ -2234,7 +2493,7 @@ namespace grid {
          */
         template <typename T, uint32_t M, uint32_t N, uint32_t K,
                   bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false>
-        __device__ void gemm(T alpha, const T *A, const T *B, T *C)
+        __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T *__restrict__ C)
         {
             uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
             gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(lane, 32u, alpha, A, B, C);
@@ -2263,7 +2522,8 @@ namespace grid {
      */
     template <typename T, int TILE = 8>
     __device__ void gemm_tiled(uint32_t m, uint32_t n, uint32_t k,
-                                T alpha, const T *A, const T *B, T beta, T *C,
+                                T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                                T beta, T *__restrict__ C,
                                 T *s_A, T *s_B)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -2318,7 +2578,8 @@ namespace grid {
      */
     template <typename T, int TILE = 8>
     __device__ void gemm_dispatch(uint32_t m, uint32_t n, uint32_t k,
-                                   T alpha, const T *A, const T *B, T beta, T *C,
+                                   T alpha, const T *__restrict__ A, const T *__restrict__ B,
+                                   T beta, T *__restrict__ C,
                                    T *s_A = nullptr, T *s_B = nullptr)
     {
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -2551,8 +2812,10 @@ namespace grid {
     // s_scratch: (2*dimA+1)*sizeof(T) bytes.
     // Shared body: Gauss-Jordan inversion; barrier policy supplies rank/size + the
     // two per-pivot syncs, shared by the glass:: and cgrps:: surfaces.
-    template <typename Bar, typename T>
-    __device__ void invertMatrix_impl(Bar bar, uint32_t dimA, T *A, T *s_scratch)
+    // SizeT is deduced: uint32_t from the runtime overload, ct_size<N> from the
+    // compile-time overload (constant-folds the trip counts and the %/ indexing).
+    template <typename Bar, typename T, typename SizeT>
+    __device__ void inv_impl(Bar bar, SizeT dimA, T *A, T *s_scratch)
     {
         uint32_t rank = bar.rank(), size = bar.size();
         for (unsigned pivRC = 0; pivRC < dimA; pivRC++) {
@@ -2573,15 +2836,15 @@ namespace grid {
     }
     
     template <typename T>
-    __device__ void invertMatrix(uint32_t dimA, T *A, T *s_scratch)
+    __device__ void inv(uint32_t dimA, T *A, T *s_scratch)
     {
-        invertMatrix_impl<BlockBarrier, T>(BlockBarrier{}, dimA, A, s_scratch);
+        inv_impl<BlockBarrier, T>(BlockBarrier{}, dimA, A, s_scratch);
     }
     
     /**
      * @brief Compile-time-size in-place matrix inverse (augmented `[A | I]` Gauss-Jordan).
      *
-     * Same as the runtime `invertMatrix` but with the dimension as a template
+     * Same as the runtime `inv` but with the dimension as a template
      * parameter. NumPy equivalent: `Ainv = np.linalg.inv(A)`.
      *
      * @tparam T  Scalar type.
@@ -2591,30 +2854,30 @@ namespace grid {
      * @param s_scratch  Shared scratch of `(2*N + 1) * sizeof(T)` bytes.
      */
     template <typename T, uint32_t N>
-    __device__ void invertMatrix(T *A, T *s_scratch)
+    __device__ void inv(T *A, T *s_scratch)
     {
-        invertMatrix<T>(N, A, s_scratch);
+        inv_impl<BlockBarrier, T>(BlockBarrier{}, ct_size<N>{}, A, s_scratch);
     }
     
     /**
-     * @brief Scratch size in bytes for `invertMatrix` (augmented `[A | I]`).
+     * @brief Scratch size in bytes for `inv` (augmented `[A | I]`).
      *
      * The unpivoted Gauss-Jordan path saves the active pivot column + row window plus
      * one slot: `2*dimA + 1` elements of `T`. Allocate
-     * `invertMatrix_scratch_bytes<T>(dimA)` for the `s_scratch` argument.
+     * `inv_scratch_bytes<T>(dimA)` for the `s_scratch` argument.
      *
      * @tparam T  Scalar type.
      * @param dimA  Matrix dimension (A is dimA x dimA).
-     * @return Bytes to allocate for `invertMatrix`'s `s_scratch`.
+     * @return Bytes to allocate for `inv`'s `s_scratch`.
      */
     template <typename T>
-    __host__ __device__ constexpr std::size_t invertMatrix_scratch_bytes(uint32_t dimA)
+    __host__ __device__ constexpr std::size_t inv_scratch_bytes(uint32_t dimA)
     {
         return static_cast<std::size_t>(2 * dimA + 1) * sizeof(T);
     }
     
     /**
-     * @brief Scratch size in bytes for `invertMatrix_pivoted`.
+     * @brief Scratch size in bytes for `inv_pivoted`.
      *
      * Row pivoting permutes the already-built inverse columns, so (unlike the
      * unpivoted path) the elimination cannot use the reduced active-column window —
@@ -2626,10 +2889,10 @@ namespace grid {
      *
      * @tparam T  Scalar type.
      * @param dimA  Matrix dimension (A is dimA x dimA).
-     * @return Bytes to allocate for `invertMatrix_pivoted`'s `s_scratch`.
+     * @return Bytes to allocate for `inv_pivoted`'s `s_scratch`.
      */
     template <typename T>
-    __host__ __device__ constexpr std::size_t invertMatrix_pivoted_scratch_bytes(uint32_t dimA)
+    __host__ __device__ constexpr std::size_t inv_pivoted_scratch_bytes(uint32_t dimA)
     {
         return static_cast<std::size_t>(3 * dimA + 1) * sizeof(T);
     }
@@ -2637,13 +2900,13 @@ namespace grid {
     /**
      * @brief In-place ROBUST (partial-pivoting) matrix inverse, augmented `[A | I]`.
      *
-     * Partial-pivoting (row-pivoted) Gauss-Jordan sibling of `invertMatrix`. Same
+     * Partial-pivoting (row-pivoted) Gauss-Jordan sibling of `inv`. Same
      * augmented column-major `dimA x (2*dimA)` `[A | I]` input/output contract: on
      * return columns `dimA..2*dimA-1` hold `A^-1`. NumPy equivalent:
      * `Ainv = np.linalg.inv(A)`.
      *
      * @par Why pivoted
-     * The plain `invertMatrix` divides by `A[pivRC + pivRC*dimA]` as-is, so it loses
+     * The plain `inv` divides by `A[pivRC + pivRC*dimA]` as-is, so it loses
      * accuracy (or fails outright) when a leading pivot is small/zero even though `A`
      * is invertible — e.g. a tiny `A[0,0]` beneath a large later row, or a row
      * permutation that parks a zero on the diagonal. At each step `k` this variant
@@ -2667,7 +2930,7 @@ namespace grid {
      * are block-visible before they are consumed.
      *
      * @par Scratch
-     * `s_scratch` must hold `invertMatrix_pivoted_scratch_bytes<T>(dimA)` = `3*dimA + 1`
+     * `s_scratch` must hold `inv_pivoted_scratch_bytes<T>(dimA)` = `3*dimA + 1`
      * elements of `T`: `dimA` for the pivot column, `2*dimA` for the full pivot row,
      * and one trailing slot to broadcast the chosen pivot-row index.
      *
@@ -2677,8 +2940,10 @@ namespace grid {
      *                on return its right half holds `A^-1`.
      * @param s_scratch  Shared scratch of `(3*dimA + 1) * sizeof(T)` bytes.
      */
-    template <typename T>
-    __device__ void invertMatrix_pivoted(uint32_t dimA, T *A, T *s_scratch)
+    // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
+    // ct_size<N> (constant-folds the trip counts and the %/ indexing).
+    template <typename T, typename SizeT>
+    __device__ void inv_pivoted_impl(SizeT dimA, T *A, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -2737,24 +3002,46 @@ namespace grid {
         }
     }
     
+    template <typename T>
+    __device__ void inv_pivoted(uint32_t dimA, T *A, T *s_scratch)
+    {
+        inv_pivoted_impl<T>(dimA, A, s_scratch);
+    }
+    
     /**
      * @brief Compile-time-size ROBUST (partial-pivoting) matrix inverse (`[A | I]`).
      *
-     * Same as the runtime `invertMatrix_pivoted` but with the dimension as a template
+     * Same as the runtime `inv_pivoted` but with the dimension as a template
      * parameter; partial-pivoting Gauss-Jordan, tolerant of small leading pivots that
-     * the plain `invertMatrix` mishandles. NumPy equivalent: `Ainv = np.linalg.inv(A)`.
+     * the plain `inv` mishandles. NumPy equivalent: `Ainv = np.linalg.inv(A)`.
      *
      * @tparam T  Scalar type.
      * @tparam N  Matrix dimension (A is N x N).
      * @param A       In/out augmented `[A | I]` buffer (column-major, N x 2*N);
      *                on return its right half holds `A^-1`.
      * @param s_scratch  Shared scratch of `(3*N + 1) * sizeof(T)` bytes
-     *                (= `invertMatrix_pivoted_scratch_bytes<T>(N)`).
+     *                (= `inv_pivoted_scratch_bytes<T>(N)`).
      */
     template <typename T, uint32_t N>
-    __device__ void invertMatrix_pivoted(T *A, T *s_scratch)
+    __device__ void inv_pivoted(T *A, T *s_scratch)
     {
-        invertMatrix_pivoted<T>(N, A, s_scratch);
+        inv_pivoted_impl<T>(ct_size<N>{}, A, s_scratch);
+    }
+    
+    /**
+     * @brief Scratch size in bytes for the K-way fused `inv` (`Σ_m (2*dims[m]+1)` elements).
+     *
+     * @tparam T  Scalar type.
+     * @param K     Number of matrices.
+     * @param dims  Per-matrix dimensions.
+     * @return Bytes to allocate for the fused `inv`'s `s_scratch`.
+     */
+    template <typename T>
+    __host__ __device__ constexpr std::size_t inv_fused_scratch_bytes(uint32_t K, const uint32_t *dims)
+    {
+        std::size_t elems = 0;
+        for (uint32_t m = 0; m < K; m++) { elems += 2u*dims[m] + 1u; }
+        return elems * sizeof(T);
     }
     
     /**
@@ -2764,7 +3051,7 @@ namespace grid {
      * Gauss-Jordan sweeps over a single shared `MAX_DIM = max(dims)` pivot loop:
      * matrix `m` participates while `pivRC < dims[m]` and sits idle thereafter.
      * Every matrix keeps the same augmented `[V | I]` convention as the
-     * single-matrix `invertMatrix` — buffer `mats[m]` is column-major
+     * single-matrix `inv` — buffer `mats[m]` is column-major
      * `dims[m] x (2*dims[m])` and on return its right half holds `inv(mats[m])`.
      * Fewer barriers than K separate calls (one save→update barrier pair per pivot
      * step, shared by all K matrices). Used by GATO's Schur kernel
@@ -2785,10 +3072,11 @@ namespace grid {
      * @param MAX_DIM  `max(dims[0..K-1])` — the shared pivot-loop length (precondition).
      * @param mats     Array of K in/out augmented `[V | I]` buffers (column-major,
      *                 `dims[m] x 2*dims[m]`); on return each right half holds its inverse.
-     * @param s_scratch   Shared scratch of `(Σ_m (2*dims[m]+1)) * sizeof(T)` bytes.
+     * @param s_scratch   Shared scratch of `inv_fused_scratch_bytes<T>(K, dims)` bytes
+     *                    (= `(Σ_m (2*dims[m]+1)) * sizeof(T)`).
      */
     template <typename T>
-    __device__ void invertMatrix(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats, T *s_scratch)
+    __device__ void inv(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -2834,9 +3122,9 @@ namespace grid {
     /**
      * @brief Fused in-place inverse of TWO independent matrices (augmented `[V | I]`).
      *
-     * Thin wrapper over the K-way `invertMatrix` (K=2). Inverts `A` (dimA x dimA) and
+     * Thin wrapper over the K-way `inv` (K=2). Inverts `A` (dimA x dimA) and
      * `B` (dimB x dimB) simultaneously in one block; same augmented `[V | I]`
-     * convention and output as the single-matrix `invertMatrix`.
+     * convention and output as the single-matrix `inv`.
      * NumPy: `Ainv, Binv = inv(A), inv(B)`.
      *
      * @tparam T  Scalar type.
@@ -2846,19 +3134,19 @@ namespace grid {
      * @param s_scratch     Shared scratch of `(2*dimA + 2*dimB + 2) * sizeof(T)` bytes.
      */
     template <typename T>
-    __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B, T *s_scratch)
+    __device__ void inv(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B, T *s_scratch)
     {
         uint32_t dims[2] = {dimA, dimB};
         T *mats[2] = {A, B};
-        invertMatrix<T>(2, dims, MAX_DIM, mats, s_scratch);
+        inv<T>(2, dims, MAX_DIM, mats, s_scratch);
     }
     
     /**
      * @brief Fused in-place inverse of THREE independent matrices (augmented `[V | I]`).
      *
-     * Thin wrapper over the K-way `invertMatrix` (K=3). Inverts `A`,`B`,`C`
+     * Thin wrapper over the K-way `inv` (K=3). Inverts `A`,`B`,`C`
      * simultaneously in one block; same augmented `[V | I]` convention and output as
-     * the single-matrix `invertMatrix`. Used by GATO's Schur kernel (Q_k, Q_kp1, R_k).
+     * the single-matrix `inv`. Used by GATO's Schur kernel (Q_k, Q_kp1, R_k).
      * NumPy: invert each independently.
      *
      * @tparam T  Scalar type.
@@ -2868,13 +3156,42 @@ namespace grid {
      * @param s_scratch          Shared scratch of `(2*dimA + 2*dimB + 2*dimC + 3) * sizeof(T)` bytes.
      */
     template <typename T>
-    __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C, T *s_scratch)
+    __device__ void inv(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C, T *s_scratch)
     {
         uint32_t dims[3] = {dimA, dimB, dimC};
         T *mats[3] = {A, B, C};
-        invertMatrix<T>(3, dims, MAX_DIM, mats, s_scratch);
+        inv<T>(3, dims, MAX_DIM, mats, s_scratch);
     }
     
+    
+    /**
+     * @brief Scratch size in bytes for `inv_dense`.
+     *
+     * The dual-buffer dense path saves one `3*dimA`-element pivot working set. Allocate
+     * `inv_dense_scratch_bytes<T>(dimA)` for the `s_scratch` argument.
+     *
+     * @tparam T  Scalar type.
+     * @param dimA  Matrix dimension (A is dimA x dimA).
+     * @return Bytes to allocate for `inv_dense`'s `s_scratch`.
+     */
+    template <typename T>
+    __host__ __device__ constexpr std::size_t inv_dense_scratch_bytes(uint32_t dimA)
+    {
+        return static_cast<std::size_t>(3 * dimA) * sizeof(T);
+    }
+    
+    // Block-cooperative Gauss-Jordan inversion of a dimA×dimA matrix.
+    //   A:    in/out, column-major dimA×dimA.  On return: A := A^{-1}.
+    //   Ainv: workspace, column-major dimA×dimA (overwritten).  On return: A^{-1}.
+    //          (Some callers want A unchanged + a separate inverse — they get both.)
+    //   s_scratch: shared scratch of size (3*dimA)*sizeof(T).
+    // Pivot loop is serial (pivot-to-pivot data dependency); within each pivot, the
+    // dimA save and the dimA*dimA cell update are parallelized across the block.
+    //
+    // Algorithm: same dual-update (A, Ainv) Gauss-Jordan as a classic [A | I] →
+    // [I | A^{-1}] reduction but without materializing the augmented layout. A and
+    // Ainv are tracked in separate buffers so callers that need A^{-1} alongside
+    // the original A get it without extra copies.
     
     /**
      * @brief Dense (no augmented buffer) in-place matrix inverse via dual-update Gauss-Jordan.
@@ -2892,37 +3209,10 @@ namespace grid {
      * @param Ainv    Workspace column-major dimA x dimA; on return also holds `A^{-1}`.
      * @param s_scratch  Shared scratch of `3 * dimA * sizeof(T)` bytes.
      */
-    // Block-cooperative Gauss-Jordan inversion of a dimA×dimA matrix.
-    //   A:    in/out, column-major dimA×dimA.  On return: A := A^{-1}.
-    //   Ainv: workspace, column-major dimA×dimA (overwritten).  On return: A^{-1}.
-    //          (Some callers want A unchanged + a separate inverse — they get both.)
-    //   s_scratch: shared scratch of size (3*dimA)*sizeof(T).
-    // Pivot loop is serial (pivot-to-pivot data dependency); within each pivot, the
-    // dimA save and the dimA*dimA cell update are parallelized across the block.
-    //
-    // Algorithm: same dual-update (A, Ainv) Gauss-Jordan as a classic [A | I] →
-    // [I | A^{-1}] reduction but without materializing the augmented layout. A and
-    // Ainv are tracked in separate buffers so callers that need A^{-1} alongside
-    // the original A get it without extra copies.
-    
-    /**
-     * @brief Scratch size in bytes for `invertMatrix_dense`.
-     *
-     * The dual-buffer dense path saves one `3*dimA`-element pivot working set. Allocate
-     * `invertMatrix_dense_scratch_bytes<T>(dimA)` for the `s_scratch` argument.
-     *
-     * @tparam T  Scalar type.
-     * @param dimA  Matrix dimension (A is dimA x dimA).
-     * @return Bytes to allocate for `invertMatrix_dense`'s `s_scratch`.
-     */
-    template <typename T>
-    __host__ __device__ constexpr std::size_t invertMatrix_dense_scratch_bytes(uint32_t dimA)
-    {
-        return static_cast<std::size_t>(3 * dimA) * sizeof(T);
-    }
-    
-    template <typename T>
-    __device__ void invertMatrix_dense(uint32_t dimA, T *A, T *Ainv, T *s_scratch)
+    // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
+    // ct_size<N> (constant-folds the trip counts and the %/ indexing).
+    template <typename T, typename SizeT>
+    __device__ void inv_dense_impl(SizeT dimA, T *A, T *Ainv, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -2960,10 +3250,16 @@ namespace grid {
         }
     }
     
+    template <typename T>
+    __device__ void inv_dense(uint32_t dimA, T *A, T *Ainv, T *s_scratch)
+    {
+        inv_dense_impl<T>(dimA, A, Ainv, s_scratch);
+    }
+    
     /**
      * @brief Compile-time-size dense in-place matrix inverse (dual-update Gauss-Jordan).
      *
-     * Same as the runtime `invertMatrix_dense` but with the dimension as a template
+     * Same as the runtime `inv_dense` but with the dimension as a template
      * parameter; on return both `A` and `Ainv` hold `A^{-1}`. NumPy equivalent:
      * `Ainv = np.linalg.inv(A)`.
      *
@@ -2974,9 +3270,69 @@ namespace grid {
      * @param s_scratch  Shared scratch of `3 * N * sizeof(T)` bytes.
      */
     template <typename T, uint32_t N>
-    __device__ void invertMatrix_dense(T *A, T *Ainv, T *s_scratch)
+    __device__ void inv_dense(T *A, T *Ainv, T *s_scratch)
     {
-        invertMatrix_dense<T>(N, A, Ainv, s_scratch);
+        inv_dense_impl<T>(ct_size<N>{}, A, Ainv, s_scratch);
+    }
+    
+    namespace warp {
+        /**
+         * @brief Single-warp in-place matrix inverse (unpivoted Gauss-Jordan, augmented `[A | I]`), compile-time size.
+         *
+         * One 32-lane warp reduces a column-major augmented `N x 2*N` `[A | I]`
+         * buffer so that on return columns `N..2*N-1` hold `A^-1` — the same
+         * layout, phases, and arithmetic as the block `glass::inv`, scoped to a
+         * warp for warp-per-problem kernels (e.g. packing many small Schur-block
+         * inversions from GATO/MPCGPU into one block, one warp each). Per pivot:
+         * a lane-strided SAVE of the pivot column + active pivot-row window into
+         * `s_scratch`, `__syncwarp()`, then a lane-strided Gauss-Jordan cell
+         * UPDATE over the `N x (N+1)` active window, `__syncwarp()` — mirroring
+         * `inv_impl`'s two-phase structure exactly. The pivot reciprocal is
+         * computed redundantly by every lane from the SAVED shared value
+         * (`1 / s_scratch[pivRC]`, the same bits every lane) — deterministic, and
+         * never a lane-0-register broadcast, so there is nothing for the
+         * `__restrict__` stale-shared-reread miscompile (guide §1g) to bite.
+         * No `__syncthreads`. Unpivoted: like the block `inv`, it divides by the
+         * leading pivots as-is (no row exchange) — use the block `inv_pivoted`
+         * when robustness to small/zero leading pivots is needed. Fused K-way and
+         * pivoted warp forms are deliberately not provided (future work).
+         *
+         * NumPy equivalent: `Ainv = np.linalg.inv(A)`.
+         *
+         * @tparam T  Scalar type.
+         * @tparam N  Matrix dimension (A is N x N).
+         * @param A          In/out augmented `[A | I]` buffer (column-major, N x 2*N);
+         *                   on return its right half holds `A^-1`.
+         * @param s_scratch  Scratch of `2*N + 1` elements of `T`
+         *                   (= `inv_scratch_bytes<T>(N)` bytes), shared or global.
+         *                   Each warp needs its OWN `2*N + 1` span — when packing W
+         *                   warps into a block, give warp `w` `s_scratch + w*(2*N+1)`.
+         */
+        template <typename T, uint32_t N>
+        __device__ void inv(T *A, T *s_scratch)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            for (unsigned pivRC = 0; pivRC < N; pivRC++) {
+                unsigned pivOff = pivRC * N;
+                // SAVE: pivot column (N entries) + active pivot-row window (N+1 entries).
+                for (unsigned ind = lane; ind < 2*N+1; ind += 32) {
+                    unsigned AInd = (ind < N) ? (ind + pivOff) : (pivRC + pivOff + (ind-N)*N);
+                    s_scratch[ind] = A[AInd];
+                }
+                __syncwarp();
+                // UPDATE: every lane recomputes the pivot reciprocal from the saved
+                // pivot value — same bits on all lanes (s_scratch[pivRC] == the
+                // pre-save A[pivRC + pivOff] the block impl reads), so the result
+                // is deterministic and matches the block path bit-for-bit.
+                T pvInv = static_cast<T>(1) / s_scratch[pivRC];
+                for (unsigned ind = lane; ind < N*(N+1); ind += 32) {
+                    unsigned row = ind % N, col = ind / N, coff = ind - row;
+                    if (row == pivRC) A[row + pivOff + coff] *= pvInv;
+                    else A[row + pivOff + coff] -= s_scratch[row]*pvInv*s_scratch[N+col];
+                }
+                __syncwarp();
+            }
+        }
     }
     // END GLASS src/base/L3/inv.cuh
     
@@ -3967,7 +4323,7 @@ namespace grid {
     }
 
     /**
-     * Compute the inverse of a matrix (wraps glass::invertMatrix_dense)
+     * Compute the inverse of a matrix (wraps glass::inv_dense)
      *
      * Notes:
      *   Block-cooperative Gauss-Jordan via GLASS.
@@ -3982,7 +4338,7 @@ namespace grid {
     template <typename T>
     __device__
     void invert_matrix(uint32_t dimA, T *A, T *Ainv, T *s_temp) {
-        glass::invertMatrix_dense<T>(dimA, A, Ainv, s_temp);
+        glass::inv_dense<T>(dimA, A, Ainv, s_temp);
     }
 
     /**
@@ -31912,48 +32268,83 @@ namespace grid {
         }
 
         /**
-         * ee_pos_cost_hessian: Gauss-Newton hessian = J_p^T W J_p in the q-block of the x-hessian
+         * ee_pos_cost_hessian: EE-position cost hessian. DEFAULT = full Newton = J_p^T W J_p + sum_r W[r] (p_r - p_des_r) d2p_r/dv2; GAUSS_NEWTON=true = ratified PSD GN term only
          *
          * Notes:
-         *   RATIFIED GN choice: H = J_p^T diag(W) J_p (the W*r weighted EE-Hessian term is dropped).
-         *   Caller-scratch INNER (GN hessian needs only J_p): lays out the EE-pose-gradient arena from s_scratch and calls end_effector_pose_gradient_inner directly (s_dXhom = nullptr), so it is callable from another kernel's block without aliasing that kernel's dynamic-smem arena.
+         *   DEFAULT (GAUSS_NEWTON=false) folds the exact residual-weighted EE-curvature term via the analytic d2ee (grid::end_effector_pose_hessian_inner). Not necessarily PSD away from the solution -- callers must regularize (e.g. the solver's rho schedule).
+         *   GAUSS_NEWTON=true keeps the ratified PSD choice H = J_p^T diag(W) J_p (curvature dropped); s_p_des, s_end_effector_pose and s_end_effector_pose_hessian may be nullptr in that case.
+         *   Caller-scratch INNER: ONE XmatsHom load feeds the needed inners (GN: gradient_inner only, s_dXhom = nullptr; Newton: pose_inner for the residual + hessian_inner, which also fills the gradient buffer), so it is callable from another kernel's block without aliasing that kernel's dynamic-smem arena.
+         *   d2p layout: s_end_effector_pose_hessian[6*NV*NV*ee + r*NV*NV + vi*NV + vj] (pose row r, joint pair (vi, vj); tangent d/dv convention, position rows 0..2 symmetric in (vi, vj)).
          *   Dense column-major NX x NX (NX = NUM_POS + NUM_VEL = 14); only the top-left NUM_VEL x NUM_VEL q-block is non-zero.
          *   ACCUMULATE=false overwrites the whole NX x NX block; true adds the q-block into an existing hessian.
          *
          * @param s_hess is the dense x-hessian output (size 14*14, column-major)
-         * @param s_q / s_W / d_robotModel as above; s_end_effector_pose_gradient is 6*NUM_VEL*NUM_EE Jacobian scratch
-         * @param s_scratch is caller shared scratch for the EE-pose-gradient helper (>= END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_COUNT, 16B aligned)
+         * @param s_q / s_p_des / s_W / d_robotModel as above (s_p_des is unused under GAUSS_NEWTON)
+         * @param s_end_effector_pose is 6*NUM_EE pose scratch (Newton only); s_end_effector_pose_gradient is 6*NUM_VEL*NUM_EE Jacobian scratch; s_end_effector_pose_hessian is 6*NUM_VEL*NUM_VEL*NUM_EE d2ee scratch (Newton only)
+         * @param s_scratch is caller shared scratch for the EE helpers (GN: >= END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_COUNT; Newton: >= END_EFFECTOR_POSE_HESSIAN_DYNAMIC_SHARED_MEM_COUNT covers it; 16B aligned)
          */
-        template <typename T, int EE = 0, bool ACCUMULATE = false, bool MUJOCO_OUTPUT = false>
+        template <typename T, int EE = 0, bool ACCUMULATE = false, bool GAUSS_NEWTON = false, bool MUJOCO_OUTPUT = false>
         __device__
-        void ee_pos_cost_hessian(T *s_hess, const T *s_q, const T *s_W, T *s_end_effector_pose_gradient, T *s_scratch, const grid::robotModel<T> *d_robotModel) {
+        void ee_pos_cost_hessian(T *s_hess, const T *s_q, const T *s_p_des, const T *s_W, T *s_end_effector_pose, T *s_end_effector_pose_gradient, T *s_end_effector_pose_hessian, T *s_scratch, const grid::robotModel<T> *d_robotModel) {
             using namespace grid;
-            // GRID shared arena layout
-            //   T s_XmatsHom[144]
-            //   T s_temp[190]
-            //   bytes s_linalg_smem[GRID_EE_LINALG_SHARED_BYTES<T>()]
-            unsigned char *s_arena = reinterpret_cast<unsigned char *>(s_scratch);
-            size_t s_arena_offset = 0;
-            s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
-            T *s_XmatsHom = grid_arena_ptr<T>(s_arena, s_arena_offset);
-            s_arena_offset += sizeof(T) * static_cast<size_t>(144);
-            s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
-            T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
-            s_arena_offset += sizeof(T) * static_cast<size_t>(190);
-            int *s_topology_helpers = nullptr;
-            unsigned char *s_linalg_smem = nullptr;
-            if (static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>()) > 0) {
-                s_arena_offset = grid_align_up(s_arena_offset, static_cast<size_t>(16));
-                s_linalg_smem = grid_arena_ptr<unsigned char>(s_arena, s_arena_offset);
-                s_arena_offset += static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>());
+            if constexpr (!GAUSS_NEWTON) {
+                // GRID shared arena layout
+                //   T s_XmatsHom[144]
+                //   T s_temp[260]
+                //   bytes s_linalg_smem[GRID_EE_LINALG_SHARED_BYTES<T>()]
+                unsigned char *s_arena = reinterpret_cast<unsigned char *>(s_scratch);
+                size_t s_arena_offset = 0;
+                s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+                T *s_XmatsHom = grid_arena_ptr<T>(s_arena, s_arena_offset);
+                s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+                s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+                T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
+                s_arena_offset += sizeof(T) * static_cast<size_t>(260);
+                int *s_topology_helpers = nullptr;
+                unsigned char *s_linalg_smem = nullptr;
+                if (static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>()) > 0) {
+                    s_arena_offset = grid_align_up(s_arena_offset, static_cast<size_t>(16));
+                    s_linalg_smem = grid_arena_ptr<unsigned char>(s_arena, s_arena_offset);
+                    s_arena_offset += static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>());
+                }
+                #ifdef GRID_CUDA_DEBUG_LAYOUT
+                assert(s_arena_offset == grid_shared_arena_bytes<T>(404, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+                #endif
+                (void)s_arena_offset;
+                load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
+                end_effector_pose_inner<T, true>(s_end_effector_pose, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+                __syncthreads();
+                end_effector_pose_hessian_inner<T, true>(s_end_effector_pose_hessian, s_end_effector_pose_gradient, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, d_robotModel, s_linalg_smem);
+                __syncthreads();
             }
-            #ifdef GRID_CUDA_DEBUG_LAYOUT
-            assert(s_arena_offset == grid_shared_arena_bytes<T>(334, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
-            #endif
-            (void)s_arena_offset;
-            load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
-            end_effector_pose_gradient_inner<T, true>(s_end_effector_pose_gradient, s_q, s_XmatsHom, nullptr, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
-            __syncthreads();
+            else {
+                // GRID shared arena layout
+                //   T s_XmatsHom[144]
+                //   T s_temp[190]
+                //   bytes s_linalg_smem[GRID_EE_LINALG_SHARED_BYTES<T>()]
+                unsigned char *s_arena = reinterpret_cast<unsigned char *>(s_scratch);
+                size_t s_arena_offset = 0;
+                s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+                T *s_XmatsHom = grid_arena_ptr<T>(s_arena, s_arena_offset);
+                s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+                s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+                T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
+                s_arena_offset += sizeof(T) * static_cast<size_t>(190);
+                int *s_topology_helpers = nullptr;
+                unsigned char *s_linalg_smem = nullptr;
+                if (static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>()) > 0) {
+                    s_arena_offset = grid_align_up(s_arena_offset, static_cast<size_t>(16));
+                    s_linalg_smem = grid_arena_ptr<unsigned char>(s_arena, s_arena_offset);
+                    s_arena_offset += static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>());
+                }
+                #ifdef GRID_CUDA_DEBUG_LAYOUT
+                assert(s_arena_offset == grid_shared_arena_bytes<T>(334, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+                #endif
+                (void)s_arena_offset;
+                load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
+                end_effector_pose_gradient_inner<T, true>(s_end_effector_pose_gradient, s_q, s_XmatsHom, nullptr, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+                __syncthreads();
+            }
             for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 196; ind += blockDim.x*blockDim.y){
                 int row = ind % 14;
                 int col = ind / 14;
@@ -31964,6 +32355,11 @@ namespace grid {
                         T Jri = s_end_effector_pose_gradient[6*7*EE + 6*row + r];
                         T Jrj = s_end_effector_pose_gradient[6*7*EE + 6*col + r];
                         h += Jri * s_W[r] * Jrj;
+                        if constexpr (!GAUSS_NEWTON) {
+                            T e   = s_end_effector_pose[6*EE + r] - s_p_des[r];
+                            T Hij = s_end_effector_pose_hessian[6*49*EE + r*49 + row*7 + col];
+                            h += s_W[r] * e * Hij;
+                        }
                     }
                 }
                 if (ACCUMULATE) { s_hess[ind] += h; } else { s_hess[ind] = h; }
@@ -32062,7 +32458,7 @@ namespace grid {
         __device__
         void tracking_cost_hessian(T *s_Qk, T *s_Rk, const T *s_x, const T *s_u, const T *s_Q, const T *s_R, const T *s_W, const T *s_q_lower, const T *s_q_upper, const T mu_q, const T *s_qd_lower, const T *s_qd_upper, const T mu_qd, const T *s_u_lower, const T *s_u_upper, const T mu_u, T *s_end_effector_pose_gradient, T *s_scratch, const grid::robotModel<T> *d_robotModel) {
             // ---- state-block GN hessian s_Qk (NX*NX) ----
-            ee_pos_cost_hessian<T, EE, ACCUMULATE>(s_Qk, s_x, s_W, s_end_effector_pose_gradient, s_scratch, d_robotModel);
+            ee_pos_cost_hessian<T, EE, ACCUMULATE, true>(s_Qk, s_x, nullptr, s_W, nullptr, s_end_effector_pose_gradient, nullptr, s_scratch, d_robotModel);
             __syncthreads();
             quadratic_state_cost_hessian<T, true>(s_Qk, s_Q);
             __syncthreads();
@@ -32987,7 +33383,7 @@ namespace grid {
                 __syncthreads();
                 ee_pos_cost_gradient<T, EE>(&d_grad[k*14], s_q, s_p_des, s_W, s_end_effector_pose, s_end_effector_pose_gradient, s_ee_arena, d_robotModel);
                 __syncthreads();
-                ee_pos_cost_hessian<T, EE>(&d_hess[k*196], s_q, s_W, s_end_effector_pose_gradient, s_ee_arena, d_robotModel);
+                ee_pos_cost_hessian<T, EE, false, true>(&d_hess[k*196], s_q, s_p_des, s_W, s_end_effector_pose, s_end_effector_pose_gradient, nullptr, s_ee_arena, d_robotModel);
                 __syncthreads();
             }
         }
