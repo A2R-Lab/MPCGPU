@@ -15,6 +15,7 @@ size_t get_kkt_smem_size(uint32_t state_size, uint32_t control_size){
                                   7 * state_size +
                                   2 * state_size +          // s_x_goal: per-knot state goal (knots k, k+1)
                                   3 * control_size +
+                                  2*6 +                     // s_eePos_traj: references for knots k AND k+1
                                   state_size*control_size +
                                   max((state_size/2)*(state_size + control_size + 1) + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared(),
                                       controls_sq + control_size + gato_plant::trackingCostGradHess_TempMemCt<T>()));
@@ -57,7 +58,10 @@ void generate_kkt_submatrices(uint32_t state_size,
     T *s_x_goal = s_temp;                              // per-knot state goal (knots k, k+1), 2*state_size
     T *s_xux = s_x_goal + 2*state_size;
     T *s_eePos_traj = s_xux + 2*state_size + control_size;
-    T *s_Qk = s_eePos_traj + 6;
+    // 2*6: holds BOTH knots' references (the copy below writes 12 floats). With only 6 here,
+    // ref_{k+1} landed in s_Qk[0..5] and the running-knot Hessian write clobbered it BEFORE the
+    // terminal call read it -> the terminal knot tracked Q-matrix entries instead of the goal.
+    T *s_Qk = s_eePos_traj + 2*6;
     T *s_Rk = s_Qk + states_sq;
     T *s_qk = s_Rk + controls_sq;
     T *s_rk = s_qk + state_size;
