@@ -72,6 +72,13 @@ Runs: `tools/run_3way_iiwa.sh` (functional), `tools/vt_time_{pcg,qdldl}.exe` bui
 `-DSAVE_DATA=1` + FAIR flags (per-solve times in tmp/results/validate_0_sqp_times.result);
 GATO `examples/benchmarks/track_iiwa_fig8_gato.py`, BT `track_iiwa_fig8_bt.py` (12s runs).
 
+The per-solve timing methodology is now scripted: `tools/time_persolve.sh [N] [pcg|qdldl]
+[cycles] [out_csv]` (builds validate_track at KNOT_POINTS=N with the fair flags + SAVE_DATA,
+median-of-run-medians). The paper Fig-3 data pipeline that consumes it lives in GATO:
+`examples/paper-figures/reproduce_fig3_fair.py` (+ `sweep_batch_iiwa_fig8.py` N x B GATO
+grid, `track_iiwa_fig8_bt.py <sim> <B> <N> <csv>`), CSVs in GATO
+`examples/benchmarks/data/sweep_fig8_{gato,bt,mpcgpu}.csv`.
+
 Notes / caveats:
 - **MPCGPU-PCG runs a UNIFORM 200 iterations/solve** (PCG_RES_TOL=0): its eta-recurrence exit
   under-reports the true residual ~500x on this system and fires ~10x early (tracking 0.19 vs
