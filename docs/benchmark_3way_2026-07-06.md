@@ -1,4 +1,28 @@
-# 3-way iiwa14 fig8 benchmark — tracking + isolated per-solve timing (2026-07-06)
+# 3-way iiwa14 fig8 benchmark — tracking + isolated per-solve timing (2026-07-06/07)
+
+> **2026-07-07 UPDATE — the regularization pattern IS the preconditioner story (and the new
+> benchmark config).** MPCGPU and GATO build the IDENTICAL block-tridiagonal stair
+> preconditioner; what differed was the system it preconditions. Under MPCGPU's historic
+> full-Q+R rho: cond(Pinv·S) ≈ 3.0e4 (raw S 3.7e7) → eta-exit lies ~500x, 200 uniform iters
+> needed. Under GATO's reg (rho on the position half of Q only, R unregularized,
+> `-DGATO_REG_PATTERN`): cond(Pinv·S) ≈ 2.1e2 — even though raw S is WORSE (9.2e8) — because
+> bare R makes the theta diagonal blocks dominate S, which is exactly what a block-Jacobi
+> stair captures. Result at native eta-exit: **avg 1.1 PCG iters/solve (max 23), 0.218 ms
+> median/solve, tracking 0.0315/0.0744** (QDLDL cross-check 0.0324; memcheck clean; closed
+> loop runs at rho≈0.55, accepted alpha≈1/8 — a more damped, GATO-like operating point).
+> MPCGPU-PCG is now the fastest solver in the table at batch size 1. The earlier
+> "reg pattern doesn't matter" test was confounded by the then-unfixed terminal-cost bug.
+> run_3way_iiwa.sh now uses this config; the uniform-200 row below is kept for reference.
+
+| solver (2026-07-07 config) | median / solve | tracking L2 mean / max |
+|---|---|---|
+| **MPCGPU (GPU), GBD-PCG + GATO_REG_PATTERN, native exit (avg 1.1 it)** | **0.218 ms** | 0.0315 / 0.0744 |
+| GATO (GPU, batch=1) | 0.348 ms | 0.0323 / 0.0754 |
+| MPCGPU (GPU), QDLDL | 0.384 ms | 0.0334 / 0.0753 |
+| BatchThneed (CPU) | 3.06 ms | 0.0159 / 0.0727 |
+
+All timing below is the 2026-07-06 measurement set (kept for reference; the uniform-200
+MPCGPU-PCG row is superseded by the GATO_REG_PATTERN row above).
 
 Identical problem for all solvers: iiwa14 (URDF eeb7d4ff), q0=readyC, EE frame = grid-L7,
 EE-space figure-8 A=0.15 T=6s centered at L7(q0), dt=0.01, N=64 knots, SQP=1 (real-time

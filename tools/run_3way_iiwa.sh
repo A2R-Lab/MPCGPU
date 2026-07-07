@@ -3,11 +3,12 @@
 #   robot iiwa14 (URDF eeb7d4ff), q0=readyC, EE=grid-L7, fig8 A=0.15 T=6 centered at L7(q0),
 #   warm-start = zero controls, config = SQP=1 / PCG cap 200 / rho=0.01 / cost EE2 qd1e-2
 #   u2e-6 N50 mu10. Tracking measured (L2) at the L7 frame for all three. NOT a timing run.
-# MPCGPU PCG runs a UNIFORM 200 iters/solve (PCG_RES_TOL=0 + VT_PCG_EXIT_TOL=0): its eta-based
-#   exit under-reports the true residual ~500x on this system and fires ~10x early (tracking
-#   0.19 vs 0.033), and even true-residual-certified adaptive exits under-deliver vs uniform
-#   iterations (residual bounds ||r||, not low-eigenmode lambda error at cond~3e4). Same 200
-#   cap as GATO's config; benchmark decision 2026-07-06.
+# MPCGPU PCG uses GATO_REG_PATTERN (rho on the position half of Q only, R unregularized —
+#   GATO's convention). Under MPCGPU's historic full-Q+R rho the SAME stair preconditioner
+#   sees cond(Pinv*S)~3e4 (eta-exit lies ~500x -> tracking 0.19 at native exit, or uniform
+#   200 iters forced -> 1.155ms/solve); under GATO's reg cond(Pinv*S)~2e2 and the native
+#   eta-exit is honest: avg ~1 PCG iter/solve, 0.218ms, tracking 0.0315. Benchmark decision
+#   2026-07-07 (supersedes the 07-06 uniform-200 config; that row kept in docs for reference).
 # Usage: tools/run_3way_iiwa.sh [sim_time]   (run from MPCGPU repo root; GPU needed for GATO+MPCGPU)
 set -uo pipefail
 SIM=${1:-6.0}
@@ -17,7 +18,7 @@ GRIDVENV=/home/plancher/Desktop/GRiD/.venv
 PY=$GRIDVENV/bin/python
 LD=$MPCGPU/qdldl/build/out
 CF="--compiler-options -Wall -O3 -DNDEBUG -arch=sm_120 -Iinclude -Iinclude/common -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas"
-FAIR="-DKNOT_POINTS=64 -DPCG_MAX_ITER=200 -DPCG_RES_TOL=0.0f -DVT_PCG_EXIT_TOL=0.0f -DRHO_INIT=0.01 -DSQP_MAX_ITER=1 -DSQP_MAX_TIME_US=100000000"
+FAIR="-DKNOT_POINTS=64 -DPCG_MAX_ITER=200 -DPCG_RES_TOL=1e-4 -DGATO_REG_PATTERN -DRHO_INIT=0.01 -DSQP_MAX_ITER=1 -DSQP_MAX_TIME_US=100000000"
 
 cd "$MPCGPU" || exit 1
 echo "==================== MPCGPU ===================="
