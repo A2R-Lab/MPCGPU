@@ -20,6 +20,19 @@ namespace cgrps = cooperative_groups;
 #define PCG_RESIDUAL_REPLACE_PERIOD 0
 #endif
 
+// PCG_TRUE_EXIT_CHECK_PERIOD: every K iterations, test the TRUE residual
+// ||gamma - S*lambda||^2 <= rel_tol^2 * ||gamma||^2 for the STOP decision only — the CG
+// recurrence is untouched (unlike PCG_RESIDUAL_REPLACE_PERIOD, which rewrites r). Motivation:
+// the eta = r'*Pinv*r recurrence under-reports the true residual by orders of magnitude on
+// ill-preconditioned systems (float64 shows the same, so it is a weak-norm property, not float
+// drift), making the eta-based exit fire ~10x early with a ~10%-wrong lambda. When this is on,
+// the eta-based relative exit is DISABLED and rel_tol becomes the TRUE-residual relative tol
+// (the iter-0 converged-start guard on eta is kept). Overhead: ~half an iteration every K.
+// 0 => off (pure upstream behavior).
+#ifndef PCG_TRUE_EXIT_CHECK_PERIOD
+#define PCG_TRUE_EXIT_CHECK_PERIOD 0
+#endif
+
 template <typename T>
 size_t pcgSharedMemSize(uint32_t state_size, uint32_t knot_points){
     return sizeof(T) * max(
@@ -184,6 +197,23 @@ void pcg(
     // (moving-reference) system is thousands of iters vs the ~100-200 a relative test needs.
     const T eta_init = abs(eta);
 
+#if PCG_TRUE_EXIT_CHECK_PERIOD
+    (void)eta_init;   // eta-based relative exit disabled below; the true-residual test governs
+    // ||gamma||^2 (cross-block) for the relative true-residual stop test.
+    // NOTE: stage a copy so dot_lowmem's x/y args are not aliased (no existing call site
+    // passes x==y; do not assume it is supported).
+    glass::copy<T>(state_size, s_gamma, s_upsilon);
+    __syncthreads();
+    glass::dot_lowmem<T>(state_size, s_gamma, s_upsilon, s_v_b);
+    __syncthreads();
+    if(thread_id == 0){ d_v_temp[block_id] = s_v_b[0]; }
+    grid.sync(); //-------------------------------------
+    glass::copy<T>(knot_points, d_v_temp, s_v_b);
+    __syncthreads();
+    glass::reduce<T>(knot_points, s_v_b);
+    __syncthreads();
+    const T gamma_norm2 = s_v_b[0];
+#endif
 
     // MAIN PCG LOOP
 
@@ -211,8 +241,8 @@ void pcg(
             s_lambda_b[ind] += alpha * s_p_b[ind];
             s_r_b[ind] -= alpha * s_upsilon[ind];
             d_r[block_x_statesize + ind] = s_r_b[ind];
-#if PCG_RESIDUAL_REPLACE_PERIOD
-            d_lambda[block_x_statesize + ind] = s_lambda_b[ind];   // expose lambda for the periodic recompute
+#if PCG_RESIDUAL_REPLACE_PERIOD || PCG_TRUE_EXIT_CHECK_PERIOD
+            d_lambda[block_x_statesize + ind] = s_lambda_b[ind];   // expose lambda for the periodic recompute/check
 #endif
         }
 
@@ -234,6 +264,35 @@ void pcg(
         }
 #endif
 
+#if PCG_TRUE_EXIT_CHECK_PERIOD
+        // periodic TRUE-residual STOP test (exit-only; the recurrence r/p/eta are untouched).
+        // s_upsilon (this iteration's S*p) is dead here — reuse it for (S*lambda)_block.
+        if(((iter+1) % PCG_TRUE_EXIT_CHECK_PERIOD) == 0){
+            loadbdVec<T, state_size, knot_points-1>(s_lambda, block_id, &d_lambda[block_x_statesize]);
+            __syncthreads();
+            bdmv<T>(s_upsilon, s_S, s_lambda, state_size, knot_points-1, block_id);
+            __syncthreads();
+            for(uint32_t ind = thread_id; ind < state_size; ind += block_dim){
+                s_upsilon[ind] = s_gamma[ind] - s_upsilon[ind];   // true residual rows for this block
+            }
+            __syncthreads();
+            // stage into s_r_tilde (dead here: recomputed right after this block) to avoid
+            // aliased x==y in dot_lowmem
+            glass::copy<T>(state_size, s_upsilon, s_r_tilde);
+            __syncthreads();
+            glass::dot_lowmem<T>(state_size, s_upsilon, s_r_tilde, s_v_b);
+            __syncthreads();
+            if(thread_id == 0){ d_v_temp[block_id] = s_v_b[0]; }
+            grid.sync(); //-------------------------------------
+            glass::copy<T>(knot_points, d_v_temp, s_v_b);
+            __syncthreads();
+            glass::reduce<T>(knot_points, s_v_b);
+            __syncthreads();
+            // uniform across blocks (grid-reduced value) => uniform break, no sync mismatch
+            if(s_v_b[0] <= rel_tol*rel_tol*gamma_norm2){ iter++; max_iter_exit = false; break; }
+        }
+#endif
+
         // r_tilde = Pinv * r
         loadbdVec<T, state_size, knot_points-1>(s_r, block_id, &d_r[block_x_statesize]);
         __syncthreads();
@@ -251,7 +310,9 @@ void pcg(
         __syncthreads();
         eta_new = s_eta_new_b[0];
 
+#if !PCG_TRUE_EXIT_CHECK_PERIOD
         if(abs(eta_new) < exit_tol + rel_tol * eta_init){ iter++; max_iter_exit = false; break; }
+#endif
 
         // beta = eta_new / eta
         // eta = eta_new
