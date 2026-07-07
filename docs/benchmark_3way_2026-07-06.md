@@ -24,6 +24,35 @@
 All timing below is the 2026-07-06 measurement set (kept for reference; the uniform-200
 MPCGPU-PCG row is superseded by the GATO_REG_PATTERN row above).
 
+## Batch-size sweep (2026-07-07, isolated, same box)
+
+MPCGPU has NO batch axis (one cooperative grid-wide solve owns the GPU per problem) — it is
+the B=1 reference line. GATO sweep: `GATO examples/benchmarks/sweep_batch_iiwa_fig8.py`
+(B identical replicas, open-loop warm-started over the same fig8 goal sequence, solver-internal
+sqp_time_us, 400 solves/config). BT sweep: `track_iiwa_fig8_bt.py <sim_time> <B>` (closed loop,
+B replicas, num_threads=B, 24-core box).
+
+| B | GATO ms/solve | GATO us/traj | BT ms/solve | BT us/traj |
+|---|---|---|---|---|
+| 1 | 0.695* | 695 | 3.10 | 3101 |
+| 2 | 0.841 | 421 | 3.26 | 1632 |
+| 4 | 0.901 | 225 | 3.93 | 983 |
+| 8 | 1.012 | 127 | 4.07 | 509 |
+| 16 | 1.234 | 77 | 4.30 | 269 |
+| 32 | 1.688 | 53 | 9.52 | 298 |
+| 64 | 2.596 | 41 | 16.78 | 262 |
+| 128 | 10.808 | 84 | 30.16 | 236 |
+
+- GATO amortizes 17x to B=64 (41 us/traj), then falls off a cliff at B=128 (occupancy waves /
+  cache pressure on this 170-SM part) — sweet spot B<=64 at N=64.
+- BT saturates its 24 cores around B=16 (~250-270 us/traj plateau; per-solve latency keeps
+  growing with oversubscription).
+- (*) GATO's B=1 in the sweep driver (0.695 ms) is slower than in the closed-loop harness
+  (0.348 ms): the open-loop driver's warm-start/rho trajectory differs from the sim-fed loop.
+  Use 0.348 ms for the B=1 headline and the sweep for the SCALING shape (self-consistent
+  across B). At B=64, GATO is ~6.4x BT per trajectory and ~5x MPCGPU-PCG's B=1 line
+  (0.218 ms) in throughput terms.
+
 Identical problem for all solvers: iiwa14 (URDF eeb7d4ff), q0=readyC, EE frame = grid-L7,
 EE-space figure-8 A=0.15 T=6s centered at L7(q0), dt=0.01, N=64 knots, SQP=1 (real-time
 iteration), rho=0.01, cost EE=2 qd=1e-2 u=2e-6 N=50 qlim=0.01, mu=10, zero-control warm start,
