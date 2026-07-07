@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # FAIR 3-way iiwa14 fig8 tracking check (GATO / MPCGPU / BatchThneed) on the IDENTICAL problem:
 #   robot iiwa14 (URDF eeb7d4ff), q0=readyC, EE=grid-L7, fig8 A=0.15 T=6 centered at L7(q0),
-#   warm-start = zero controls, config = SQP=1 / PCG=200 / rel_tol=1e-4 / rho=0.01 / cost EE2 qd1e-2
-#   u2e-6 N50 mu10. Tracking measured at the L7 frame for all three. NOT a timing run (functional).
+#   warm-start = zero controls, config = SQP=1 / PCG cap 200 / rho=0.01 / cost EE2 qd1e-2
+#   u2e-6 N50 mu10. Tracking measured (L2) at the L7 frame for all three. NOT a timing run.
+# MPCGPU PCG runs a UNIFORM 200 iters/solve (PCG_RES_TOL=0 + VT_PCG_EXIT_TOL=0): its eta-based
+#   exit under-reports the true residual ~500x on this system and fires ~10x early (tracking
+#   0.19 vs 0.033), and even true-residual-certified adaptive exits under-deliver vs uniform
+#   iterations (residual bounds ||r||, not low-eigenmode lambda error at cond~3e4). Same 200
+#   cap as GATO's config; benchmark decision 2026-07-06.
 # Usage: tools/run_3way_iiwa.sh [sim_time]   (run from MPCGPU repo root; GPU needed for GATO+MPCGPU)
 set -uo pipefail
 SIM=${1:-6.0}
@@ -12,7 +17,7 @@ GRIDVENV=/home/plancher/Desktop/GRiD/.venv
 PY=$GRIDVENV/bin/python
 LD=$MPCGPU/qdldl/build/out
 CF="--compiler-options -Wall -O3 -DNDEBUG -arch=sm_120 -Iinclude -Iinclude/common -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas"
-FAIR="-DKNOT_POINTS=64 -DPCG_MAX_ITER=200 -DPCG_RES_TOL=1e-4 -DRHO_INIT=0.01 -DSQP_MAX_ITER=1 -DSQP_MAX_TIME_US=100000000"
+FAIR="-DKNOT_POINTS=64 -DPCG_MAX_ITER=200 -DPCG_RES_TOL=0.0f -DVT_PCG_EXIT_TOL=0.0f -DRHO_INIT=0.01 -DSQP_MAX_ITER=1 -DSQP_MAX_TIME_US=100000000"
 
 cd "$MPCGPU" || exit 1
 echo "==================== MPCGPU ===================="
