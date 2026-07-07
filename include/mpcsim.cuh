@@ -237,9 +237,18 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 
 #if REMOVE_JITTERS
 	#if LINSYS_SOLVE == 1
+#if PCG_TRUE_EXIT_CHECK_PERIOD
+    // rel_tol is a TRUE-residual relative tol under the true-exit check (linear scale, not the
+    // quadratic eta scale) — 1e-11 would be unreachable in float32 and the warm-up would spin
+    // 100x10000 over-iterated solves (which measurably corrupts the warm start).
+    config.pcg_exit_tol = 1e-8;
+    config.pcg_rel_tol = 1e-4;    // tight warm-start solve (true-residual scale)
+    config.pcg_max_iter = 2000;
+#else
     config.pcg_exit_tol = 1e-11;
     config.pcg_rel_tol = 1e-11;   // tight warm-start solve
     config.pcg_max_iter = 10000;
+#endif
 
     // Converge the initial trajectory on goal window 0 and KEEP it (mirrors GATO warm-starting XU and
     // keeping the solved trajectory). A good warm-start is essential: with SQP=1 real-time iteration the
