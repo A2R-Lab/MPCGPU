@@ -26,7 +26,7 @@ single-block by charter: "never split a primitive across blocks").
 ## Defers in-block linear algebra to GLASS
 
 The per-block (in-block) linear algebra is **GLASS** (`glass::`, submodule pinned
-to match the consuming repo — currently `066d32d`):
+to match the consuming repo — currently `5caa6d0`, naming r2 + tile4 gemm):
 
 - The per-block-row band matvec is `glass::gemv` (column-major, `ROW_MAJOR=false`)
   — see `bdmv` in `include/utils.cuh`. With the absent `L` (block 0) / `R` (last
@@ -42,6 +42,25 @@ to match the consuming repo — currently `066d32d`):
 
 So GBD-PCG carries no hand-rolled in-block BLAS. If you need a new in-block
 primitive, add it upstream in GLASS, not here.
+
+## Exit-test semantics (know this before trusting `iters`)
+
+The solver's relative exit tests **eta = r'·Pinv·r from the CG recurrence**, not the true
+residual `‖γ − Sλ‖`. On ill-preconditioned systems eta under-reports the true residual by
+orders of magnitude (float64 shows the same → weak-norm property, not float drift): on
+MPCGPU's iiwa14 Schur system under the historic full-Q+R regularization
+(cond(Pinv·S) ≈ 3e4) it lies ~500x and fires ~10x early. Under MPCGPU's
+`-DGATO_REG_PATTERN` benchmark config (cond ≈ 2e2) the same exit is honest (avg 1.1
+iters/solve). See MPCGPU `docs/benchmark_3way_2026-07-06.md`. Two guarded experiment
+knobs in `include/pcg.cuh`, both **0 = off by default** (pure upstream behavior):
+
+- `PCG_TRUE_EXIT_CHECK_PERIOD=K` — every K iterations test the TRUE residual
+  `‖γ − Sλ‖² ≤ rel_tol²·‖γ‖²` for the STOP decision only (recurrence untouched); the
+  eta-based relative exit is disabled while on (iter-0 converged-start guard kept).
+  Overhead ~half an iteration per K.
+- `PCG_RESIDUAL_REPLACE_PERIOD=K` — every K iterations recompute the true residual INTO
+  the recurrence (classic residual replacement; fixes float32 recurrence drift only, not
+  the weak-norm under-reporting).
 
 ## Source layout
 
@@ -62,10 +81,16 @@ Header-only to *use*. To run the test (needs a cooperative-launch-capable GPU):
 
 ```bash
 cd examples && make test STATE_SIZE=14 KNOT_POINTS=32   # ARCH defaults to sm_120
+test/run_gates.sh          # one-command gate runner (from repo root): test_pcg_spd at
+                           # 6x8 + 14x32, test_bdmv, test_pcg_dumped (skips if no dumps)
 ```
 
 Validate migration changes with `test_pcg_spd.cu` (it exercises `bdmv` on block 0 /
 middle / last every iteration) + `compute-sanitizer --tool memcheck|racecheck`.
+`examples/test_bdmv.cu` isolates the strip matvec vs a host reference;
+`examples/test_pcg_dumped.cu` runs the solver standalone on a REAL dumped Schur system
+(`/tmp/mpc_{S,Pinv,gamma}.bin`, produced by an MPCGPU `validate_track` built with
+`-DDUMP_KKT`).
 
 ## Conventions
 
