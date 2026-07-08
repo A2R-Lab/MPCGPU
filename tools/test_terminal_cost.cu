@@ -1,8 +1,15 @@
-// Unit test for the terminal-knot tracking-cost gradient (diagnosing the wrong terminal g).
-// Loads the dumped solve-3000 inputs (/tmp/mpc_xu_pre.bin, /tmp/mpc_goal.bin), then:
+// Unit test for the terminal-knot tracking-cost gradient (regression test for the kkt.cuh
+// terminal-reference smem-aliasing bug, fixed in 88c3853).
+// Loads the COMMITTED solve-3000 dump inputs (tools/data/mpc_{xu_pre,goal}.bin — captured
+// 2026-07-07 from a fair-config closed loop, post-fix; run from the repo root), then:
 //   (A) replays gato_plant::trackingCostGradientAndHessian_lastblock exactly as kkt.cuh does;
 //   (B) calls trackingCostGradHess directly on (x_63, ref_63) with a fresh arena.
-// Prints s_qkp1 from both. Ground truth (pinocchio, w=50): [0.031, 6.311, 0.041, -1.561, 0.005, -0.166, 0]
+// Prints s_qkp1 from both. Ground truth = N_COST * J_L7pos^T (p(q63) - ref63) via pinocchio
+// (w=50): [0.0026, 0.1289, 0.0020, -0.3513, 0.0002, 0.0729, 0.0000] — small because the
+// well-tracking loop has |e|~0.019 at the terminal knot; the aliasing-bug signature is a
+// garbage terminal ref => a gradient wrong by >>0.05 abs. To re-pin on new inputs: re-dump
+// (see tools/run_gates.sh GATES_REDUMP), copy to tools/data/, recompute the truth with
+// pinocchio (LOCAL_WORLD_ALIGNED L7 frame jacobian, position rows), update the print below.
 //
 // Build (repo root):
 //   nvcc --compiler-options -Wall -O3 -DNDEBUG -arch=sm_120 -Iinclude -Iinclude/common -IGLASS \
@@ -118,8 +125,8 @@ static std::vector<T> loadf(const char* fn, size_t n){
 
 int main(){
     const uint32_t ss = 14, cs = 7, N = 64;
-    auto xu = loadf("/tmp/mpc_xu_pre.bin", (ss+cs)*N - cs);
-    auto goal = loadf("/tmp/mpc_goal.bin", 6*N);
+    auto xu = loadf("tools/data/mpc_xu_pre.bin", (ss+cs)*N - cs);
+    auto goal = loadf("tools/data/mpc_goal.bin", 6*N);
 
     grid::robotModel<T>* d_robotModel = grid::init_robotModel<T>();
 
@@ -157,7 +164,6 @@ int main(){
     printf("(D) run+term unshifted q-block: ");
     for(int i=0;i<7;i++) printf("% .4f ", (double)outD[i]); printf("\n");
 
-    printf("(pin truth, w=50):              0.0310  6.3107  0.0405 -1.5614  0.0050 -0.1656  0.0000\n");
-    printf("(dumped mpcgpu g row 63):       0.0229 -3.2684 -0.0064 -2.4163 -0.0004  1.1984  0.0000\n");
+    printf("(pin truth, w=50):              0.0026  0.1289  0.0020 -0.3513  0.0002  0.0729  0.0000\n");
     return 0;
 }

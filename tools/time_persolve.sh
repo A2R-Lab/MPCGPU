@@ -29,30 +29,37 @@ fi
 echo "[time_persolve] build $EXE (KNOT_POINTS=$N LINSYS=$LINSYS, fair flags + SAVE_DATA)"
 nvcc $CF $FAIR -DLINSYS_SOLVE=$LS -DSAVE_DATA=1 tools/validate_track.cu -o "$EXE" || exit 1
 
+# stdlib-only stats (the system python3 has no numpy); values pass as argv, never
+# interpolated into python source. p90 = nearest-rank on the sorted samples.
+stats_of_file() { python3 -c '
+import sys, statistics as st
+v = sorted(float(x) for x in open(sys.argv[1]).read().split())
+print(f"{st.median(v):.1f} {v[round(0.9 * (len(v) - 1))]:.1f} {len(v)}")' "$1"; }
+median_of() { python3 -c '
+import sys, statistics as st
+print(f"{st.median(float(x) for x in sys.argv[1:]):.1f}")' "$@"; }
+
 medians=(); p90s=(); ns=(); track=""
 for c in $(seq 1 "$CYCLES"); do
   out=$(LD_LIBRARY_PATH=$LD ./"$EXE" examples/trajfiles/0_0 2>&1)
   line=$(grep -E "RESULT" <<<"$out" | tail -1)
   track=$(grep -oE "mean=[0-9.eE+-]+" <<<"$line" | head -1 | cut -d= -f2 || true)
-  stats=$(python3 - <<'EOF'
-import numpy as np
-t = np.loadtxt("tmp/results/validate_0_sqp_times.result")
-print(f"{np.median(t):.1f} {np.percentile(t,90):.1f} {len(t)}")
-EOF
-)
+  stats=$(stats_of_file tmp/results/validate_0_sqp_times.result) || { echo "[time_persolve] ERROR: no per-solve times (SAVE_DATA output missing?)"; exit 1; }
   read -r med p90 n <<<"$stats"
   medians+=("$med"); p90s+=("$p90"); ns+=("$n")
   echo "  cycle $c: median=${med}us p90=${p90}us n=${n}  ${line}"
 done
 
-read -r MED P90 <<<"$(python3 -c "
-import numpy as np
-m = np.array('${medians[*]}'.split(), float); p = np.array('${p90s[*]}'.split(), float)
-print(f'{np.median(m):.1f} {np.median(p):.1f}')")"
+MED=$(median_of "${medians[@]}") || exit 1
+P90=$(median_of "${p90s[@]}") || exit 1
 echo "RESULT_MPCGPU N=$N linsys=$LINSYS median_us=$MED p90_us=$P90 (median of $CYCLES run-medians)"
 
 if [[ -n "$OUT" ]]; then
   [[ -f "$OUT" ]] || echo "N,B,median_ms,p90_ms,per_traj_us,n_solves,L2_mean" > "$OUT"
-  python3 -c "print(f'$N,1,{$MED/1000:.4f},{$P90/1000:.4f},$MED,${ns[-1]},${track:-nan}')" >> "$OUT"
+  python3 -c '
+import sys
+n, med, p90, ns, tr = sys.argv[1:6]
+print(f"{n},1,{float(med)/1000:.4f},{float(p90)/1000:.4f},{med},{ns},{tr}")' \
+    "$N" "$MED" "$P90" "${ns[-1]}" "${track:-nan}" >> "$OUT" || exit 1
   echo "[time_persolve] appended row -> $OUT"
 fi
