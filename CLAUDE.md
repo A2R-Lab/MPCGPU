@@ -41,19 +41,49 @@ LD_LIBRARY_PATH=$PWD/qdldl/build/out ./examples/pcg.exe     # run from repo root
 ```
 Parameters in `include/common/settings.cuh` are all `#ifndef`-guarded → override with `-D` (see Makefile).
 
-## Validation gates (correctness-only; may run alongside other GPU work)
+## Validation gates (correctness-only)
+
+`tools/run_gates.sh` is the one-command gate runner (build + run + PASS/FAIL): single_cost_test
+(one-solve EE-cost response at the fair config: ‖d_xu step‖ ≈ 339.6, post-solve window tracking
+≈ 0.0107), test_terminal_cost (terminal q-gradient vs pinocchio truth on the committed
+`tools/data/` dump inputs — the terminal-cost-bug regression test, see below), and one
+`validate_track` tracking pass per linsys (PCG w/ GATO_REG_PATTERN ≈ 0.0315 mean, QDLDL ≈ 0.0334).
+GBD-PCG has its own `test/run_gates.sh`. Additional standing gates:
 
 - `make test_fd_parity` — adapter `forwardDynamics` vs `grid::forward_dynamics_device` (expect max err 0).
 - `grid.cuh` byte-diff vs GATO's iiwa14 grid.cuh (URDF-divergence gate).
 - `GBD-PCG/examples/test_spd.exe` — SPD block-tridiagonal residual gate for the cooperative solver.
 - Primitive migrations were validated **bit-exact** vs the hand-rolled originals.
 
+## ⚠ Terminal-cost shared-memory aliasing bug (fixed 88c3853)
+
+`kkt.cuh generate_kkt_submatrices` carved the last block's smem with `s_Qk = s_eePos_traj + 6`,
+but the last block holds **two** 6-wide references (knots k and k+1) → the terminal reference
+aliased the bottom of `s_Qk` and the terminal q-gradient came out wrong (dumped g row 63:
+`-3.27` where pinocchio says `+6.31`). Fix: offset `6 → 2*6`. Regression test =
+`tools/test_terminal_cost.cu` (4 kernels — kkt-layout replay, direct, shifted-arena, sequential —
+vs a pinocchio-derived truth vector on the dumped solve-3000 inputs; run via `tools/run_gates.sh`).
+All benchmark numbers predating the fix (before 2026-07-06) are invalid — do not mix.
+
+## Benchmark (SSOT: `docs/benchmark_3way_2026-07-06.md`)
+
+The 3-way iiwa14 fig8 benchmark config (2026-07-07): SQP=1, PCG cap 200, rel tol 1e-4,
+RHO_INIT=0.01, **`-DGATO_REG_PATTERN`** — rho added only to the position half of Q, R
+unregularized (GATO's convention; guarded in `include/{pcg,qdldl}/linsys_setup.cuh`). Under it
+the stair preconditioner is near-ideal (cond(Pinv·S) ≈ 2e2), the native eta-exit is honest,
+avg 1.1 PCG iters/solve → **0.218 ms/solve, tracking 0.0315** (fastest solver in the table at
+B=1). The **default compile behavior** (no flag) is the historic full-Q+R regularization:
+cond ≈ 3e4 and the eta-exit under-reports the true residual ~500x (fires ~10x early). Harnesses:
+`tools/run_3way_iiwa.sh` (fair 3-way tracking check), `tools/time_persolve.sh [N] [pcg|qdldl]`
+(isolated per-solve timing at any KNOT_POINTS), `tools/run_gates.sh` (correctness gates).
+
 ## ⚠ Corrected dynamics + the tracking benchmark
 
 The regenerated grid is **pinocchio-exact**; the *old vendored* grid had a ~2×-wrong mass matrix. The
 correct iiwa is **stiff** (last-joint inertia ≈ 0.003 → `Minv[6,6] ≈ 392`). The shipped `examples/trajfiles/`
-were generated for the *wrong* robot, so the MPC is closed-loop **unstable** on them. **Tracking quality is
-NOT a gate for the modernization** (the dynamics/gradient gates are; all green).
+were generated for the *wrong* robot, so the MPC is closed-loop **unstable** on them. Tracking on the OLD
+shipped trajfiles is NOT a gate; tracking on the regenerated fig8 reference IS one now (post terminal-cost
+fix: ≈ 0.0315 mean at the fair config, checked by `tools/run_gates.sh`).
 
 **Why it diverged, and the fix (diagnosed 2026-06-28).** The iiwa is 7-DOF tracking a 3-DOF EE-*position*
 task → a 4-D cost nullspace that includes **joint 7** (its EE-position Jacobian column is ~0, and `s_Q[q-block]
@@ -75,5 +105,6 @@ regularization toward `q_nom=0` to anchor the EE-nullspace joints. See `docs/mod
 
 ## Conventions
 
-Short single-line commits. Hold pushes / upstream PRs until explicitly cleared. Never time perf under GPU/CPU
-contention (correctness runs may overlap; only timing needs isolation).
+Short single-line commits. Hold pushes / upstream PRs until explicitly cleared. **NEVER run timing
+concurrently with other box load** — timing needs an isolated quiet box, full stop. Correctness-only
+runs are okay under load, but keep builds capped (sequential nvcc; no parallel compile fan-out).
