@@ -4,12 +4,16 @@
 // 2026-07-07 from a fair-config closed loop, post-fix; run from the repo root), then:
 //   (A) replays gato_plant::trackingCostGradientAndHessian_lastblock exactly as kkt.cuh does;
 //   (B) calls trackingCostGradHess directly on (x_63, ref_63) with a fresh arena.
-// Prints s_qkp1 from both. Ground truth = N_COST * J_L7pos^T (p(q63) - ref63) via pinocchio
-// (w=50): [0.0026, 0.1289, 0.0020, -0.3513, 0.0002, 0.0729, 0.0000] — small because the
-// well-tracking loop has |e|~0.019 at the terminal knot; the aliasing-bug signature is a
-// garbage terminal ref => a gradient wrong by >>0.05 abs. To re-pin on new inputs: re-dump
-// (see tools/run_gates.sh GATES_REDUMP), copy to tools/data/, recompute the truth with
-// pinocchio (LOCAL_WORLD_ALIGNED L7 frame jacobian, position rows), update the print below.
+// Prints s_qkp1 from both. Ground truth = N_COST * J_EEpos^T (p(q63) - ref63) via pinocchio
+// at the CONTACT frame (the URDF's fixed EE joint, +4cm z off L7; GRiD >= e31f7bd includes
+// the fixed-joint origin — the old L7-frame truth [0.0026, 0.1289, 0.0020, -0.3513, 0.0002,
+// 0.0729, 0] matched the pre-fix origin-dropping codegen), w=50:
+// [0.0053, 1.3757, 0.0034, -1.0444, 0.0003, 0.1088, 0.0000] — large because the dump's
+// refs were tracked against the OLD EE point, so the terminal knot carries the ~4cm frame
+// shift as EE error; the aliasing-bug signature is a gradient wrong by >>0.05 abs on top.
+// To re-pin on new inputs: re-dump (see tools/run_gates.sh GATES_REDUMP), copy to
+// tools/data/, recompute the truth with pinocchio (LOCAL_WORLD_ALIGNED contact-frame
+// jacobian, position rows), update the print below.
 //
 // Build (repo root):
 //   nvcc --compiler-options -Wall -O3 -DNDEBUG -arch=sm_120 -Iinclude -Iinclude/common -IGLASS \
@@ -164,6 +168,6 @@ int main(){
     printf("(D) run+term unshifted q-block: ");
     for(int i=0;i<7;i++) printf("% .4f ", (double)outD[i]); printf("\n");
 
-    printf("(pin truth, w=50):              0.0026  0.1289  0.0020 -0.3513  0.0002  0.0729  0.0000\n");
+    printf("(pin truth, w=50):              0.0053  1.3757  0.0034 -1.0444  0.0003  0.1088  0.0000\n");
     return 0;
 }

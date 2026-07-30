@@ -37,7 +37,7 @@ __global__ void k_fk(T* d_ee, const T* d_q, void* d_rm){
     __shared__ T s_q[7], s_ee[6];
     for(int i=threadIdx.x;i<7;i+=blockDim.x){ s_q[i]=d_q[i]; }
     __syncthreads();
-    grid::end_effector_pose_device<T>(s_ee, s_q, (grid::robotModel<T>*)d_rm);
+    grid::end_effector_pose_device_EE<T>(s_ee, s_q, (grid::robotModel<T>*)d_rm);
     __syncthreads();
     for(int i=threadIdx.x;i<6;i+=blockDim.x) d_ee[i]=s_ee[i];
 }

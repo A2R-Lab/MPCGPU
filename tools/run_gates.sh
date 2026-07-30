@@ -20,8 +20,8 @@
 #                            Regression test for the kkt.cuh terminal-cost smem aliasing
 #                            bug (s_Qk offset 6 -> 2*6, fixed in 88c3853).
 #   3. validate_track PCG  — closed-loop fig8 tracking, GBD-PCG linsys + GATO_REG_PATTERN:
-#                            expect mean ~0.0315 (max ~0.0744).
-#   4. validate_track QDLDL— same problem, QDLDL linsys: expect mean ~0.0334 (max ~0.0753).
+#                            expect mean ~0.0288 (max ~0.0635; contact-frame EE, GRiD e31f7bd).
+#   4. validate_track QDLDL— same problem, QDLDL linsys: expect mean ~0.0294 (max ~0.0649).
 #
 # Usage: tools/run_gates.sh          (run from the MPCGPU repo root; needs a GPU +
 #                                     qdldl built: make build_qdldl)
@@ -114,8 +114,8 @@ run_track(){ # run_track <gate#> <tag> <extra nvcc flags> <exe> <expected mean>
     gate "validate_$2" 1 "build failed"
   fi
 }
-run_track 3 "track_pcg  " ""                "tools/gates_vt_pcg.exe"   0.0315
-run_track 4 "track_qdldl" "-DLINSYS_SOLVE=0" "tools/gates_vt_qdldl.exe" 0.0334
+run_track 3 "track_pcg  " ""                "tools/gates_vt_pcg.exe"   0.0288
+run_track 4 "track_qdldl" "-DLINSYS_SOLVE=0" "tools/gates_vt_qdldl.exe" 0.0294
 
 echo "==============================================="
 echo "gates: $npass PASS, $nfail FAIL"
