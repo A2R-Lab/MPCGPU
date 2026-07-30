@@ -38,12 +38,14 @@ URDF = REPO_ROOT / "tools" / "iiwa14.urdf"
 OUT = REPO_ROOT / "include" / "dynamics" / "iiwa" / "grid.cuh"
 FIXED_TARGET_NAME = "EE"   # iiwa14 fixed end-effector joint (matches GATO)
 
-# Make the GRiD top-level packages (URDFParser, GRiDCodeGenerator) importable.
+# GRiD packaging layout: grid_codegen at the GRiD root, URDFParser under
+# external/ (both importable from a raw checkout; no pip install needed).
 sys.path.insert(0, str(GRID_ROOT))
+sys.path.insert(0, str(GRID_ROOT / "external"))
 
 
 def main() -> None:
-    if not GRID_ROOT.exists():
+    if not (GRID_ROOT / "external" / "URDFParser").exists():
         sys.exit(f"GRiD not found at {GRID_ROOT}. Run: "
                  f"git submodule update --init --recursive GRiD "
                  f"(or set GRID_ROOT=/path/to/GRiD).")
@@ -51,7 +53,7 @@ def main() -> None:
         sys.exit(f"URDF not found: {URDF}")
 
     from URDFParser import URDFParser
-    from GRiDCodeGenerator import GRiDCodeGenerator
+    from grid_codegen.GRiDCodeGenerator import GRiDCodeGenerator
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     print(f"[iiwa14] parsing {URDF}")
