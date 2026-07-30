@@ -156,6 +156,8 @@ void printMat(const T *A, int lda){
 #define GRID_HAS_CRBA 1
 #define GRID_HAS_INVERSE_DYNAMICS_GRADIENT 1
 #define GRID_HAS_FORWARD_DYNAMICS_GRADIENT 1
+#define GRID_HAS_F_EXT_GRADIENT 1
+#define GRID_HAS_F_EXT_GRADIENT_DQ 1
 #define GRID_HAS_INVERSE_DYNAMICS_REGRESSOR 1
 #define GRID_HAS_FORWARD_DYNAMICS_PARAMETER_GRADIENT 1
 #define GRID_HAS_END_EFFECTOR_POSE 1
@@ -432,8 +434,8 @@ namespace grid {
     template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ inline size_t F_EXT_GRADIENT_DYNAMIC_SHARED_MEM_BYTES() { if constexpr (TIER == TIER_SHARED)    return grid_shared_arena_bytes<T>(1815, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else if constexpr (TIER == TIER_LITE) return grid_shared_arena_bytes<T>(1815, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else                                 return grid_shared_arena_bytes<T>(1064, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); }
     template <int TIER> __host__ __device__ constexpr bool F_EXT_GRADIENT_DQDD_IN_SMEM() { return (TIER == TIER_SHARED) ? true : (TIER == TIER_LITE) ? true : false; }
     template <int TIER> __host__ __device__ constexpr bool F_EXT_GRADIENT_DTAU_IN_SMEM() { return (TIER == TIER_SHARED) ? true : (TIER == TIER_LITE) ? true : false; }
-    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ inline size_t F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES() { if constexpr (TIER == TIER_SHARED)    return grid_shared_arena_bytes<T>(1624, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else if constexpr (TIER == TIER_LITE) return grid_shared_arena_bytes<T>(1624, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else                                 return grid_shared_arena_bytes<T>(1036, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); }
-    template <int TIER> __host__ __device__ constexpr bool F_EXT_GRADIENT_DQ_JT_IN_SMEM() { return (TIER == TIER_SHARED) ? true : (TIER == TIER_LITE) ? true : false; }
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ inline size_t F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES() { if constexpr (TIER == TIER_SHARED)    return grid_shared_arena_bytes<T>(525, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else if constexpr (TIER == TIER_LITE) return grid_shared_arena_bytes<T>(525, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else                                 return grid_shared_arena_bytes<T>(525, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); }
+    template <int TIER> __host__ __device__ constexpr bool F_EXT_GRADIENT_DQ_SLAB_IN_SMEM() { return (TIER == TIER_SHARED) ? true : (TIER == TIER_LITE) ? true : false; }
     template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ inline size_t MINV_DYNAMIC_SHARED_MEM_BYTES() { if constexpr (TIER == TIER_SHARED)    return grid_shared_arena_bytes<T>(1227, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else if constexpr (TIER == TIER_LITE) return grid_shared_arena_bytes<T>(1227, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else                                 return grid_shared_arena_bytes<T>(933, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); }
     template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ inline size_t FORWARD_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES() { if constexpr (TIER == TIER_SHARED)    return grid_shared_arena_bytes<T>(1248, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else if constexpr (TIER == TIER_LITE) return grid_shared_arena_bytes<T>(1248, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else                                 return grid_shared_arena_bytes<T>(954, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); }
     template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ inline size_t INVERSE_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES() { if constexpr (TIER == TIER_SHARED)    return grid_shared_arena_bytes<T>(2471, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else if constexpr (TIER == TIER_LITE) return grid_shared_arena_bytes<T>(2471, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); else                                 return grid_shared_arena_bytes<T>(749, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()); }
@@ -642,7 +644,7 @@ namespace grid {
         T *d_osc_inertia;          // osc_inertia Lambda (6 x 6)
         T *d_eePose;               // end_effector_pose_runtime (6 = [xyz;rpy])
         T *d_eePoseGrad;           // end_effector_pose_gradient_runtime (6 x NUM_VEL)
-        T *d_eepose_runtime_offset; // runtime 3-vector point offset (target frame)
+        T *d_eepose_runtime_offset; // runtime 4x4 col-major SE(3) tool/tip transform (target frame)
         unsigned char *d_workspace;
         T *d_idsva_so;
         T *d_df2;
@@ -691,7 +693,7 @@ namespace grid {
     
     // Vendored from GLASS at codegen time (nested in this namespace).
     // Source repository: git@github.com:A2R-Lab/GLASS.git
-    // Pinned commit: 5caa6d0dfcf4ec086c0ad7a7e3d77b14aad6705e
+    // Pinned commit: a3fa160a401e104f4b4d843d77c059eb7998815b
     namespace glass {
     
     // BEGIN GLASS src/base/barrier.cuh
@@ -730,6 +732,18 @@ namespace grid {
         __device__ __forceinline__ void sync() const { __syncthreads(); }
     };
     
+    /**
+     * @brief Barrier policy for the `glass::thread::`
+    
+     this exists as a no-op for single threaded synchronization: if there is only one thread,
+     then nothing needs to be synchronized. 
+     */
+    struct ThreadBarrier {
+        __device__ __forceinline__ uint32_t rank() const { return 0u; }
+        __device__ __forceinline__ uint32_t size() const { return 1u; }
+        __device__ __forceinline__ void sync() const { }
+    };
+    
     // ─────────────────────────────────────────────────────────────────────────────
     // ct_size — compile-time size carrier for the factor/solve `*_impl` bodies.
     //
@@ -751,7 +765,60 @@ namespace grid {
     struct ct_size {
         __host__ __device__ constexpr operator uint32_t() const { return V; }
     };
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // beta_blend — BLAS beta==0 semantics for every beta-taking op.
+    //
+    // BLAS (and cuBLAS) guarantee that when `beta == 0` the destination is
+    // WRITE-ONLY: it need not hold a valid value on input. A naive
+    // `alpha*res + beta*dst` breaks that guarantee — `0 * NaN == NaN`, so cold
+    // scratch left as NaN by a previous kernel poisons the result even though
+    // beta is zero (found 2026-07-08: GRiD's generated RNEA passes beta=0 gemvs
+    // over uninitialized s_vaf smem; diverged rollouts leave NaN on the SM and
+    // the "zero" blend propagates it). The beta != 0 arm is an EXPLICIT fused
+    // multiply-add intrinsic, not `acc + beta*dst`: a plain expression leaves the
+    // FMA-contraction choice to ptxas, which decides per kernel and broke
+    // warp-vs-block bit-identity (test_syrk_warp); a single FFMA/DFMA is the same
+    // instruction in every instantiation. The compiler cannot fold the select
+    // away, because `beta*dst == 0` does not hold for floats. Every beta-form op
+    // must route its blend through this helper. (Bit-note vs the pre-helper code:
+    // results are identical at beta ∈ {0, 1} — every consumer's case — and may
+    // differ in the last ULP at fractional beta, where the old code's contraction
+    // was unspecified anyway.)
+    // ─────────────────────────────────────────────────────────────────────────────
+    __device__ __forceinline__ float beta_blend_fma(float acc, float beta, float dst) {
+        return __fmaf_rn(beta, dst, acc);
+    }
+    __device__ __forceinline__ double beta_blend_fma(double acc, double beta, double dst) {
+        return __fma_rn(beta, dst, acc);
+    }
+    template <typename T>
+    __device__ __forceinline__ T beta_blend_fma(T acc, T beta, T dst) {
+        return acc + beta * dst;
+    }
+    
+    template <typename T>
+    __device__ __forceinline__ T beta_blend(T acc, T beta, const T &dst) {
+        return (beta != static_cast<T>(0)) ? beta_blend_fma(acc, beta, dst) : acc;
+    }
     // END GLASS src/base/barrier.cuh
+    
+    // BEGIN GLASS src/base/flags.cuh
+    
+    // ─── Shared compile-time dispatch flags ──────────────────────────────────────
+    //
+    // Named enums for the triangular / symmetric op families (BLAS-style UPLO/DIAG).
+    // Included (inside `namespace glass`) by trsv.cuh, trsm.cuh, and syrk.cuh, so
+    // the same `FillMode`/`Diag` spell every triangle/diagonal choice — no raw
+    // positional `bool` soup at call sites. `TRANSPOSE` stays a plain `bool`
+    // template flag across the library (matching gemm's `TRANSPOSE_A/B`).
+    
+    /** @brief Which triangle of a symmetric/triangular matrix is stored/touched (BLAS UPLO). */
+    enum class FillMode : uint32_t { Lower = 0, Upper = 1, Full = 2 };
+    
+    /** @brief Whether the diagonal is implicitly unit (not read) or explicit (BLAS DIAG). */
+    enum class Diag : uint32_t { NonUnit = 0, Unit = 1 };
+    // END GLASS src/base/flags.cuh
     
     // BEGIN GLASS src/base/L1/reduce.cuh
     
@@ -971,6 +1038,125 @@ namespace grid {
         if constexpr (TRAILING_SYNC) __syncthreads();
         return total;
     }
+    /**
+     * @brief Block-min of a per-thread register value: returns `min partial`.
+     *
+     * Min twin of the `reduce_fast(partial, s_scratch)` sum overload above, with the
+     * same shape: one PER-THREAD contribution in, the block-wide minimum returned to
+     * EVERY thread, no `x[]` buffer. The entry point for fused "compute-a-partial-then
+     * -min" patterns (e.g. a softmax's max-shift, or a smooth-min collision cost).
+     * Threads with no contribution should pass the identity — a large sentinel such as
+     * `1e30f`, NOT zero.
+     *
+     * Kept separate from the sum overload rather than folded into a generic
+     * `reduce_fast(partial, s_scratch, Op)`: an operator template would force every
+     * existing call site through a functor, and the two identities (0 vs +inf) cannot
+     * share a default.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param partial    This thread's contribution to the block min.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp);
+     *                   on return `s_scratch[0]` holds the minimum.
+     * @return The block-wide minimum, identical on every thread.
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ T reduce_fast_min(T partial, T *s_scratch)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        uint32_t nw = (size + 31) / 32;
+        T val = partial;
+        for (int off = 16; off > 0; off >>= 1) {
+            T other = __shfl_down_sync(0xffffffff, val, off);
+            val = (other < val) ? other : val;
+        }
+        uint32_t lane = rank & 31, warp = rank >> 5;
+        if (lane == 0) s_scratch[warp] = val;
+        __syncthreads();
+        if (rank < 32) {
+            // Lanes past the warp count seed with a neighbour's value rather than a
+            // sentinel: min is idempotent, so re-folding a value already in the set
+            // cannot change the result, and it needs no type-specific +inf.
+            val = s_scratch[(rank < nw) ? rank : 0];
+            for (int off = 16; off > 0; off >>= 1) {
+                T other = __shfl_down_sync(0xffffffff, val, off);
+                val = (other < val) ? other : val;
+            }
+            if (rank == 0) s_scratch[0] = val;
+        }
+        __syncthreads();
+        T total = s_scratch[0];
+        if constexpr (TRAILING_SYNC) __syncthreads();
+        return total;
+    }
+    
+    namespace thread {
+        // Single-thread reductions: one THREAD owns the whole sum, accumulating
+        // serially. The tier deliberately ships no _fast/_lowmem twins — those name
+        // reduction STRATEGIES, and one thread has none (see CLAUDE.md). Serial
+        // accumulation differs in summation ORDER from the block halving tree, so
+        // thread::reduce and a 1-thread block reduce agree to float tolerance, not
+        // ULP (same deliberate asymmetry as thread::dot).
+    
+        /**
+         * @brief Sum reduction on one thread: `x[0] = Σ x[i]`, single-thread.
+         *
+         * Serially accumulates the elements and writes the total to `x[0]`. Only
+         * `x[0]` is written — the tail is left untouched (unlike the block halving
+         * reduce, which uses `x` as scratch). No shared scratch, no shuffles, no
+         * barriers, no `threadIdx` read. NumPy equivalent: `np.sum(x)`.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @param n  Number of elements.
+         * @param x  In/out vector of length `n`; the sum lands in `x[0]`.
+         */
+        template <typename T>
+        __device__ void reduce(uint32_t n, T *x)
+        {
+            T val = static_cast<T>(0);
+            for (uint32_t i = 0; i < n; i++) val += x[i];
+            x[0] = val;
+        }
+    
+        /**
+         * @brief Sum reduction on one thread: `x[0] = Σ x[i]`, single-thread, compile-time size.
+         *
+         * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+         * `x` may be a thread-local register array. Only `x[0]` is written. NumPy
+         * equivalent: `np.sum(x)`.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @tparam N  Number of elements (compile-time constant).
+         * @param x  In/out vector of length `N`; the sum lands in `x[0]`.
+         */
+        template <typename T, uint32_t N>
+        __device__ void reduce(T *x)
+        {
+            T val = static_cast<T>(0);
+            for (uint32_t i = 0; i < N; i++) val += x[i];
+            x[0] = val;
+        }
+    
+        /**
+         * @brief Sum of a per-thread register value on one thread: returns `partial`.
+         *
+         * The single-thread mirror of `warp::reduce(partial)`: with one problem per
+         * thread there is exactly ONE contribution, so the "reduction" is the
+         * identity. Exists so tier-generic call sites (templated on the interface)
+         * compile against every tier with the same shape. No barriers, no shuffles,
+         * no `threadIdx` read. NumPy equivalent: `np.sum([partial])`.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @param partial  This thread's (sole) contribution.
+         * @return `partial`, unchanged.
+         */
+        template <typename T>
+        __device__ T reduce(T partial)
+        {
+            return partial;
+        }
+    }
+    
     namespace warp {
         // Single-warp reductions: raw __shfl, no shared scratch, no inter-warp combine.
         // For warp-per-problem kernels (one 32-lane warp owns the reduction). The
@@ -1138,6 +1324,51 @@ namespace grid {
         if (rank == 0) { for (uint32_t i = 1; i < n; i++) out[0] += out[i]; }
         if constexpr (TRAILING_SYNC) __syncthreads();
     }
+    namespace thread {
+    
+        /**
+         * @brief Inner product on one thread: returns `x · y`, single-thread.
+         *
+         * Serially accumulates the element-wise products. Inputs untouched; no shared
+         * scratch, no shuffles, no barriers. NumPy equivalent: `np.dot(x, y)`.
+         * Works well on low DOF problems with small vectors that fit into a register
+         * Parallelism can be leveraged by scaling thread count.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @param n  Number of elements.
+         * @param x  Input vector of length `n`.
+         * @param y  Input vector of length `n`.
+         * @return The inner product `x · y`.
+         */
+        template <typename T>
+        __device__ T dot(uint32_t n, const T *x, const T *y)
+        {
+            T val = static_cast<T>(0);
+            for (uint32_t i = 0; i < n; i++) val += x[i]*y[i];
+            return val;
+        }
+    
+        /**
+         * @brief Inner product on one thread: returns `x · y`, single-thread, compile-time size.
+         *
+         * Compile-time-`N` overload; the trip count folds and the loop unrolls, so `x`
+         * and `y` may be thread-local register arrays. NumPy equivalent: `np.dot(x, y)`.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @tparam N  Number of elements (compile-time constant).
+         * @param x  Input vector of length `N`.
+         * @param y  Input vector of length `N`.
+         * @return The inner product `x · y`.
+         */
+        template <typename T, uint32_t N>
+        __device__ T dot(const T *x, const T *y)
+        {
+            T val = static_cast<T>(0);
+            for (uint32_t i = 0; i < N; i++) val += x[i]*y[i];
+            return val;
+        }
+    }
+    
     namespace warp {
         // Single-warp dot products: one 32-lane warp owns the reduction (raw __shfl,
         // no shared scratch). For warp-per-problem kernels packing many small dots
@@ -1418,6 +1649,212 @@ namespace grid {
     }
     // END GLASS src/base/L1/dot_strided_coalesced.cuh
     
+    // BEGIN GLASS src/base/L1/set_const.cuh
+    
+    // shared body: broadcast a constant `x[i] = alpha`
+    template <typename Bar, typename T, bool TRAILING_SYNC = true>
+    __device__ void set_const_impl(Bar bar, uint32_t n, T alpha, T *x)
+    {
+        uint32_t rank = bar.rank(), size = bar.size();
+        for (uint32_t i = rank; i < n; i += size) x[i] = alpha;
+        if constexpr (TRAILING_SYNC) bar.sync();
+    }
+    
+    /**
+     * @brief Fill a vector with a constant: `x[i] = alpha`.
+     *
+     * NumPy equivalent: `x = np.full(n, alpha)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n      Number of elements.
+     * @param alpha  Value to broadcast into every element.
+     * @param x      Output vector of length `n`.
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void set_const(uint32_t n, T alpha, T *x)
+    {
+        set_const_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, alpha, x);
+    }
+    
+    /**
+     * @brief Fill a vector with a constant: `x[i] = alpha`, compile-time size.
+     *
+     * Compile-time-`N` overload. NumPy equivalent: `x = np.full(N, alpha)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param alpha  Value to broadcast into every element.
+     * @param x      Output vector of length `N`.
+     */
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
+    __device__ void set_const(T alpha, T *x)
+    {
+        set_const_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x);
+    }
+    // END GLASS src/base/L1/set_const.cuh
+    
+    // BEGIN GLASS src/base/L1/symmetrize.cuh
+    
+    /**
+     * @file symmetrize.cuh
+     * @brief In-place symmetrization `A := 0.5*(A + Aᵀ)` for a square matrix.
+     *
+     * Numerically enforces symmetry on an n×n column-major matrix — the standard
+     * cleanup after a product chain (e.g. a Schur-complement gemm sequence) whose
+     * result is symmetric in exact arithmetic but drifts under floating point.
+     * MPCGPU hand-rolls exactly this after its Schur assembly (without it, CG
+     * stagnates on the slightly-asymmetric operator); this is that loop, once.
+     *
+     * Each strictly-lower (i>j) pair owner reads BOTH mirror elements and writes
+     * BOTH — every (i,j)/(j,i) pair is touched by exactly one thread, the diagonal
+     * is untouched, so there is no cross-thread hazard and the op is trivially
+     * thread-count invariant. Block + `warp::` + `cgrps::`.
+     */
+    
+    // shared body: in-place A := 0.5*(A + Aᵀ), n×n column-major. Threads stride the
+    // full n*n index space and act only on strictly-lower entries (r > c), so each
+    // mirror pair has a single owner — no barrier needed before the writes.
+    template <typename Bar, typename T, bool TRAILING_SYNC = true>
+    __device__ void symmetrize_impl(Bar bar, uint32_t n, T *A)
+    {
+        uint32_t rank = bar.rank(), size = bar.size();
+        for (uint32_t idx = rank; idx < n*n; idx += size) {
+            uint32_t r = idx % n, c = idx / n;
+            if (r > c) {
+                T v = static_cast<T>(0.5) * (A[idx] + A[c + r*n]);
+                A[idx] = v;
+                A[c + r*n] = v;
+            }
+        }
+        if constexpr (TRAILING_SYNC) bar.sync();
+    }
+    
+    /**
+     * @brief Symmetrize a square matrix in place: `A = 0.5*(A + Aᵀ)`.
+     *
+     * Averages each strictly-off-diagonal mirror pair of the `n×n` column-major
+     * matrix `A`; the diagonal is untouched. NumPy equivalent:
+     * `A = 0.5*(A + A.T)`.
+     *
+     * @tparam T             Scalar type (e.g. `float`, `double`).
+     * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+     * @param n  Matrix dimension (number of rows/columns).
+     * @param A  In/out matrix of `n*n` elements (column-major).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void symmetrize(uint32_t n, T *A)
+    {
+        symmetrize_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, A);
+    }
+    
+    /**
+     * @brief Symmetrize in place: `A = 0.5*(A + Aᵀ)`, compile-time size.
+     *
+     * Compile-time-`N` overload. NumPy equivalent: `A = 0.5*(A + A.T)`.
+     *
+     * @tparam T             Scalar type (e.g. `float`, `double`).
+     * @tparam N             Matrix dimension (compile-time constant).
+     * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+     * @param A  In/out matrix of `N*N` elements (column-major).
+     */
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
+    __device__ void symmetrize(T *A)
+    {
+        symmetrize_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, A);
+    }
+    
+    namespace thread {
+        // Single-thread SYMMETRIZE: one THREAD averages every mirror pair, reusing
+        // the shared `symmetrize_impl` body with ThreadBarrier{rank=0, size=1, no-op
+        // sync} — the same algorithm as the block op degenerated to one thread.
+    
+        /**
+         * @brief Symmetrize on one thread: `A = 0.5*(A + Aᵀ)`, single-thread.
+         *
+         * One thread averages each strictly-off-diagonal mirror pair of the `n×n`
+         * column-major matrix serially; the diagonal is untouched. No shared
+         * scratch, no shuffles, no barriers, no `threadIdx` read; `A` may be a
+         * thread-local register array. NumPy equivalent: `A = 0.5*(A + A.T)`.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @param n  Matrix dimension (number of rows/columns).
+         * @param A  In/out matrix of `n*n` elements (column-major).
+         */
+        template <typename T>
+        __device__ void symmetrize(uint32_t n, T *A)
+        {
+            symmetrize_impl<ThreadBarrier, T>(ThreadBarrier{}, n, A);
+        }
+    
+        /**
+         * @brief Symmetrize on one thread: `A = 0.5*(A + Aᵀ)`, single-thread, compile-time size.
+         *
+         * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+         * `A` may be a thread-local register array. NumPy equivalent:
+         * `A = 0.5*(A + A.T)`.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @tparam N  Matrix dimension (compile-time constant).
+         * @param A  In/out matrix of `N*N` elements (column-major).
+         */
+        template <typename T, uint32_t N>
+        __device__ void symmetrize(T *A)
+        {
+            symmetrize_impl<ThreadBarrier, T>(ThreadBarrier{}, N, A);
+        }
+    }
+    
+    namespace warp {
+        // Single-warp SYMMETRIZE: one 32-lane warp strides the n*n index space
+        // (lane k handles flat indices k, k+32, …) acting on strictly-lower entries.
+        // Each mirror pair has a single owning lane, so no inter-lane communication
+        // is needed; a trailing __syncwarp() orders the writes for the caller.
+        // Full 32 lanes required.
+    
+        /**
+         * @brief Symmetrize within one warp: `A = 0.5*(A + Aᵀ)`, single-warp.
+         *
+         * One 32-lane warp averages the mirror pairs of the `n×n` column-major
+         * matrix in place; the diagonal is untouched. Each pair owned by exactly
+         * one lane; trailing `__syncwarp()`. NumPy equivalent: `A = 0.5*(A + A.T)`.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @param n  Matrix dimension (number of rows/columns).
+         * @param A  In/out matrix of `n*n` elements (column-major).
+         */
+        template <typename T>
+        __device__ void symmetrize(uint32_t n, T *A)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            for (uint32_t idx = lane; idx < n*n; idx += 32) {
+                uint32_t r = idx % n, c = idx / n;
+                if (r > c) {
+                    T v = static_cast<T>(0.5) * (A[idx] + A[c + r*n]);
+                    A[idx] = v;
+                    A[c + r*n] = v;
+                }
+            }
+            __syncwarp();
+        }
+    
+        /**
+         * @brief Symmetrize within one warp: `A = 0.5*(A + Aᵀ)`, compile-time size.
+         *
+         * Compile-time-`N` overload of the single-warp symmetrize. NumPy
+         * equivalent: `A = 0.5*(A + A.T)`.
+         *
+         * @tparam T  Scalar type (e.g. `float`, `double`).
+         * @tparam N  Matrix dimension (compile-time constant).
+         * @param A  In/out matrix of `N*N` elements (column-major).
+         */
+        template <typename T, uint32_t N>
+        __device__ void symmetrize(T *A)
+        {
+            symmetrize<T>(N, A);
+        }
+    }
+    // END GLASS src/base/L1/symmetrize.cuh
+    
     // BEGIN GLASS src/base/L2/gemv.cuh
     
     // core impl: explicit rank/size + layout flags
@@ -1433,7 +1870,7 @@ namespace grid {
                     T a = ROW_MAJOR_A ? A[col*n + row] : A[col + row*m];
                     res += a * x[col];
                 }
-                y[row] = alpha*res + beta*y[row];
+                y[row] = beta_blend(alpha*res, beta, y[row]);
             }
         } else {
             for (uint32_t row = rank; row < m; row += size) {
@@ -1442,7 +1879,7 @@ namespace grid {
                     T a = ROW_MAJOR_A ? A[row*n + col] : A[row + col*m];
                     res += a * x[col];
                 }
-                y[row] = alpha*res + beta*y[row];
+                y[row] = beta_blend(alpha*res, beta, y[row]);
             }
         }
     }
@@ -1548,7 +1985,7 @@ namespace grid {
                     T a = ROW_MAJOR_A ? A[col*N + row] : A[col + row*M];
                     res += a * x[col];
                 }
-                y[row] = alpha*res + beta*y[row];
+                y[row] = beta_blend(alpha*res, beta, y[row]);
             }
         } else {
             for (uint32_t row = rank; row < M; row += size) {
@@ -1557,7 +1994,7 @@ namespace grid {
                     T a = ROW_MAJOR_A ? A[row*N + col] : A[row + col*M];
                     res += a * x[col];
                 }
-                y[row] = alpha*res + beta*y[row];
+                y[row] = beta_blend(alpha*res, beta, y[row]);
             }
         }
     }
@@ -1641,6 +2078,75 @@ namespace grid {
         if constexpr (TRAILING_SYNC) __syncthreads();
     }
     
+    namespace thread {
+        // Single-thread GEMV: one THREAD computes the whole matvec, walking the output
+        // rows serially. Reuses the block impl `gemv_impl_ct(0u, 1u, …)` exactly as
+        // `warp::gemv` reuses it with `(lane, 32u)`. No shared scratch, no barriers.
+        // For thread-per-problem kernels packing 32 independent low-DOF matvecs into
+        // one warp.
+        //
+        // LAYOUT NOTE: `ROW_MAJOR` is a correctness flag, not a free choice. The
+        // block/warp tiers map lane rank onto the ROW index, so column-major
+        // (`A[row + col*M]`, row fastest-varying) makes lane-adjacent reads
+        // address-adjacent. A single thread has no lane axis at all, so within-matrix
+        // layout costs nothing here — but if `A` is in GLOBAL memory laid out
+        // per-problem-contiguous, then it is the PROBLEM index that strides across
+        // lanes, and neither flag helps: consecutive threads land N*N elements apart
+        // and every access serializes. Keep `A` thread-local (register-resident) —
+        // CUDA local memory is hardware-interleaved across lanes, so it coalesces for
+        // free — or interleave the batch yourself so the problem index is
+        // fastest-varying.
+    
+        /**
+         * @brief Matrix-vector product on one thread: `y = alpha * A * x + beta * y` (GEMV), compile-time size.
+         *
+         * One thread computes the matvec, walking the output rows of the `M×N` matrix
+         * `A` serially (each row an independent inner product). Set `TRANSPOSE=true`
+         * for `Aᵀ * x` and `ROW_MAJOR=true` for row-major `A`. No shared scratch, no
+         * barriers, no `threadIdx` read; operands may be thread-local register arrays.
+         * `y` is read only when `beta != 0` (BLAS semantics: `beta == 0` treats `y` as
+         * write-only). NumPy equivalent: `y = alpha*A@x + beta*y`.
+         *
+         * @tparam T          Scalar type (e.g. `float`, `double`).
+         * @tparam M          Number of rows of `A` (compile-time constant).
+         * @tparam N          Number of columns of `A` (compile-time constant).
+         * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
+         * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
+         * @param alpha  Scalar multiplier on the product.
+         * @param A      Input matrix of `M*N` elements.
+         * @param x      Input vector (length `N`, or `M` when transposed).
+         * @param beta   Scalar multiplier on the prior `y`.
+         * @param y      In/out vector (length `M`, or `N` when transposed).
+         */
+        template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void gemv(T alpha, const T *A, const T *x, T beta, T *y)
+        {
+            gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, x, beta, y);
+        }
+    
+        /**
+         * @brief Matrix-vector product on one thread: `y = alpha * A * x` (GEMV), compile-time size, no-beta overload.
+         *
+         * Overwrites `y` (no `beta * y` term). NumPy equivalent: `y = alpha*A@x`
+         * (or `alpha*A.T@x` when transposed).
+         *
+         * @tparam T          Scalar type (e.g. `float`, `double`).
+         * @tparam M          Number of rows of `A` (compile-time constant).
+         * @tparam N          Number of columns of `A` (compile-time constant).
+         * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
+         * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
+         * @param alpha  Scalar multiplier on the product.
+         * @param A      Input matrix of `M*N` elements.
+         * @param x      Input vector (length `N`, or `M` when transposed).
+         * @param y      Output vector (length `M`, or `N` when transposed).
+         */
+        template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void gemv(T alpha, const T *A, const T *x, T *y)
+        {
+            gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, x, y);
+        }
+    }
+    
     namespace warp {
         // Single-warp GEMV: one 32-lane warp computes the matvec, lanes striding over
         // the output rows (lane i owns output rows i, i+32, …). Each lane's row is an
@@ -1657,8 +2163,8 @@ namespace grid {
          * of the `M×N` matrix `A` (each row an independent inner product). Set
          * `TRANSPOSE=true` for `Aᵀ * x` and `ROW_MAJOR=true` for row-major `A`. No shared
          * scratch, no `__syncthreads`; independent warps may run distinct problems
-         * concurrently. Full 32 lanes required. `C`/`y` is read (the `beta * y` term);
-         * use the no-beta overload to write into uninitialized destinations. NumPy
+         * concurrently. Full 32 lanes required. `y` is read only when `beta != 0`
+         * (BLAS semantics: `beta == 0` treats `y` as write-only). NumPy
          * equivalent: `y = alpha*A@x + beta*y` (or `alpha*A.T@x + beta*y` when transposed).
          *
          * @tparam T          Scalar type (e.g. `float`, `double`).
@@ -1746,7 +2252,7 @@ namespace grid {
             T res = static_cast<T>(0);
             for (uint32_t col = 0; col < N; col++)
                 res += A[row + col * ROW_STRIDE] * x[col];
-            y[row] = alpha * res + beta * y[row];
+            y[row] = beta_blend(alpha * res, beta, y[row]);
         }
     }
     
@@ -1910,7 +2416,7 @@ namespace grid {
             if (ATOMIC_Y) {
                 atomicAdd(&y[y_base + out], alpha * res);
             } else {
-                T val = alpha * res + beta * y[y_base + out];
+                T val = beta_blend(alpha * res, beta, y[y_base + out]);
                 if (FUSE_SCALED_ADD)
                     val += S[static_cast<uint32_t>(seg_s_off[seg]) + out] * scalar[seg];
                 y[y_base + out] = val;
@@ -1989,6 +2495,314 @@ namespace grid {
         }
     }
     // END GLASS src/base/L2/gemv_segmented.cuh
+    
+    // BEGIN GLASS src/base/L2/trsv.cuh
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // trsv — triangular solve op(A) x = b, in place (BLAS TRSV).
+    // trmv — triangular matrix-vector product y = op(A) x (BLAS TRMV).
+    //
+    // Storage is column-major: the (row, col) element of the n×n matrix A is
+    // A[row + col*n]. The diagonal element of column j is A[j + j*n] in every flag
+    // combination.
+    //
+    // Flag semantics (NORMATIVE):
+    //   FILL   — which stored triangle of A holds the data (FillMode::Lower: the
+    //            strictly-upper entries are ignored; FillMode::Upper: vice versa.
+    //            FillMode::Full is invalid here — a triangular op needs a triangle).
+    //   DIAG   — Diag::Unit means the diagonal is implicitly 1 (A's diagonal is not
+    //            read and the divide is skipped); Diag::NonUnit reads it.
+    //   TRANSPOSE  — when true the routine works with op(A) = Aᵀ against that SAME
+    //            stored triangle: trsv solves Aᵀx = b, trmv computes Aᵀx.
+    //
+    // op(A) is lower-triangular (forward sweep) when
+    //   (FILL==Lower) != TRANSPOSE
+    // and upper-triangular (backward sweep) otherwise.
+    // ─────────────────────────────────────────────────────────────────────────────
+    
+    // core impl: explicit rank/size + flags. Solves op(A) x = b in place.
+    // SizeT is deduced: uint32_t from the runtime overload, ct_size<N> from the
+    // compile-time overload (constant-folds the trip counts / indexing).
+    // Bar supplies the two per-step barriers, exactly as in `potrf_impl` — it is
+    // defaulted to BlockBarrier so every existing caller (the public trsv overloads,
+    // posv_impl, potrs_impl) is untouched and compiles byte-identically. The
+    // `glass::thread::` surface passes ThreadBarrier, whose no-op sync() compiles the
+    // barriers out: mandatory, not an optimization. A raw `__syncthreads()` here is
+    // BLOCK-WIDE, so in a thread-per-problem kernel — where each thread owns a
+    // different problem and the tail block's out-of-range threads have already
+    // returned — it is a barrier with divergent participation, i.e. UB/hang. (`rank`
+    // and `size` stay explicit params rather than coming from Bar: callers like
+    // posv_impl already have them in hand, and the warp surface's trsv is a separate
+    // __syncwarp-based body in trsm.cuh, not a Bar instantiation of this one.)
+    template <typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE, typename Bar = BlockBarrier, typename SizeT>
+    __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* x)
+    {
+        static_assert(FILL != FillMode::Full, "trsv: FILL must name a triangle (Lower or Upper)");
+        constexpr bool LOWER = (FILL == FillMode::Lower);
+        constexpr bool UNIT  = (DIAG == Diag::Unit);
+        // op(A) lower-triangular ⇒ forward elimination over pivots k = 0..n-1.
+        constexpr bool FORWARD = (LOWER != TRANSPOSE);
+        for (uint32_t step = 0; step < n; step++) {
+            uint32_t k = FORWARD ? step : (n - 1 - step);
+            // resolve pivot x[k] = x[k] / op(A)[k][k]   (diag is A[k+k*n])
+            if (!UNIT) {
+                if (rank == 0) x[k] = x[k] / A[k + k * n];
+                Bar{}.sync();              // all threads read the resolved pivot
+            }
+            T xk = x[k];
+            // subtract x[k] * op(A)[i][k] from the trailing/leading unknowns:
+            //   op(A)[i][k] = TRANSPOSE ? A[k + i*n] : A[i + k*n]
+            if (FORWARD) {
+                for (uint32_t i = rank + k + 1; i < n; i += size)
+                    x[i] -= (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * xk;
+            } else {
+                for (uint32_t i = rank; i < k; i += size)
+                    x[i] -= (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * xk;
+            }
+            Bar{}.sync();                  // pivot column consumed before next step
+        }
+    }
+    
+    // ─── trsv: runtime size ───────────────────────────────────────────────────────
+    
+    /**
+     * @brief Triangular solve `op(A) x = b` in place (TRSV).
+     *
+     * Solves the triangular system for `x`, overwriting the right-hand side `x`
+     * (`x` holds `b` on entry, the solution on return). `A` is an `n×n` triangular
+     * matrix stored column-major; only the triangle selected by `FILL` is read.
+     * Set `TRANSPOSE=true` to solve `Aᵀx = b` against that same stored triangle, and
+     * `DIAG=Diag::Unit` for an implicit unit diagonal (the diagonal of `A` is not
+     * read). Column-oriented elimination (forward when `op(A)` is lower-triangular,
+     * i.e. `(FILL==Lower) != TRANSPOSE`, backward otherwise); ends with a trailing
+     * `__syncthreads()` so it composes without a defensive barrier.
+     * SciPy equivalent:
+     * `x = scipy.linalg.solve_triangular(A, b, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true solve `Aᵀx = b` (default false).
+     * @param n  Dimension (`A` is `n×n`, `x` has length `n`).
+     * @param A  Triangular matrix (column-major, `n*n` elements; read-only).
+     * @param x  In/out right-hand side; on return holds the solution.
+     */
+    template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trsv(uint32_t n, const T* A, T* x)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        trsv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x);
+    }
+    
+    // ─── trsv: compile-time size ──────────────────────────────────────────────────
+    
+    /**
+     * @brief Triangular solve `op(A) x = b` in place (TRSV), compile-time size.
+     *
+     * Same as the runtime `trsv` but with the dimension as a template parameter.
+     * SciPy equivalent:
+     * `x = scipy.linalg.solve_triangular(A, b, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam N     Dimension (`A` is `N×N`, `x` has length `N`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true solve `Aᵀx = b` (default false).
+     * @param A  Triangular matrix (column-major, `N*N` elements; read-only).
+     * @param x  In/out right-hand side; on return holds the solution.
+     */
+    template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trsv(const T* A, T* x)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        trsv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x);
+    }
+    
+    namespace thread {
+        // Single-thread triangular solve: one THREAD owns the whole substitution,
+        // reusing the block impl `trsv_impl(0u, 1u, …)`. Unlike `warp::trsv` (which
+        // lives in trsm.cuh, next to the `warp::trsm` it shares a body with), this
+        // composes nothing, so it sits beside `trsv_impl` itself.
+    
+    
+        /**
+         * @brief Triangular solve on one thread: `A x = b` in place, compile-time size.
+         *
+         * One thread solves the `N×N` triangular system by forward or back
+         * substitution (direction set by `FILL` and `TRANSPOSE`). `A` is column-major
+         * and read-only; `x` is overwritten with the solution. No shared scratch, no
+         * barriers, no `threadIdx` read; operands may be thread-local register arrays.
+         * SciPy equivalent: `x = scipy.linalg.solve_triangular(A, b, lower=...)`.
+         *
+         * @tparam T     Scalar type (e.g. `float`, `double`).
+         * @tparam N     Dimension (`A` is `N×N`, `x` has length `N`).
+         * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+         * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+         * @tparam TRANSPOSE  When true solve `Aᵀx = b` (default false).
+         * @param A  Triangular matrix (column-major, `N*N` elements; read-only).
+         * @param x  In/out right-hand side; on return holds the solution.
+         */
+        template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+        __device__ void trsv(const T* A, T* x)
+        {
+            trsv_impl<T, FILL, DIAG, TRANSPOSE, ThreadBarrier>(0u, 1u, ct_size<N>{}, A, x);
+        }
+    }
+    
+    // ─── trmv: out-of-place core ──────────────────────────────────────────────────
+    
+    // core impl: explicit rank/size + flags. Computes y = op(A) x out of place.
+    // Each thread owns disjoint outputs y[i] and only reads the intact x — no
+    // interior barrier required. SizeT deduced (uint32_t or ct_size<N>, see trsv_impl).
+    template <typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE, typename SizeT>
+    __device__ void trmv_impl(uint32_t rank, uint32_t size, SizeT n,
+                              const T* A, const T* x, T* y)
+    {
+        static_assert(FILL != FillMode::Full, "trmv: FILL must name a triangle (Lower or Upper)");
+        constexpr bool LOWER = (FILL == FillMode::Lower);
+        constexpr bool UNIT  = (DIAG == Diag::Unit);
+        for (uint32_t i = rank; i < n; i += size) {
+            // y[i] = sum_k op(A)[i][k] * x[k], summed over the triangle.
+            // op(A)[i][k] = TRANSPOSE ? A[k + i*n] : A[i + k*n]; lower-triangular op
+            // (forward) ⇒ k <= i, upper-triangular op ⇒ k >= i.
+            constexpr bool LOWER_OP = (LOWER != TRANSPOSE);
+            T acc = UNIT ? x[i] : static_cast<T>(0);
+            if (LOWER_OP) {
+                uint32_t k_end = UNIT ? i : (i + 1);      // exclude diag when UNIT
+                for (uint32_t k = 0; k < k_end; k++)
+                    acc += (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * x[k];
+            } else {
+                uint32_t k_start = UNIT ? (i + 1) : i;    // exclude diag when UNIT
+                for (uint32_t k = k_start; k < n; k++)
+                    acc += (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * x[k];
+            }
+            y[i] = acc;
+        }
+    }
+    
+    /**
+     * @brief Triangular matrix-vector product `y = op(A) x`, out of place (TRMV).
+     *
+     * Computes the triangular matvec into a separate output `y` (distinct from the
+     * input `x`). `A` is an `n×n` triangular matrix stored column-major; only the
+     * triangle selected by `FILL` is read. Set `TRANSPOSE=true` to compute `Aᵀx`
+     * against that same stored triangle, and `DIAG=Diag::Unit` for an implicit unit
+     * diagonal. No interior barrier: each thread owns disjoint outputs and reads
+     * the intact `x`. NumPy equivalent (lower, non-unit): `y = np.tril(A) @ x`
+     * (upper: `np.triu(A) @ x`; transposed: `op(A).T @ x`; unit: diagonal forced
+     * to 1).
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true compute `Aᵀx` (default false).
+     * @param n  Dimension (`A` is `n×n`, `x` and `y` have length `n`).
+     * @param A  Triangular matrix (column-major, `n*n` elements; read-only).
+     * @param x  Input vector (length `n`; read-only).
+     * @param y  Output vector (length `n`); must not alias `x`.
+     */
+    template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trmv(uint32_t n, const T* A, const T* x, T* y)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x, y);
+    }
+    
+    /**
+     * @brief Triangular matrix-vector product `y = op(A) x`, out of place (TRMV), compile-time size.
+     *
+     * Compile-time-`N` overload of the out-of-place TRMV. NumPy equivalent (lower,
+     * non-unit): `y = np.tril(A) @ x`.
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam N     Dimension (`A` is `N×N`, `x` and `y` have length `N`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true compute `Aᵀx` (default false).
+     * @param A  Triangular matrix (column-major, `N*N` elements; read-only).
+     * @param x  Input vector (length `N`; read-only).
+     * @param y  Output vector (length `N`); must not alias `x`.
+     */
+    template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trmv(const T* A, const T* x, T* y)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x, y);
+    }
+    
+    // ─── trmv: in-place wrapper (needs scratch) ──────────────────────────────────
+    
+    /**
+     * @brief Scratch length (in elements of `T`) required by the in-place `trmv`.
+     *
+     * The in-place TRMV wrapper computes `op(A) x` into a temporary then copies it
+     * back over `x`; that temporary is `n` elements long.
+     *
+     * @param n  Dimension passed to the in-place `trmv`.
+     * @return   Bytes the `scratch` buffer must hold.
+     */
+    template <typename T>
+    __host__ __device__ inline constexpr std::size_t trmv_scratch_bytes(uint32_t n) { return static_cast<std::size_t>(n) * sizeof(T); }
+    
+    /**
+     * @brief Triangular matrix-vector product `x = op(A) x`, in place (TRMV).
+     *
+     * In-place form: overwrites `x` with `op(A) x`. Because `trmv` reads the whole
+     * `x` while writing each output, the wrapper computes into a caller-provided
+     * `scratch` (length `n`, see `trmv_scratch_bytes`) and copies the result back
+     * with a single barrier in between. Ends with a trailing `__syncthreads()`.
+     * NumPy equivalent (lower, non-unit): `x = np.tril(A) @ x`.
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true compute `Aᵀx` (default false).
+     * @param n        Dimension (`A` is `n×n`, `x` and `scratch` have length `n`).
+     * @param A        Triangular matrix (column-major, `n*n` elements; read-only).
+     * @param x        In/out vector (length `n`); on return holds `op(A) x`.
+     * @param scratch  Workspace of length `n` (see `trmv_scratch_bytes`).
+     */
+    template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trmv(uint32_t n, const T* A, T* x, T* scratch)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x, scratch);
+        __syncthreads();                              // scratch fully written before read-back
+        for (uint32_t i = rank; i < n; i += size) x[i] = scratch[i];
+        __syncthreads();
+    }
+    
+    /**
+     * @brief Triangular matrix-vector product `x = op(A) x`, in place (TRMV), compile-time size.
+     *
+     * Compile-time-`N` overload of the in-place TRMV. NumPy equivalent (lower,
+     * non-unit): `x = np.tril(A) @ x`.
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam N     Dimension (`A` is `N×N`, `x` and `scratch` have length `N`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true compute `Aᵀx` (default false).
+     * @param A        Triangular matrix (column-major, `N*N` elements; read-only).
+     * @param x        In/out vector (length `N`); on return holds `op(A) x`.
+     * @param scratch  Workspace of length `N` (see `trmv_scratch_bytes`).
+     */
+    template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trmv(const T* A, T* x, T* scratch)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x, scratch);
+        __syncthreads();
+        for (uint32_t i = rank; i < N; i += size) x[i] = scratch[i];
+        __syncthreads();
+    }
+    // END GLASS src/base/L2/trsv.cuh
     
     // BEGIN GLASS src/base/L3/gemm.cuh
     
@@ -2121,10 +2935,10 @@ namespace grid {
                 }
                 T *__restrict__ c = C + (r + n*m_);
                 if constexpr (HAS_BETA) {
-                    c[0] = alpha*acc0 + beta*c[0];
-                    c[1] = alpha*acc1 + beta*c[1];
-                    c[2] = alpha*acc2 + beta*c[2];
-                    c[3] = alpha*acc3 + beta*c[3];
+                    c[0] = beta_blend(alpha*acc0, beta, c[0]);
+                    c[1] = beta_blend(alpha*acc1, beta, c[1]);
+                    c[2] = beta_blend(alpha*acc2, beta, c[2]);
+                    c[3] = beta_blend(alpha*acc3, beta, c[3]);
                 } else {
                     c[0] = alpha*acc0; c[1] = alpha*acc1;
                     c[2] = alpha*acc2; c[3] = alpha*acc3;
@@ -2136,7 +2950,7 @@ namespace grid {
                         const T b = TRANSPOSE_B ? B[n + k*n_] : B[k + n*k_];
                         res += A[m + k*m_] * b;
                     }
-                    if constexpr (HAS_BETA) C[m + n*m_] = alpha*res + beta*C[m + n*m_];
+                    if constexpr (HAS_BETA) C[m + n*m_] = beta_blend(alpha*res, beta, C[m + n*m_]);
                     else                    C[m + n*m_] = alpha*res;
                 }
             }
@@ -2187,10 +3001,10 @@ namespace grid {
                 }
                 T *__restrict__ c = C + (r + n*M);
                 if constexpr (HAS_BETA) {
-                    c[0] = alpha*acc0 + beta*c[0];
-                    c[1] = alpha*acc1 + beta*c[1];
-                    c[2] = alpha*acc2 + beta*c[2];
-                    c[3] = alpha*acc3 + beta*c[3];
+                    c[0] = beta_blend(alpha*acc0, beta, c[0]);
+                    c[1] = beta_blend(alpha*acc1, beta, c[1]);
+                    c[2] = beta_blend(alpha*acc2, beta, c[2]);
+                    c[3] = beta_blend(alpha*acc3, beta, c[3]);
                 } else {
                     c[0] = alpha*acc0; c[1] = alpha*acc1;
                     c[2] = alpha*acc2; c[3] = alpha*acc3;
@@ -2202,7 +3016,7 @@ namespace grid {
                         const T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
                         res += A[m + k*M] * b;
                     }
-                    if constexpr (HAS_BETA) C[m + n*M] = alpha*res + beta*C[m + n*M];
+                    if constexpr (HAS_BETA) C[m + n*M] = beta_blend(alpha*res, beta, C[m + n*M]);
                     else                    C[m + n*M] = alpha*res;
                 }
             }
@@ -2253,7 +3067,7 @@ namespace grid {
                 res += a * b;
             }
             uint32_t cidx = ROW_MAJOR_C ? (m*n_ + n) : (m + n*m_);
-            C[cidx] = alpha*res + beta*C[cidx];
+            C[cidx] = beta_blend(alpha*res, beta, C[cidx]);
         }
     }
     
@@ -2305,7 +3119,7 @@ namespace grid {
                     res += a * b;
                 }
                 uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
-                C[cidx] = alpha*res + beta*C[cidx];
+                C[cidx] = beta_blend(alpha*res, beta, C[cidx]);
             }
         }
     }
@@ -2351,7 +3165,7 @@ namespace grid {
      * @param m,n,k  Dimensions: `C` is `m×n`, contraction `k`.
      * @param alpha  Scalar multiplier on the product.
      * @param A,B    Input matrices (column-major; shapes per the transpose flags).
-     * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
+     * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
      * @param C      In/out result matrix.
      */
     template <typename T, bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
@@ -2409,7 +3223,7 @@ namespace grid {
      * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran, LDC=M).
      * @param alpha  Scalar multiplier on the product.
      * @param A,B    Input matrices.
-     * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
+     * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
      * @param C      In/out result matrix.
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
@@ -2447,6 +3261,61 @@ namespace grid {
         if constexpr (TRAILING_SYNC) __syncthreads();
     }
     
+    // ─── single-thread compile-time GEMM ─────────────────────────────────────────
+    namespace thread {
+        /**
+         * @brief Single-thread compile-time-size GEMM: `C = alpha * op(A) * op(B) + beta * C`.
+         *
+         * ONE thread computes the whole product, walking the `M*N` outputs serially
+         * (serial-K inner loop) — same semantics as the block/warp compile-time `gemm`,
+         * reusing the same `gemm_impl_ct` body with `(rank=0, size=1)`. 
+         * Generally performs worse. 
+         *
+         * @warning The shared body switches to the 4-row **tile4** path when
+         * `tile4_profitable(M)` (`M % 4 == 0 && M >= 12`), which issues `float4` /
+         * `double2` vector loads through a `reinterpret_cast`. Unlikely to happen 
+         * in the DOF where the single-thread is valuable
+         *
+         * @tparam T  Scalar type.
+         * @tparam M,N,K  `C` is `M×N`, contraction `K`.
+         * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+         * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+         * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
+         * @param alpha  Scalar multiplier on the product.
+         * @param A,B    Input matrices.
+         * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
+         * @param C      In/out result matrix.
+         */
+        template <typename T, uint32_t M, uint32_t N, uint32_t K,
+                  bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false>
+        __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T beta, T *__restrict__ C)
+        {
+            gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(0u, 1u, alpha, A, B, beta, C);
+        }
+    
+        /**
+         * @brief Single-thread compile-time-size GEMM with implicit `beta = 0`: `C = alpha * op(A) * op(B)`.
+         *
+         * Overwrites C (the existing C is not read). Otherwise identical to the beta
+         * overload above, including the tile4 caveat.
+         *
+         * @tparam T  Scalar type.
+         * @tparam M,N,K  `C` is `M×N`, contraction `K`.
+         * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+         * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+         * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
+         * @param alpha  Scalar multiplier on the product.
+         * @param A,B    Input matrices.
+         * @param C      Output result matrix.
+         */
+        template <typename T, uint32_t M, uint32_t N, uint32_t K,
+                  bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false>
+        __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T *__restrict__ C)
+        {
+            gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(0u, 1u, alpha, A, B, C);
+        }
+    }
+    
     // ─── single-warp compile-time GEMM ───────────────────────────────────────────
     namespace warp {
         /**
@@ -2465,7 +3334,7 @@ namespace grid {
          * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
          * @param alpha  Scalar multiplier on the product.
          * @param A,B    Input matrices.
-         * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
+         * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
          * @param C      In/out result matrix.
          */
         template <typename T, uint32_t M, uint32_t N, uint32_t K,
@@ -2515,7 +3384,7 @@ namespace grid {
      * @param m,n,k  Dimensions: A is m×k, B is k×n, C is m×n.
      * @param alpha  Scalar multiplier on the product.
      * @param A,B    Input matrices (column-major).
-     * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
+     * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
      * @param C      In/out result matrix.
      * @param s_A    Shared scratch of `m * TILE` elements for the A tile.
      * @param s_B    Shared scratch of `TILE * n` elements for the B tile.
@@ -2554,7 +3423,7 @@ namespace grid {
             }
             __syncthreads();
         }
-        if (valid) C[crow + ccol*m] = alpha*acc + beta*C[crow + ccol*m];
+        if (valid) C[crow + ccol*m] = beta_blend(alpha*acc, beta, C[crow + ccol*m]);
     }
     
     // ─── auto-dispatch: tiled when scratch provided and m*n <= blockDim ──────────
@@ -2571,7 +3440,7 @@ namespace grid {
      * @param m,n,k  Dimensions: A is m×k, B is k×n, C is m×n.
      * @param alpha  Scalar multiplier on the product.
      * @param A,B    Input matrices (column-major).
-     * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
+     * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
      * @param C      In/out result matrix.
      * @param s_A    Optional shared scratch for the A tile (nullptr selects the plain path).
      * @param s_B    Optional shared scratch for the B tile.
@@ -2621,7 +3490,7 @@ namespace grid {
      * @tparam B_RS  Column stride (leading dimension) of B (default K).
      * @param alpha  Scalar multiplier on the product.
      * @param A,B    Input matrices (column-major, strided).
-     * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
+     * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
      * @param C      In/out result matrix (column-major, LDC = M).
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
@@ -2635,7 +3504,7 @@ namespace grid {
             T res = static_cast<T>(0);
             for (uint32_t k = 0; k < K; k++)
                 res += A[m + k * A_RS] * B[k + n * B_RS];
-            C[m + n * M] = alpha * res + beta * C[m + n * M];
+            C[m + n * M] = beta_blend(alpha * res, beta, C[m + n * M]);
         }
     }
     
@@ -2790,6 +3659,543 @@ namespace grid {
         }
     }
     // END GLASS src/base/L3/gemm_batched_indexed.cuh
+    
+    // BEGIN GLASS src/base/L3/gemm_reduced.cuh
+    
+    // ─── contraction-dimension-parallel GEMM (the "reduced" engine) ──────────────
+    //
+    // The default glass::gemm maps one thread to one OUTPUT element and sums the
+    // length-N contraction SERIALLY in that thread. When the output count is small
+    // relative to the block (n_out < blockDim) the spare threads sit idle. The
+    // `*_reduced` family flips the mapping: one WARP owns one output and its 32
+    // lanes split the contraction, combining with a single warp-shuffle reduce.
+    //
+    // This is a thread-utilization play, NOT a FLOP reduction — total MAC work is
+    // identical. It wins only when n_out < blockDim (idle threads to soak up) AND
+    // the contraction K amortizes the ~5-step shuffle tail; it is neutral/slower
+    // when n_out >= blockDim with a tiny K. See the bench (bench/bench_reduced.cu)
+    // and concepts/contraction_parallel for the measured crossover; pick with
+    // glass::suggested_use_reduced<>() rather than guessing.
+    //
+    // Thread-count invariance: each output is reduced by the SAME fixed 32-way tree
+    // regardless of how many warps the block has, so results are bit-identical at
+    // 32 / 64 / 96 / ... threads. A trailing partial warp (blockDim % 32) idles. A
+    // block with fewer than 32 threads falls back to a per-thread path that
+    // reproduces the EXACT shuffle-tree summation order in registers, so the result
+    // is bit-identical across the 32 boundary too (1 / 7 / 31 == 32 == 256).
+    
+    // reduced_tree32 (the 32-way register tree that matches glass::warp::reduce's
+    // lane-0 rounding bit-for-bit) lives in L1/reduce.cuh so every L2/L3 *_reduced
+    // engine can share it. The sub-warp fallback below uses it for invariance.
+    
+    /**
+     * @brief Should a contraction-parallel `*_reduced` op be preferred over the serial one?
+     *
+     * Codegen / launch-time picker seeded by the measured crossover sweep
+     * (`bench/REDUCED_SWEEP_RESULTS.md`). **On sm_120 the measured answer is NO
+     * everywhere**: the quiet-GPU resweep of 2026-07-08 found 0 of 48
+     * configurations where `*_reduced` beats serial by more than the ±5% tie
+     * margin — the family pays a warp-shuffle latency per output and idles most
+     * lanes at short contractions, and even the former long-contraction corner
+     * (`n_out <= blockDim/32 && K_contract >= 32`) collapsed into the noise band.
+     * So this returns `false` unconditionally; it keeps its original signature as
+     * the seam where a retune on different hardware (e.g. Jetson Orin, whose
+     * shuffle/FMA balance differs) can reinstate a data-derived corner without
+     * touching call sites. The `*_reduced` ops stay in the library for
+     * expressiveness and fusion, not speed. Not a device function (the choice is
+     * a launch/codegen decision); `constexpr` so the `if constexpr` at call sites
+     * folds to the serial path with zero cost.
+     *
+     * @tparam n_out       Output element count (e.g. M*K for gemm, M for gemv).
+     * @tparam K_contract  Length of the contracted dimension.
+     * @tparam blockDim    Launch thread count.
+     * @return true to use the `*_reduced` variant, false to use the serial op.
+     */
+    template <uint32_t n_out, uint32_t K_contract, uint32_t blockDim>
+    __host__ __device__ constexpr bool suggested_use_reduced() {
+        return false;   // measured: 0/48 wins on sm_120 (2026-07-08 quiet sweep, ±5% margin)
+    }
+    
+    // Core: explicit (rank,size), compile-time dims + standard-BLAS layout flags
+    // (C is M×N, contraction K; op(A) M×K, op(B) K×N — see gemm.cuh). HAS_BETA
+    // selects whether C is read (false ⇒ overwrite, never touches C).
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C, bool HAS_BETA>
+    __device__ void gemm_reduced_impl_ct(uint32_t rank, uint32_t size,
+                                          T alpha, T *A, T *B, T beta, T *C)
+    {
+        constexpr uint32_t maxel = M * N;
+    
+        if (size < 32u) {
+            // Sub-warp fallback: each thread owns whole outputs (strided by size).
+            // Reproduce the 32-lane tree in registers so the rounding matches the
+            // full-warp path exactly — invariant across the 32-thread boundary.
+            for (uint32_t el = rank; el < maxel; el += size) {
+                const uint32_t m = el % M, n = el / M;
+                T p[32];
+                #pragma unroll
+                for (uint32_t v = 0; v < 32u; ++v) {
+                    T acc = static_cast<T>(0);
+                    for (uint32_t k = v; k < K; k += 32u) {
+                        T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
+                        T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
+                        acc += a * b;
+                    }
+                    p[v] = acc;
+                }
+                T res = reduced_tree32<T>(p);
+                const uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
+                C[cidx] = HAS_BETA ? beta_blend(alpha*res, beta, C[cidx]) : (alpha*res);
+            }
+            return;
+        }
+    
+        // Full-warp path: G = size>>5 warp-groups, group `warp` owns outputs strided
+        // by G; the 32 lanes split the contraction and combine via warp::reduce.
+        const uint32_t n_warps = size >> 5;       // full warps only
+        const uint32_t warp    = rank >> 5;
+        const uint32_t lane    = rank & 31u;
+        if (warp < n_warps) {
+            for (uint32_t el = warp; el < maxel; el += n_warps) {
+                const uint32_t m = el % M, n = el / M;
+                T partial = static_cast<T>(0);
+                for (uint32_t k = lane; k < K; k += 32u) {
+                    T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
+                    T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
+                    partial += a * b;
+                }
+                T res = warp::reduce<T>(partial);   // full mask: warp is full
+                if (lane == 0) {
+                    const uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
+                    C[cidx] = HAS_BETA ? beta_blend(alpha*res, beta, C[cidx]) : (alpha*res);
+                }
+            }
+        }
+        // trailing partial-warp threads (warp >= n_warps) idle
+    }
+    
+    /**
+     * @brief Contraction-parallel GEMM: `C = alpha * A * op(B) + beta * C`.
+     *
+     * Same math and layout as the compile-time `glass::gemm`, but parallelizes the
+     * length-N contraction: one warp owns each output element and its 32 lanes
+     * split the inner sum (combined with a single warp-shuffle reduce) instead of
+     * one thread summing serially. A utilization win when the output count is
+     * smaller than the block — see :doc:`../../user_guide/concepts/contraction_parallel`
+     * and `glass::suggested_use_reduced`. Total MAC work is unchanged.
+     *
+     * Thread-count invariant: bit-identical at any block size (a trailing partial
+     * warp idles; below 32 threads a register path reproduces the same rounding).
+     *
+     * @tparam T  Scalar type.
+     * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+     * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+     * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+     * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true) so callers can read C safely.
+     * @param alpha  Scalar multiplier on the product.
+     * @param A,B    Input matrices.
+     * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
+     * @param C      In/out result matrix.
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+    __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
+            rank, size, alpha, A, B, beta, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Contraction-parallel GEMM with implicit `beta = 0`: `C = alpha * A * op(B)`.
+     *
+     * Overwrites C (the existing C is not read), avoiding the `beta * C` term.
+     * Otherwise identical to the beta overload above.
+     *
+     * @tparam T  Scalar type.
+     * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+     * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+     * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+     * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A,B    Input matrices.
+     * @param C      Output result matrix (overwritten).
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+    __device__ void gemm_reduced(T alpha, T *A, T *B, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
+            rank, size, alpha, A, B, static_cast<T>(0), C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── single-warp contraction-parallel GEMM ───────────────────────────────────
+    namespace warp {
+        /**
+         * @brief Single-warp contraction-parallel GEMM: `C = alpha * A * op(B) + beta * C`.
+         *
+         * One 32-lane warp computes the full product, parallelizing the contraction
+         * across its lanes (warp-shuffle reduce per output). The warp-per-problem
+         * analogue of the block `glass::gemm_reduced`; the caller must run a full
+         * 32-lane warp. `C` must not alias `A`/`B`.
+         *
+         * @tparam T  Scalar type.
+         * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+         * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+         * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+         * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
+         * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true) so lanes can read C safely.
+         * @param alpha  Scalar multiplier on the product.
+         * @param A,B    Input matrices.
+         * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
+         * @param C      In/out result matrix.
+         */
+        template <typename T, uint32_t M, uint32_t N, uint32_t K,
+                  bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+        __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
+            gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
+                lane, 32u, alpha, A, B, beta, C);
+            if constexpr (TRAILING_SYNC) __syncwarp();
+        }
+    
+        /**
+         * @brief Single-warp contraction-parallel GEMM with implicit `beta = 0`: `C = alpha * A * op(B)`.
+         *
+         * Overwrites C (the existing C is not read). Otherwise identical to the beta
+         * overload above; the caller must run a full 32-lane warp.
+         *
+         * @tparam T  Scalar type.
+         * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+         * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+         * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+         * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
+         * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+         * @param alpha  Scalar multiplier on the product.
+         * @param A,B    Input matrices.
+         * @param C      Output result matrix (overwritten).
+         */
+        template <typename T, uint32_t M, uint32_t N, uint32_t K,
+                  bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+        __device__ void gemm_reduced(T alpha, T *A, T *B, T *C)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
+            gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
+                lane, 32u, alpha, A, B, static_cast<T>(0), C);
+            if constexpr (TRAILING_SYNC) __syncwarp();
+        }
+    }
+    // END GLASS src/base/L3/gemm_reduced.cuh
+    
+    // BEGIN GLASS src/base/L3/tensor_contract.cuh
+    
+    // ─── tensor ⊗ vector contractions (contraction-parallel engine consumers) ────
+    //
+    // 3-tensor / vector contractions that the serial BLAS surface cannot express in
+    // one call. Built on the same contraction-parallel engine as glass::gemm_reduced
+    // (one warp owns one output, its lanes split the contracted axis and combine via
+    // a warp-shuffle reduce), and identically thread-count invariant: bit-identical
+    // at any block size, with a sub-warp register path that reproduces the
+    // warp-shuffle rounding exactly (see gemm_reduced.cuh / reduced_tree32).
+    //
+    // Requires gemm_reduced.cuh (reduced_tree32 + glass::warp::reduce) included first
+    // — guaranteed by glass.cuh include order.
+    
+    // Which tensor axis is contracted away by tensor_vec_contract.
+    enum class TensorAxis { K, A, B };
+    
+    namespace detail {
+        // Output / contraction dims for a (K,A,B) tensor contracted on CONTRACT.
+        template <TensorAxis C, uint32_t K, uint32_t A, uint32_t B>
+        struct tvc_dims {
+            // OUT0 x OUT1 output (column-major), contracted length CDIM, vector len CDIM.
+            static constexpr uint32_t OUT0 = (C == TensorAxis::K) ? A : K;
+            static constexpr uint32_t OUT1 = (C == TensorAxis::K) ? B : (C == TensorAxis::A ? B : A);
+            static constexpr uint32_t CDIM = (C == TensorAxis::K) ? K : (C == TensorAxis::A ? A : B);
+        };
+    
+        // One contraction term v[c] * Tns[k,a,b] for output coords (o0,o1) and
+        // contracted index c, resolving (k,a,b) from CONTRACT and the tensor layout.
+        template <typename T, TensorAxis C, uint32_t K, uint32_t A, uint32_t B, bool TIN_ROW_MAJOR>
+        __device__ __forceinline__ T tvc_term(const T* Tns, const T* v,
+                                               uint32_t o0, uint32_t o1, uint32_t c)
+        {
+            uint32_t k, a, b;
+            if (C == TensorAxis::K)      { k = c;  a = o0; b = o1; }
+            else if (C == TensorAxis::A) { k = o0; a = c;  b = o1; }
+            else                         { k = o0; a = o1; b = c;  }
+            const uint32_t idx = k*A*B + (TIN_ROW_MAJOR ? (a*B + b) : (a + b*A));
+            return v[c] * Tns[idx];
+        }
+    
+        // Shared engine: reduce the contracted axis for each output element.
+        template <typename T, TensorAxis C, uint32_t K, uint32_t A, uint32_t B,
+                  bool SYMMETRIC, bool ACCUMULATE, bool TIN_ROW_MAJOR>
+        __device__ void tvc_impl(uint32_t rank, uint32_t size,
+                                 const T* Tns, const T* v, T* Mout)
+        {
+            using D = tvc_dims<C, K, A, B>;
+            constexpr uint32_t OUT0 = D::OUT0, OUT1 = D::OUT1, CDIM = D::CDIM;
+            constexpr uint32_t maxel = OUT0 * OUT1;
+            static_assert(!SYMMETRIC || (C == TensorAxis::K && A == B),
+                          "SYMMETRIC requires CONTRACT==K and a square (A==B) output");
+    
+            if (size < 32u) {
+                for (uint32_t el = rank; el < maxel; el += size) {
+                    const uint32_t o0 = el % OUT0, o1 = el / OUT0;
+                    if (SYMMETRIC && o0 < o1) continue;          // canonical owner writes the mirror
+                    T p[32];
+                    #pragma unroll
+                    for (uint32_t vlane = 0; vlane < 32u; ++vlane) {
+                        T acc = static_cast<T>(0);
+                        for (uint32_t c = vlane; c < CDIM; c += 32u)
+                            acc += tvc_term<T, C, K, A, B, TIN_ROW_MAJOR>(Tns, v, o0, o1, c);
+                        p[vlane] = acc;
+                    }
+                    const T res = reduced_tree32<T>(p);
+                    const uint32_t idx = o0 + o1*OUT0;
+                    Mout[idx] = ACCUMULATE ? (Mout[idx] + res) : res;
+                    if (SYMMETRIC && o0 != o1) {
+                        const uint32_t m = o1 + o0*OUT0;
+                        Mout[m] = ACCUMULATE ? (Mout[m] + res) : res;
+                    }
+                }
+                return;
+            }
+    
+            const uint32_t n_warps = size >> 5;
+            const uint32_t warp = rank >> 5, lane = rank & 31u;
+            if (warp < n_warps) {
+                for (uint32_t el = warp; el < maxel; el += n_warps) {
+                    const uint32_t o0 = el % OUT0, o1 = el / OUT0;
+                    if (SYMMETRIC && o0 < o1) continue;
+                    T partial = static_cast<T>(0);
+                    for (uint32_t c = lane; c < CDIM; c += 32u)
+                        partial += tvc_term<T, C, K, A, B, TIN_ROW_MAJOR>(Tns, v, o0, o1, c);
+                    const T res = warp::reduce<T>(partial);
+                    if (lane == 0) {
+                        const uint32_t idx = o0 + o1*OUT0;
+                        Mout[idx] = ACCUMULATE ? (Mout[idx] + res) : res;
+                        if (SYMMETRIC && o0 != o1) {
+                            const uint32_t m = o1 + o0*OUT0;
+                            Mout[m] = ACCUMULATE ? (Mout[m] + res) : res;
+                        }
+                    }
+                }
+            }
+        }
+    
+        // vec_tensor_vec engine: s[k] = u^T T_k w = Σ_{a,b} u[a] T[k,a,b] w[b].
+        template <typename T, uint32_t K, uint32_t A, uint32_t B, bool ACCUMULATE, bool TIN_ROW_MAJOR>
+        __device__ void vtv_impl(uint32_t rank, uint32_t size,
+                                 const T* Tns, const T* u, const T* w, T* s)
+        {
+            constexpr uint32_t AB = A * B;     // flattened (a,b) contraction length
+            if (size < 32u) {
+                for (uint32_t k = rank; k < K; k += size) {
+                    T p[32];
+                    #pragma unroll
+                    for (uint32_t vlane = 0; vlane < 32u; ++vlane) {
+                        T acc = static_cast<T>(0);
+                        for (uint32_t ab = vlane; ab < AB; ab += 32u) {
+                            const uint32_t a = ab % A, b = ab / A;
+                            const uint32_t idx = k*A*B + (TIN_ROW_MAJOR ? (a*B + b) : (a + b*A));
+                            acc += u[a] * Tns[idx] * w[b];
+                        }
+                        p[vlane] = acc;
+                    }
+                    const T res = reduced_tree32<T>(p);
+                    s[k] = ACCUMULATE ? (s[k] + res) : res;
+                }
+                return;
+            }
+            const uint32_t n_warps = size >> 5;
+            const uint32_t warp = rank >> 5, lane = rank & 31u;
+            if (warp < n_warps) {
+                for (uint32_t k = warp; k < K; k += n_warps) {
+                    T partial = static_cast<T>(0);
+                    for (uint32_t ab = lane; ab < AB; ab += 32u) {
+                        const uint32_t a = ab % A, b = ab / A;
+                        const uint32_t idx = k*A*B + (TIN_ROW_MAJOR ? (a*B + b) : (a + b*A));
+                        partial += u[a] * Tns[idx] * w[b];
+                    }
+                    const T res = warp::reduce<T>(partial);
+                    if (lane == 0) s[k] = ACCUMULATE ? (s[k] + res) : res;
+                }
+            }
+        }
+    } // namespace detail
+    
+    /**
+     * @brief Tensor ⊗ vector contraction: `Mout (+)= Σ_c v[c] · T[..c..]`.
+     *
+     * Contracts a `(K, A, B)` tensor against a vector along one axis (default the
+     * leading `K` axis), producing a matrix. With `CONTRACT = TensorAxis::K`:
+     * `Mout[a + b*A] (+)= Σ_k v[k] · Tns[k,a,b]` — the second-order Hessian-fold
+     * `Hxx += Σ_i Vx[i]·fxx[i]`. Contracting `A` or `B` instead gives a `(K,B)` or
+     * `(K,A)` result. One warp owns each output and its lanes split the contracted
+     * axis (warp-shuffle reduce); thread-count invariant at any block size.
+     *
+     * @tparam T  Scalar type.
+     * @tparam K,A,B  Tensor dimensions (slabs K, each A x B).
+     * @tparam CONTRACT  Axis contracted away (default K). Output is the other two axes, column-major.
+     * @tparam SYMMETRIC  When the K-slabs are symmetric in (a,b): compute the lower triangle and mirror (requires CONTRACT==K, A==B).
+     * @tparam ACCUMULATE  Add into Mout (true, default) vs overwrite (false).
+     * @tparam TIN_ROW_MAJOR  Each tensor slab is row-major `a*B+b` (true) vs column-major `a+b*A` (false, default).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+     * @param Tns  Input tensor (K slabs of A x B).
+     * @param v    Contraction vector (length = contracted-axis size).
+     * @param Mout In/out result matrix (column-major; read only when ACCUMULATE).
+     */
+    template <typename T, uint32_t K, uint32_t A, uint32_t B,
+              TensorAxis CONTRACT = TensorAxis::K, bool SYMMETRIC = false,
+              bool ACCUMULATE = true, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(rank, size, Tns, v, Mout);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Vector–tensor–vector triple product: `s[k] (+)= u^T · T_k · w`.
+     *
+     * For each slab `k` of a `(K, A, B)` tensor, forms the bilinear form
+     * `s[k] = Σ_{a,b} u[a] · Tns[k,a,b] · w[b]` (second-order curvature along each
+     * mode). One warp owns each `s[k]` and its lanes split the flattened `(a,b)`
+     * contraction; thread-count invariant at any block size.
+     *
+     * @tparam T  Scalar type.
+     * @tparam K,A,B  Tensor dimensions (slabs K, each A x B).
+     * @tparam ACCUMULATE  Add into s (false, default = overwrite).
+     * @tparam TIN_ROW_MAJOR  Each tensor slab row-major `a*B+b` (true) vs column-major `a+b*A` (false, default).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+     * @param Tns  Input tensor (K slabs of A x B).
+     * @param u    Left vector (length A).
+     * @param w    Right vector (length B).
+     * @param s    In/out result vector (length K; read only when ACCUMULATE).
+     */
+    template <typename T, uint32_t K, uint32_t A, uint32_t B,
+              bool ACCUMULATE = false, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(rank, size, Tns, u, w, s);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── single-thread tensor contractions ───────────────────────────────────────
+    namespace thread {
+        // Single-thread tensor contractions: ONE thread owns the whole contraction
+        // via the SAME validated `detail::tvc_impl` / `detail::vtv_impl` engines,
+        // dispatched with (rank=0, size=1). At size=1 the engine takes its sub-warp
+        // path, which is barrier-free and shuffle-free (partials combine through the
+        // register-only `reduced_tree32`), so nothing block- or warp-scoped survives
+        // and the ops are safe in ragged-tail thread-per-problem launches. That path
+        // deliberately reproduces the warp-shuffle summation ORDER, so the thread
+        // result carries the same rounding as every other tier's.
+        //
+        // NO `TRAILING_SYNC` parameter: one thread has nothing to synchronize with,
+        // and none of the existing `thread::` ops carry the flag — dropping it (vs
+        // keeping-and-ignoring) matches the tier's precedent (`thread::gemm`,
+        // `thread::potrf`, ...), whose surfaces also omit it.
+    
+        /**
+         * @brief Single-thread tensor ⊗ vector contraction: `Mout (+)= Σ_c v[c] · T[..c..]`.
+         *
+         * Thread-per-problem analogue of `glass::tensor_vec_contract`: ONE thread
+         * performs the whole contraction serially — for packing 32 independent
+         * low-DOF Hessian-folds into a warp. No barriers, no shuffles, no
+         * `threadIdx` read; operands may be thread-local register arrays (the
+         * implied `T[K*A*B]` tensor and `T[A*B]`-scale output stay register-resident
+         * only at very small dims — see the thread-tier N<=7 element-count ceiling
+         * in CLAUDE.md; larger operands still compute correctly but spill to local
+         * memory). Same algorithm and operand order as the `glass::` twin, agreeing
+         * to a few ULP (cross-tier bit-identity is NOT guaranteed).
+         *
+         * @tparam T,K,A,B,CONTRACT,SYMMETRIC,ACCUMULATE,TIN_ROW_MAJOR  See glass::tensor_vec_contract.
+         * @param Tns,v,Mout  See glass::tensor_vec_contract (Mout read only when ACCUMULATE).
+         */
+        template <typename T, uint32_t K, uint32_t A, uint32_t B,
+                  TensorAxis CONTRACT = TensorAxis::K, bool SYMMETRIC = false,
+                  bool ACCUMULATE = true, bool TIN_ROW_MAJOR = false>
+        __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout)
+        {
+            detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(0u, 1u, Tns, v, Mout);
+        }
+    
+        /**
+         * @brief Single-thread vector–tensor–vector triple product: `s[k] (+)= u^T · T_k · w`.
+         *
+         * Thread-per-problem analogue of `glass::vec_tensor_vec`: ONE thread forms
+         * every slab's bilinear form serially. No barriers, no shuffles, no
+         * `threadIdx` read; operands may be thread-local register arrays (subject
+         * to the tier's element-count ceiling — see CLAUDE.md). Same algorithm and
+         * operand order as the `glass::` twin, agreeing to a few ULP (cross-tier
+         * bit-identity is NOT guaranteed).
+         *
+         * @tparam T,K,A,B,ACCUMULATE,TIN_ROW_MAJOR  See glass::vec_tensor_vec.
+         * @param Tns,u,w,s  See glass::vec_tensor_vec (s read only when ACCUMULATE).
+         */
+        template <typename T, uint32_t K, uint32_t A, uint32_t B,
+                  bool ACCUMULATE = false, bool TIN_ROW_MAJOR = false>
+        __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
+        {
+            detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(0u, 1u, Tns, u, w, s);
+        }
+    }
+    
+    // ─── single-warp tensor contractions ─────────────────────────────────────────
+    namespace warp {
+        /**
+         * @brief Single-warp tensor ⊗ vector contraction: `Mout (+)= Σ_c v[c] · T[..c..]`.
+         *
+         * Warp-per-problem analogue of `glass::tensor_vec_contract`; one full 32-lane
+         * warp performs the whole contraction. See the block version for semantics.
+         *
+         * @tparam T,K,A,B,CONTRACT,SYMMETRIC,ACCUMULATE,TIN_ROW_MAJOR  See glass::tensor_vec_contract.
+         * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+         * @param Tns,v,Mout  See glass::tensor_vec_contract.
+         */
+        template <typename T, uint32_t K, uint32_t A, uint32_t B,
+                  TensorAxis CONTRACT = TensorAxis::K, bool SYMMETRIC = false,
+                  bool ACCUMULATE = true, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
+        __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
+            detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(lane, 32u, Tns, v, Mout);
+            if constexpr (TRAILING_SYNC) __syncwarp();
+        }
+    
+        /**
+         * @brief Single-warp vector–tensor–vector triple product: `s[k] (+)= u^T · T_k · w`.
+         *
+         * Warp-per-problem analogue of `glass::vec_tensor_vec`.
+         *
+         * @tparam T,K,A,B,ACCUMULATE,TIN_ROW_MAJOR  See glass::vec_tensor_vec.
+         * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+         * @param Tns,u,w,s  See glass::vec_tensor_vec.
+         */
+        template <typename T, uint32_t K, uint32_t A, uint32_t B,
+                  bool ACCUMULATE = false, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
+        __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
+            detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(lane, 32u, Tns, u, w, s);
+            if constexpr (TRAILING_SYNC) __syncwarp();
+        }
+    }
+    // END GLASS src/base/L3/tensor_contract.cuh
     
     // BEGIN GLASS src/base/L3/inv.cuh
     
@@ -3275,6 +4681,54 @@ namespace grid {
         inv_dense_impl<T>(ct_size<N>{}, A, Ainv, s_scratch);
     }
     
+    namespace thread {
+        /**
+         * @brief Single-thread in-place matrix inverse (unpivoted Gauss-Jordan,
+         *        augmented `[A | I]`), compile-time size.
+         *
+         * ONE thread reduces a column-major augmented `N x 2*N` `[A | I]` buffer so
+         * that on return columns `N..2*N-1` hold `A^-1` — the sequential
+         * Gauss-Jordan sweep, for thread-per-problem solvers that pack 32
+         * independent low-DOF problems into a warp. No shared scratch requirement,
+         * no barriers, no `threadIdx` read.
+         *
+         * Delegates to the same `inv_impl` body the block surface uses, via
+         * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
+         * operand order as `glass::inv<T, N>` on one thread, agreeing to a few ULP
+         * (FMA-contraction jitter; bit-identity across the two instantiations is
+         * NOT guaranteed — see test/test_thread.py).
+         *
+         * `s_scratch` keeps the caller-provided-pointer signature for surface
+         * uniformity with `glass::inv` / `warp::inv`, but on this tier the intended
+         * use is a THREAD-LOCAL array — `T scratch[2*N + 1];` declared in the
+         * caller — so both the operand and the scratch can stay register-resident
+         * (per-thread shared-memory scratch would defeat the tier's packing).
+         *
+         * Unpivoted: divides by the leading pivots as-is (no row exchange) — the
+         * data-dependent `inv_pivoted` is deliberately excluded from this tier
+         * (its argmax branches diverge across a warp of independent problems; use
+         * the block `inv_pivoted` when robustness to small/zero leading pivots is
+         * needed). NumPy equivalent: `Ainv = np.linalg.inv(A)`.
+         *
+         * @tparam T  Scalar type.
+         * @tparam N  Matrix dimension (A is N x N). NOTE the augmented operand is `T[2*N*N]` — twice
+         *            the `T[N*N]` the measured N<=7 register-residency ceiling refers to (see the
+         *            thread-tier constraints in CLAUDE.md), so expect the local-memory cliff at a
+         *            SMALLER N than for the factor/solve ops; larger sizes still compute correctly,
+         *            they just forfeit the tier's premise.
+         * @param A          In/out augmented `[A | I]` buffer (column-major, N x 2*N);
+         *                   on return its right half holds `A^-1`.
+         * @param s_scratch  Scratch of `2*N + 1` elements of `T`
+         *                   (= `inv_scratch_bytes<T>(N)` bytes); a thread-local
+         *                   `T scratch[2*N + 1]` is the intended use here.
+         */
+        template <typename T, uint32_t N>
+        __device__ void inv(T *A, T *s_scratch)
+        {
+            inv_impl<ThreadBarrier, T>(ThreadBarrier{}, ct_size<N>{}, A, s_scratch);
+        }
+    }
+    
     namespace warp {
         /**
          * @brief Single-warp in-place matrix inverse (unpivoted Gauss-Jordan, augmented `[A | I]`), compile-time size.
@@ -3335,6 +4789,3782 @@ namespace grid {
         }
     }
     // END GLASS src/base/L3/inv.cuh
+    
+    // BEGIN GLASS src/base/L3/potrf.cuh
+    
+    /**
+     * @brief In-place Cholesky factorization of an SPD matrix (LAPACK potrf, lower).
+     *
+     * Factors `A = L * L^T` and overwrites `A` with the lower-triangular factor `L`
+     * (only the lower triangle is written; the upper triangle keeps its input
+     * values). Single-block, column-major storage, in-place. `A` must be symmetric
+     * positive-definite. NumPy equivalent: `L = np.linalg.cholesky(A)`.
+     *
+     * When `CHECK` is true and `s_fail` is non-null, the factorization sets
+     * `*s_fail = 1` if any diagonal radicand is `<= 0` or NaN (i.e. `A` is not
+     * positive-definite), leaving it `0` otherwise — so callers can trigger a
+     * regularize-and-retry without a separate test. `CHECK` defaults false and the
+     * check compiles out entirely (`if constexpr`), so the unchecked instantiation
+     * is byte-identical to the original.
+     *
+     * @tparam T  Scalar type.
+     * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+     * @param n       Matrix dimension (A is n x n).
+     * @param s_A     In/out n x n matrix (column-major); on return its lower triangle holds L.
+     * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
+     */
+    // Shared body: in-place lower Cholesky; barrier policy supplies rank/size + the
+    // two per-row syncs, so the glass:: and cgrps:: surfaces share this one body.
+    // (No separable TRAILING_SYNC: the algorithm's final step is itself a barrier.)
+    // SizeT is deduced: uint32_t from the runtime overload, ct_size<N> from the
+    // compile-time overload (constant-folds the trip counts / indexing).
+    template <typename Bar, typename T, bool CHECK = false, typename SizeT>
+    __device__ void potrf_impl(Bar bar, SizeT n, T *s_A, int *s_fail)
+    {
+        uint32_t rank = bar.rank(), size = bar.size();
+        if constexpr (CHECK) { if (rank == 0 && s_fail) *s_fail = 0; }   // only rank 0 writes s_fail
+        for (uint32_t row = 0; row < n; row++) {
+            if (rank == 0) {
+                T sum = static_cast<T>(0);
+                T val = s_A[n*row + row];
+                for (int32_t rl = 0; rl < (int32_t)row; rl++) sum += s_A[rl*n + row]*s_A[rl*n + row];
+                T d = val - sum;
+                if constexpr (CHECK) { if (s_fail && (d <= static_cast<T>(0) || isnan(d))) *s_fail = 1; }
+                s_A[row*n + row] = sqrt(d);  // type-generic: float->float, double->double
+            }
+            bar.sync();
+            for (uint32_t col = rank + row + 1; col < n; col += size) {
+                T sum = static_cast<T>(0);
+                for (uint32_t kk = 0; kk < row; kk++) sum += s_A[kk*n + col]*s_A[kk*n + row];
+                s_A[row*n + col] = (static_cast<T>(1)/s_A[row*n + row])*(s_A[row*n + col] - sum);
+            }
+            bar.sync();
+        }
+    }
+    
+    template <typename T, bool CHECK = false>
+    __device__ void potrf(uint32_t n, T *s_A, int *s_fail = nullptr)
+    {
+        potrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, n, s_A, s_fail);
+    }
+    
+    /**
+     * @brief Fused in-place Cholesky factorization of K independent SPD matrices (lower).
+     *
+     * Factors `K` SPD matrices simultaneously in one block by interleaving their
+     * column sweeps over a single shared `MAX_DIM = max(dims)` row loop: matrix `m`
+     * participates while `row < dims[m]` and sits idle thereafter. Each matrix keeps
+     * the same column-major in-place `A = L*L^T` convention as the single-matrix
+     * `potrf` — on return the lower triangle of `mats[m]` holds its
+     * factor `L` (the upper triangle keeps its input values). Same two-barriers-per
+     * step structure as the single-matrix path; no shared scratch required.
+     *
+     * The K diagonals of a given step are distributed across threads
+     * (`for (m = rank; m < K; m += size)`, more parallel than rank-0 alone); then the
+     * trailing sub-diagonal column entries of each active matrix are updated in
+     * parallel. NumPy equivalent (per matrix `m`):
+     * `cholesky(m) = np.linalg.cholesky(mats[m])` (lower).
+     *
+     * @tparam T  Scalar type.
+     * @param K        Number of matrices.
+     * @param dims     Per-matrix dimensions (`dims[m]` for matrix `m`).
+     * @param MAX_DIM  `max(dims[0..K-1])` — the shared row-loop length (precondition).
+     * @param mats     Array of K in/out column-major SPD buffers (`dims[m] x dims[m]`);
+     *                 on return each lower triangle holds its Cholesky factor `L`.
+     */
+    template <typename T>
+    __device__ void potrf(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t row = 0; row < MAX_DIM; row++) {
+            // Phase 1: diagonal of each active matrix — distribute the K diagonals across threads.
+            for (uint32_t m = rank; m < K; m += size) {
+                uint32_t n = dims[m];
+                if (row < n) {
+                    T *s_A = mats[m];
+                    T sum = static_cast<T>(0);
+                    T val = s_A[n*row + row];
+                    for (int32_t rl = 0; rl < (int32_t)row; rl++) sum += s_A[rl*n + row]*s_A[rl*n + row];
+                    s_A[row*n + row] = sqrt(val - sum);  // type-generic: float->float, double->double
+                }
+            }
+            __syncthreads();
+            // Phase 2: trailing sub-diagonal column entries of each active matrix.
+            for (uint32_t m = 0; m < K; m++) {
+                uint32_t n = dims[m];
+                if (row < n) {
+                    T *s_A = mats[m];
+                    for (uint32_t col = rank + row + 1; col < n; col += size) {
+                        T sum = static_cast<T>(0);
+                        for (uint32_t kk = 0; kk < row; kk++) sum += s_A[kk*n + col]*s_A[kk*n + row];
+                        s_A[row*n + col] = (static_cast<T>(1)/s_A[row*n + row])*(s_A[row*n + col] - sum);
+                    }
+                }
+            }
+            __syncthreads();
+        }
+    }
+    
+    /**
+     * @brief Fused in-place Cholesky factorization of TWO SPD matrices (lower).
+     *
+     * Thin wrapper over the K-way `potrf` (K=2). Same column-major
+     * in-place `A = L*L^T` convention and output as the single-matrix path.
+     * NumPy: `La, Lb = cholesky(A), cholesky(B)` (lower).
+     *
+     * @tparam T  Scalar type.
+     * @param dimA,dimB  Matrix dimensions.
+     * @param MAX_DIM    `max(dimA, dimB)` — the shared row-loop length.
+     * @param A,B        In/out column-major SPD buffers (dim x dim); lower triangles hold L.
+     */
+    template <typename T>
+    __device__ void potrf(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B)
+    {
+        uint32_t dims[2] = {dimA, dimB};
+        T *mats[2] = {A, B};
+        potrf<T>(2, dims, MAX_DIM, mats);
+    }
+    
+    /**
+     * @brief Fused in-place Cholesky factorization of THREE SPD matrices (lower).
+     *
+     * Thin wrapper over the K-way `potrf` (K=3). Same column-major
+     * in-place `A = L*L^T` convention and output as the single-matrix path.
+     * NumPy: invert-free factor each independently (lower).
+     *
+     * @tparam T  Scalar type.
+     * @param dimA,dimB,dimC  Matrix dimensions.
+     * @param MAX_DIM         `max(dimA, dimB, dimC)` — the shared row-loop length.
+     * @param A,B,C           In/out column-major SPD buffers (dim x dim); lower triangles hold L.
+     */
+    template <typename T>
+    __device__ void potrf(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C)
+    {
+        uint32_t dims[3] = {dimA, dimB, dimC};
+        T *mats[3] = {A, B, C};
+        potrf<T>(3, dims, MAX_DIM, mats);
+    }
+    
+    /**
+     * @brief Compile-time-size in-place Cholesky factorization (LAPACK potrf, lower).
+     *
+     * Same as the runtime overload but with the dimension as a template parameter,
+     * letting the compiler bake `N` in. Factors the SPD matrix `A = L * L^T` in
+     * place, writing only the lower triangle. NumPy equivalent:
+     * `L = np.linalg.cholesky(A)`.
+     *
+     * When `CHECK` is true and `s_fail` is non-null, reports a non-PD / NaN pivot
+     * via `*s_fail` (see the runtime overload). `CHECK` defaults false and compiles
+     * out, so the unchecked instantiation is byte-identical to the original.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Matrix dimension (A is N x N).
+     * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+     * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
+     * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
+     */
+    template <typename T, uint32_t N, bool CHECK = false>
+    __device__ void potrf(T *s_A, int *s_fail = nullptr)
+    {
+        potrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, ct_size<N>{}, s_A, s_fail);
+    }
+    
+    namespace thread {
+        /**
+         * @brief Single-thread in-place Cholesky factorization (LAPACK potrf, lower), compile-time size.
+         *
+         * ONE thread factors the SPD matrix `A = L * L^T` in place, writing only the
+         * lower triangle (column-major) — the sequential algorithm, for
+         * thread-per-problem solvers that pack 32 independent low-DOF problems into a
+         * warp (e.g. N≈7 IK normal equations, one seed per lane). No shared scratch,
+         * no barriers, no `threadIdx` read; `A` may live in a thread-local array and
+         * stay register-resident. `A` must be SPD. NumPy: `L = np.linalg.cholesky(A)`.
+         *
+         * Delegates to the same `potrf_impl` body the block/warp surfaces use, via
+         * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
+         * operand order as `glass::potrf<T, N>` on a single thread. NOT guaranteed
+         * bit-identical across the two instantiations: the no-op sync removes the
+         * optimization fences, so FMA contraction may differ by a last ULP
+         * (test/test_thread.py pins the bound).
+         *
+         * COMPILE-TIME SIZE ONLY (no runtime-`n` overload): the tier's value is an
+         * `A` that nvcc can keep in registers, which requires fully-unrolled,
+         * compile-time-resolvable indexing. A runtime-`n` form would silently spill
+         * to local memory and be strictly worse than `glass::warp::potrf`.
+         *
+         * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
+         * @tparam N  Matrix dimension (A is N x N). N<=7 keeps `A` register-resident (measured
+         *            ceiling, both dtypes — see the thread-tier constraints in CLAUDE.md); larger N still
+         *            computes correctly but demotes `A` to local memory, forfeiting the tier's premise.
+         * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+         * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
+         * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
+         */
+        template <typename T, uint32_t N, bool CHECK = false>
+        __device__ void potrf(T *s_A, int *s_fail = nullptr)
+        {
+            potrf_impl<ThreadBarrier, T, CHECK>(ThreadBarrier{}, ct_size<N>{}, s_A, s_fail);
+        }
+    }
+    
+    namespace warp {
+        /**
+         * @brief Single-warp in-place Cholesky factorization (LAPACK potrf, lower), compile-time size.
+         *
+         * One 32-lane warp factors the SPD matrix `A = L * L^T` in place, writing only
+         * the lower triangle (column-major). For warp-per-problem solvers on small
+         * systems (e.g. N≈7 normal equations). Lane 0 computes each diagonal; the
+         * remaining sub-diagonal entries of the column are filled by the warp's lanes
+         * (stride 32), synchronized with `__syncwarp`. No shared scratch, no
+         * `__syncthreads`. `A` must be SPD. NumPy equivalent:
+         * `L = np.linalg.cholesky(A)`.
+         *
+         * When `CHECK` is true and `s_fail` is non-null, reports a non-PD / NaN pivot
+         * via `*s_fail` (lane 0 writes it, mirroring the block overload). `CHECK`
+         * defaults false and compiles out, so the unchecked instantiation is
+         * byte-identical to the original.
+         *
+         * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
+         * @tparam N  Matrix dimension (A is N x N).
+         * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+         * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
+         * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
+         */
+        template <typename T, uint32_t N, bool CHECK = false>
+        __device__ void potrf(T *s_A, int *s_fail = nullptr)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            if constexpr (CHECK) { if (lane == 0 && s_fail) *s_fail = 0; }
+            for (uint32_t k = 0; k < N; k++) {
+                T diag = static_cast<T>(0);
+                if (lane == 0) {
+                    T sum = static_cast<T>(0);
+                    T val = s_A[k*N + k];
+                    for (uint32_t r = 0; r < k; r++) sum += s_A[r*N + k]*s_A[r*N + k];
+                    T d = val - sum;
+                    if constexpr (CHECK) { if (s_fail && (d <= static_cast<T>(0) || isnan(d))) *s_fail = 1; }
+                    diag = sqrt(d);
+                    s_A[k*N + k] = diag;
+                }
+                // Broadcast the pivot from lane 0's REGISTER via __shfl_sync rather than having
+                // every lane re-read s_A[k*N+k] from shared. The shared re-read is the same
+                // write-then-read-same-location pattern that nvcc can cache stale when the buffer
+                // is reached through a caller `__restrict__` pointer (observed: in-place warp solve
+                // gave wrong results for ~10% of inputs under -restrict; shfl broadcast is immune
+                // and matches glass::warp::reduce's own shfl-based design).
+                diag = __shfl_sync(0xffffffffu, diag, 0);
+                for (uint32_t row = lane + k + 1; row < N; row += 32) {
+                    T sum = static_cast<T>(0);
+                    for (uint32_t kk = 0; kk < k; kk++) sum += s_A[kk*N + row]*s_A[kk*N + k];
+                    s_A[k*N + row] = (s_A[k*N + row] - sum) / diag;
+                }
+                __syncwarp();
+            }
+        }
+    }
+    // END GLASS src/base/L3/potrf.cuh
+    
+    // BEGIN GLASS src/base/L3/trsm.cuh
+    
+    // ─────────────────────────────────────────────────────────────────────────────
+    // trsm — triangular solve with multiple right-hand sides, op(A) X = B, in place
+    // (BLAS TRSM, left side, alpha = 1). B is n×nrhs column-major and is
+    // overwritten with X. Storage and flag semantics match trsv (see trsv.cuh):
+    // FILL names the stored triangle, DIAG the implicit-unit choice, TRANSPOSE
+    // solves op(A) = Aᵀ against that same stored triangle.
+    //
+    // Parallelism: each elimination step resolves all `nrhs` pivots in parallel
+    // (thread-strided over columns), then updates the remaining (row, rhs) cells
+    // flat-strided over the whole rectangle — so wide B keeps every thread busy
+    // even for small n. Two barriers per step, shared across all right-hand sides
+    // (vs 2·n·nrhs for nrhs separate trsv calls).
+    // ─────────────────────────────────────────────────────────────────────────────
+    
+    // Shared body: barrier policy supplies rank/size + the per-step syncs, shared
+    // by glass:: and cgrps::. SizeT/SizeU are deduced: uint32_t from the runtime
+    // overload, ct_size<N>/ct_size<NRHS> from the compile-time overload
+    // (constant-folds the trip counts and the flat-index %/ by `rows`).
+    template <typename Bar, typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE,
+              typename SizeT, typename SizeU>
+    __device__ void trsm_impl(Bar bar, SizeT n, SizeU nrhs, const T *A, T *B)
+    {
+        static_assert(FILL != FillMode::Full, "trsm: FILL must name a triangle (Lower or Upper)");
+        constexpr bool LOWER   = (FILL == FillMode::Lower);
+        constexpr bool UNIT    = (DIAG == Diag::Unit);
+        constexpr bool FORWARD = (LOWER != TRANSPOSE);   // op(A) lower ⇒ forward sweep
+        uint32_t rank = bar.rank(), size = bar.size();
+        for (uint32_t step = 0; step < n; step++) {
+            uint32_t k = FORWARD ? step : (n - 1 - step);
+            // resolve the pivot row across all right-hand sides: B[k,c] /= op(A)[k][k]
+            if (!UNIT) {
+                for (uint32_t c = rank; c < nrhs; c += size)
+                    B[k + c * n] /= A[k + k * n];
+                bar.sync();
+            }
+            // eliminate x[k] from the remaining unknowns of every column:
+            //   op(A)[i][k] = TRANSPOSE ? A[k + i*n] : A[i + k*n]
+            uint32_t rows = FORWARD ? (n - 1 - k) : k;       // unknowns still open
+            for (uint32_t flat = rank; flat < rows * nrhs; flat += size) {
+                uint32_t i = FORWARD ? (k + 1 + flat % rows) : (flat % rows);
+                uint32_t c = flat / rows;
+                B[i + c * n] -= (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * B[k + c * n];
+            }
+            bar.sync();
+        }
+    }
+    
+    /**
+     * @brief Triangular solve with multiple right-hand sides `op(A) X = B`, in place (TRSM).
+     *
+     * Solves the triangular system for every column of `B` (n×nrhs, column-major),
+     * overwriting `B` with `X`. `A` is `n×n` column-major; only the triangle named
+     * by `FILL` is read. `TRANSPOSE=true` solves `Aᵀ X = B` against that same
+     * stored triangle; `DIAG=Diag::Unit` means an implicit unit diagonal. All
+     * right-hand sides share each elimination step's two barriers, and the update
+     * is flat-strided over the (rows × nrhs) rectangle, so wide `B` keeps every
+     * thread busy even at small `n`. Ends on a barrier (composes cleanly).
+     * SciPy equivalent:
+     * `X = scipy.linalg.solve_triangular(A, B, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
+     *
+     * @tparam T     Scalar type.
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true solve `Aᵀ X = B` (default false).
+     * @param n     Dimension (`A` is `n×n`; each column of `B` has length `n`).
+     * @param nrhs  Number of right-hand sides (columns of `B`).
+     * @param A     Triangular matrix (column-major; read-only).
+     * @param B     In/out right-hand sides (`n×nrhs`, column-major); on return holds `X`.
+     */
+    template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trsm(uint32_t n, uint32_t nrhs, const T *A, T *B)
+    {
+        trsm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE>(BlockBarrier{}, n, nrhs, A, B);
+    }
+    
+    /**
+     * @brief Triangular solve with multiple right-hand sides `op(A) X = B`, in place (TRSM), compile-time size.
+     *
+     * Same as the runtime `trsm` but with the dimensions as template parameters.
+     * SciPy equivalent:
+     * `X = scipy.linalg.solve_triangular(A, B, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
+     *
+     * @tparam T     Scalar type.
+     * @tparam N     Dimension (`A` is `N×N`; each column of `B` has length `N`).
+     * @tparam NRHS  Number of right-hand sides (columns of `B`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true solve `Aᵀ X = B` (default false).
+     * @param A  Triangular matrix (column-major; read-only).
+     * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
+     */
+    template <typename T, uint32_t N, uint32_t NRHS,
+              FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trsm(const T *A, T *B)
+    {
+        trsm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE>(BlockBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
+    }
+    
+    namespace thread {
+        /**
+         * @brief Single-thread triangular solve with multiple right-hand sides
+         *        `op(A) X = B`, in place (TRSM), compile-time size.
+         *
+         * ONE thread solves the `N×N` triangular system for all `NRHS` columns of
+         * `B` (`N×NRHS`, column-major), overwriting `B` with `X` — for
+         * thread-per-problem solvers that pack 32 independent low-DOF problems into
+         * a warp. `A` is column-major and read-only; only the triangle named by
+         * `FILL` is read; `TRANSPOSE=true` solves `Aᵀ X = B` against that same
+         * stored triangle; `DIAG=Diag::Unit` skips the diagonal divide. No shared
+         * scratch, no barriers, no `threadIdx` read; operands may be thread-local
+         * register arrays. SciPy equivalent:
+         * `X = scipy.linalg.solve_triangular(A, B, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
+         *
+         * Delegates to the same `trsm_impl` body the block surface uses, via
+         * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
+         * operand order as `glass::trsm<T, N, NRHS, …>` on one thread, agreeing to a
+         * few ULP (FMA-contraction jitter; bit-identity across the two
+         * instantiations is NOT guaranteed — see test/test_thread.py).
+         *
+         * @tparam T     Scalar type.
+         * @tparam N     Dimension (`A` is `N×N`; each column of `B` has length `N`). N<=7 keeps a
+         *               `T[N*N]` operand register-resident (measured ceiling, both dtypes — see the
+         *               thread-tier constraints in CLAUDE.md); larger N — or a `B` wider than that
+         *               element budget — still computes correctly but spills to local memory,
+         *               forfeiting the tier's premise.
+         * @tparam NRHS  Number of right-hand sides (columns of `B`).
+         * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+         * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+         * @tparam TRANSPOSE  When true solve `Aᵀ X = B` (default false).
+         * @param A  Triangular matrix (column-major, `N*N`; read-only).
+         * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
+         */
+        template <typename T, uint32_t N, uint32_t NRHS,
+                  FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+        __device__ void trsm(const T *A, T *B)
+        {
+            trsm_impl<ThreadBarrier, T, FILL, DIAG, TRANSPOSE>(ThreadBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
+        }
+    }
+    
+    namespace warp {
+        /**
+         * @brief Single-warp triangular solve `op(A) x = b` in place (TRSV), compile-time size.
+         *
+         * One 32-lane warp solves the triangular system for any `{FILL, DIAG,
+         * TRANSPOSE}` combination, overwriting `b` with `x`. `A` is column-major and
+         * only the triangle named by `FILL` is read; `TRANSPOSE=true` solves
+         * `Aᵀx = b` against that same stored triangle; `DIAG=Diag::Unit` skips the
+         * diagonal divide. Every pivot is broadcast from lane 0's REGISTER via
+         * `__shfl_sync` (never a shared re-read of `b[k]`) — immune to the nvcc
+         * `__restrict__` stale-cache miscompile (see `warp::potrf`). This is its OWN
+         * warp implementation (warp and block can't share an impl:
+         * `__shfl`/`__syncwarp` vs `__syncthreads`). No shared scratch, no
+         * `__syncthreads`. SciPy:
+         * `x = scipy.linalg.solve_triangular(A, b, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
+         *
+         * @tparam T     Scalar type.
+         * @tparam N     Dimension (`A` is `N×N`, `b` has length `N`).
+         * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+         * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+         * @tparam TRANSPOSE  When true solve `Aᵀx = b` (default false).
+         * @param A  Triangular matrix (column-major); only the `FILL` triangle read.
+         * @param b  In/out right-hand side; on return holds the solution x.
+         */
+        template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+        __device__ void trsv(const T *A, T *b)
+        {
+            static_assert(FILL != FillMode::Full, "warp::trsv: FILL must name a triangle (Lower or Upper)");
+            constexpr bool LOWER   = (FILL == FillMode::Lower);
+            constexpr bool UNIT    = (DIAG == Diag::Unit);
+            constexpr bool FORWARD = (LOWER != TRANSPOSE);   // op(A) lower ⇒ forward sweep
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            for (uint32_t step = 0; step < N; step++) {
+                uint32_t k = FORWARD ? step : (N - 1 - step);
+                // resolve pivot on lane 0's register, then broadcast (§1g) — never a
+                // shared re-read of b[k] on the consuming lanes.
+                T factor = static_cast<T>(0);
+                if (lane == 0) {
+                    factor = UNIT ? b[k] : (b[k] / A[k + k * N]);
+                    b[k] = factor;
+                }
+                factor = __shfl_sync(0xffffffffu, factor, 0);
+                // eliminate x[k]: op(A)[i][k] = TRANSPOSE ? A[k + i*N] : A[i + k*N]
+                if constexpr (FORWARD) {
+                    for (uint32_t i = lane + k + 1; i < N; i += 32)
+                        b[i] -= (TRANSPOSE ? A[k + i * N] : A[i + k * N]) * factor;
+                } else {
+                    for (uint32_t i = lane; i < k; i += 32)
+                        b[i] -= (TRANSPOSE ? A[k + i * N] : A[i + k * N]) * factor;
+                }
+                __syncwarp();
+            }
+        }
+    
+        /**
+         * @brief Single-warp triangular solve with multiple right-hand sides `op(A) X = B` (TRSM), compile-time size.
+         *
+         * Warp-per-problem parity with the block `glass::trsm`: one 32-lane warp
+         * solves all `NRHS` columns of `B` (`N×NRHS`, column-major) in place. Each
+         * elimination step resolves the pivot row across all columns (lane-strided)
+         * and flat-strides the update over the (rows × NRHS) rectangle, sharing the
+         * per-step `__syncwarp()` across every right-hand side. No shared scratch,
+         * no `__syncthreads`.
+         *
+         * @tparam T     Scalar type.
+         * @tparam N     Dimension (`A` is `N×N`; each column of `B` has length `N`).
+         * @tparam NRHS  Number of right-hand sides (columns of `B`).
+         * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+         * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+         * @tparam TRANSPOSE  When true solve `Aᵀ X = B` (default false).
+         * @param A  Triangular matrix (column-major; read-only).
+         * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
+         */
+        template <typename T, uint32_t N, uint32_t NRHS,
+                  FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+        __device__ void trsm(const T *A, T *B)
+        {
+            static_assert(FILL != FillMode::Full, "warp::trsm: FILL must name a triangle (Lower or Upper)");
+            constexpr bool LOWER   = (FILL == FillMode::Lower);
+            constexpr bool UNIT    = (DIAG == Diag::Unit);
+            constexpr bool FORWARD = (LOWER != TRANSPOSE);
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            for (uint32_t step = 0; step < N; step++) {
+                uint32_t k = FORWARD ? step : (N - 1 - step);
+                if constexpr (!UNIT) {
+                    for (uint32_t c = lane; c < NRHS; c += 32)
+                        B[k + c * N] /= A[k + k * N];
+                    __syncwarp();
+                }
+                uint32_t rows = FORWARD ? (N - 1 - k) : k;
+                for (uint32_t flat = lane; flat < rows * NRHS; flat += 32) {
+                    uint32_t i = FORWARD ? (k + 1 + flat % rows) : (flat % rows);
+                    uint32_t c = flat / rows;
+                    B[i + c * N] -= (TRANSPOSE ? A[k + i * N] : A[i + k * N]) * B[k + c * N];
+                }
+                __syncwarp();
+            }
+        }
+    
+        /**
+         * @brief Single-warp SPD solve `A x = b` via Cholesky (LAPACK posv), compile-time size.
+         *
+         * One 32-lane warp solves the symmetric-positive-definite system `A x = b` in
+         * place: it factors `A = L Lᵀ` with `warp::potrf` (lower triangle
+         * overwrites `A`), then a forward solve `L y = b` and a back solve `Lᵀ x = y`
+         * (both `warp::trsv`). On return `b` holds `x` and the lower triangle of `A`
+         * holds `L`. This is the composed warp-per-problem solve — the proof that the
+         * warp L1/L2/L3 glue closes the gap. No shared scratch, no `__syncthreads`;
+         * every pivot broadcast from a register (§1g). `A` must be SPD (use `double`
+         * for ill-conditioned systems). NumPy equivalent: `x = np.linalg.solve(A, b)`.
+         *
+         * @tparam T  Scalar type.
+         * @tparam N  Dimension (A is N x N, b has length N).
+         * @param A  In/out SPD matrix (column-major); on return its lower triangle holds L.
+         * @param b  In/out right-hand side; on return holds the solution x.
+         */
+        template <typename T, uint32_t N>
+        __device__ void posv(T *A, T *b)
+        {
+            potrf<T, N>(A);
+            trsv<T, N>(A, b);                                                        // forward: L y = b
+            trsv<T, N, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true>(A, b);    // back:   Lᵀ x = y
+        }
+    
+        /**
+         * @brief Single-warp SPD solve from a precomputed Cholesky factor (LAPACK potrs), compile-time size.
+         *
+         * Given the lower factor `L` (e.g. from `warp::potrf`), one 32-lane warp
+         * solves `L Lᵀ x = b` by forward then back substitution — the same two
+         * `warp::trsv` legs `warp::posv` composes, without the re-factor: the
+         * reusable-factor / multi-solve path. `L` is read-only; `b` is overwritten
+         * with `x`. No shared scratch, no `__syncthreads`; every pivot is broadcast
+         * from lane 0's register via `__shfl_sync` (§1g — immune to the
+         * `__restrict__` stale-shared-reread miscompile, see `warp::trsv`). SciPy
+         * equivalent: `x = scipy.linalg.cho_solve((L, True), b)`.
+         *
+         * @tparam T  Scalar type.
+         * @tparam N  Dimension (`L` is `N×N`, `b` has length `N`).
+         * @param L  Lower Cholesky factor (column-major, `N*N`; read-only).
+         * @param b  In/out right-hand side; on return holds the solution `x`.
+         */
+        template <typename T, uint32_t N>
+        __device__ void potrs(const T *L, T *b)
+        {
+            trsv<T, N>(L, b);                                                        // forward: L y = b
+            trsv<T, N, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true>(L, b);    // back:   Lᵀ x = y
+        }
+    
+        /**
+         * @brief Add a diagonal regularization shift to A in place (single-warp helper).
+         *
+         * Lane-strided over the `n` diagonal entries; `REG_DIAG=false` adds `rho·I`
+         * (Marquardt), `REG_DIAG=true` adds `rho·diag(A)` (Levenberg). Trailing
+         * `__syncwarp()` so the shifted A is warp-visible before factoring. Internal.
+         */
+        template <typename T, bool REG_DIAG = false, typename SizeT>
+        __device__ void _posv_regularize(SizeT n, T *A, T rho)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            for (uint32_t i = lane; i < n; i += 32) {
+                if constexpr (REG_DIAG) A[i*n + i] += rho * A[i*n + i];   // rho*diag(A)
+                else                    A[i*n + i] += rho;                // rho*I
+            }
+            __syncwarp();
+        }
+    
+        /**
+         * @brief Single-warp regularized/checked multi-RHS SPD solve `A X = B` (LAPACK posv).
+         *
+         * Warp-per-problem parity with the block multi-RHS `glass::posv`: one 32-lane
+         * warp optionally shifts `A`'s diagonal (`REGULARIZE`: `rho·I`, or `rho·diag(A)`
+         * when `REG_DIAG`), factors `A = L Lᵀ` via `warp::potrf<…,CHECK>`
+         * (reporting a non-PD pivot through `s_fail`), then forward/back-solves all
+         * `NRHS` columns of `B` at once with the multi-RHS `warp::trsm`. On return
+         * `A` holds `L` and `B` holds `X`. No shared scratch, no `__syncthreads`.
+         *
+         * A flagged **single**-RHS solve is just NRHS=1 — the form HJCD's LM step wants:
+         * `warp::posv<T, DIM, 1, REGULARIZE=true, CHECK=true, REG_DIAG=true>(A, b, lambda, &s_fail)`
+         * folds the `A += lambda*diag(A)` damping and the non-PD net into one call. (The
+         * unflagged 2-arg `warp::posv<T,N>(A,b)` stays; flags cannot live on it without
+         * colliding with this overload at NRHS in {0,1}.)
+         *
+         * @tparam T     Scalar type (use `double` for ill-conditioned A).
+         * @tparam N     Dimension (A is N x N, each column of B has length N).
+         * @tparam NRHS  Number of right-hand sides (columns of B).
+         * @tparam REGULARIZE  If true, shift A before factoring (default false, compiles out).
+         * @tparam CHECK  If true, report a non-PD pivot via `s_fail` (default false, compiles out).
+         * @tparam REG_DIAG    With REGULARIZE: shift by `rho·diag(A)` instead of `rho·I` (default false).
+         * @param A  In/out SPD matrix (column-major); on return its lower triangle holds L.
+         * @param B  In/out right-hand sides (N x NRHS, column-major); on return holds X.
+         * @param rho    Diagonal shift applied when REGULARIZE (ignored otherwise).
+         * @param s_fail Optional non-PD flag when CHECK (set to 1 on a non-PD pivot, else 0).
+         */
+        template <typename T, uint32_t N, uint32_t NRHS,
+                  bool REGULARIZE = false, bool CHECK = false, bool REG_DIAG = false>
+        __device__ void posv(T *A, T *B, T rho = T(0), int *s_fail = nullptr)
+        {
+            // Qualified: ct_size's home namespace is glass, so an unqualified call
+            // would ADL-pull the block-scoped glass::_posv_regularize into the
+            // overload set and be ambiguous with this warp-scoped one.
+            if constexpr (REGULARIZE) warp::_posv_regularize<T, REG_DIAG>(ct_size<N>{}, A, rho);  // rho*I or rho*diag(A)
+            potrf<T, N, CHECK>(A, s_fail);
+            trsm<T, N, NRHS>(A, B);                                                        // forward: L Y = B
+            trsm<T, N, NRHS, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true>(A, B);    // back:   Lᵀ X = Y
+        }
+    }
+    // END GLASS src/base/L3/trsm.cuh
+    
+    // BEGIN GLASS src/base/L3/posv.cuh
+    
+    /**
+     * @file posv.cuh
+     * @brief SPD linear solve via Cholesky + two triangular solves (pure SIMT).
+     *
+     * `posv` / `potrs` are thin single-block compositions of `potrf`
+     * (`potrf.cuh`) and `trsv` (`trsv.cuh`). Both callees end with a trailing
+     * `__syncthreads()`, so the factor and the two solves compose with NO inter-call
+     * barrier. Pure-SIMT companion to `glass::nvidia::posv`. Column-major throughout.
+     *
+     * NOTE: `glass::warp::posv` is NOT in this file — it lives in `trsm.cuh`,
+     * after the `warp::potrf`/`warp::trsm` definitions it composes.
+     * `glass::thread::posv` IS here: it composes `thread::potrf` (potrf.cuh) with
+     * two single-RHS `trsv_impl` legs (trsv.cuh, L2), both of which glass.cuh
+     * already includes ahead of this file — so it needs nothing from trsm.cuh.
+     */
+    
+    /**
+     * @brief Add a diagonal regularization shift to A in place (single-block helper).
+     *
+     * `REG_DIAG=false` adds `rho·I` (Marquardt shift); `REG_DIAG=true` adds
+     * `rho·diag(A)`, i.e. scales each diagonal by `(1+rho)` (Levenberg shift —
+     * scale-invariant across rows of very different magnitude, e.g. mixed
+     * prismatic/revolute Jacobians). Trailing `__syncthreads()` so the shifted A is
+     * block-visible before factoring. Internal; used by the flagged `posv` overloads.
+     */
+    template <typename T, bool REG_DIAG = false, typename SizeT>
+    __device__ void _posv_regularize(SizeT n, T *A, T rho)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t i = rank; i < n; i += size) {
+            if constexpr (REG_DIAG) A[i*n + i] += rho * A[i*n + i];   // rho*diag(A)
+            else                    A[i*n + i] += rho;                // rho*I
+        }
+        __syncthreads();
+    }
+    
+    /**
+     * @brief Solve the SPD system `A x = b` in one block (LAPACK posv).
+     *
+     * Factors `A = L Lᵀ` in place via Cholesky, then forward-solves `L y = b` and
+     * back-solves `Lᵀ x = y`. On return `A` holds its lower Cholesky factor `L` and
+     * `b` holds the solution `x`. `A` must be symmetric positive-definite; behaviour
+     * on non-SPD input is undefined (the Cholesky step produces NaN, no info flag).
+     * Thread-count invariant. NumPy equivalent: `x = np.linalg.solve(A, b)` (A SPD).
+     *
+     * @note Regularize / check / Levenberg flags live on the **multi-RHS** overload
+     * (`b` is an `n×1` column-major `B`, so the single-RHS flagged solve is
+     * `posv<T, N, 1, REGULARIZE, CHECK, REG_DIAG>(A, b, rho, s_fail)`). The single-RHS
+     * overload deliberately carries no flag template params: a flagged single-RHS
+     * form (`<T, N, bool…>`) would be ambiguous with `<T, N, NRHS, bool…>` at
+     * `NRHS∈{0,1}` (identical resolved signature), so flags are routed through NRHS.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Dimension (`A` is `n×n`, `b` has length `n`).
+     * @param A  In/out SPD matrix (column-major); overwritten with its factor `L`.
+     * @param b  In/out right-hand side; on return holds the solution `x`.
+     */
+    // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
+    // ct_size<N> — and forwarded down through potrf_impl/trsv_impl so the WHOLE
+    // compile-time chain constant-folds.
+    template <typename T, typename SizeT>
+    __device__ void posv_impl(SizeT n, T *A, T *b)
+    {
+        potrf_impl<BlockBarrier, T>(BlockBarrier{}, n, A, nullptr);   // A -> L (lower); trailing __syncthreads
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false>(rank, size, n, A, b);  // forward: L y = b
+        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true >(rank, size, n, A, b);  // back:   Lᵀ x = y
+    }
+    
+    template <typename T>
+    __device__ void posv(uint32_t n, T *A, T *b)
+    {
+        posv_impl<T>(n, A, b);
+    }
+    
+    /**
+     * @brief Compile-time-size SPD solve `A x = b` (LAPACK posv).
+     *
+     * Same as the runtime `posv` with the dimension as a template parameter.
+     * NumPy equivalent: `x = np.linalg.solve(A, b)` (A SPD). For the regularized /
+     * checked / Levenberg path use the multi-RHS overload with NRHS=1, e.g.
+     * `posv<T, N, 1, true, true, true>(A, b, rho, s_fail)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Dimension (`A` is `N×N`, `b` has length `N`).
+     * @param A  In/out SPD matrix (column-major); overwritten with its factor `L`.
+     * @param b  In/out right-hand side; on return holds the solution `x`.
+     */
+    template <typename T, uint32_t N>
+    __device__ void posv(T *A, T *b) { posv_impl<T>(ct_size<N>{}, A, b); }
+    
+    namespace thread {
+        /**
+         * @brief Single-thread SPD solve `A x = b` via Cholesky (LAPACK posv), compile-time size.
+         *
+         * ONE thread factors `A = L Lᵀ` in place, then forward-solves `L y = b` and
+         * back-solves `Lᵀ x = y`. On return `A` holds its lower Cholesky factor `L`
+         * and `b` holds the solution `x`. For thread-per-problem solvers packing 32
+         * independent low-DOF systems into a warp (e.g. N≈7 IK normal equations, one
+         * seed per lane). No shared scratch, no barriers, no `threadIdx` read;
+         * operands may be thread-local register arrays. `A` must be SPD; behaviour on
+         * non-SPD input is undefined (the Cholesky step produces NaN, no info flag).
+         * NumPy equivalent: `x = np.linalg.solve(A, b)` (A SPD).
+         *
+         * Unlike the block `posv_impl` — which hardcodes `BlockBarrier` and reads
+         * `threadIdx` for the trsv legs — this composes `thread::potrf` with two
+         * `trsv_impl(0u, 1u, …)` calls directly, so no barrier or `threadIdx` read
+         * survives. Same algorithm and operand order as `glass::posv<T, N>` on one
+         * thread, agreeing to within FMA-contraction jitter (a few ULP — see
+         * test/test_thread.py; bit-identity across instantiations is not guaranteed).
+         *
+    
+         *
+         * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
+         * @tparam N  Dimension (`A` is `N×N`, `b` has length `N`). N<=7 keeps `A` register-resident
+         *            (measured ceiling, both dtypes — see the thread-tier constraints in CLAUDE.md); larger N still
+         *            computes correctly but demotes `A` to local memory, forfeiting the tier's premise.
+         * @param A  In/out SPD matrix (column-major); overwritten with its factor `L`.
+         * @param b  In/out right-hand side; on return holds the solution `x`.
+         */
+        template <typename T, uint32_t N>
+        __device__ void posv(T *A, T *b)
+        {
+            potrf_impl<ThreadBarrier, T>(ThreadBarrier{}, ct_size<N>{}, A, nullptr);   // A -> L (lower)
+            trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false, ThreadBarrier>(0u, 1u, ct_size<N>{}, A, b);  // forward: L y = b
+            trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true , ThreadBarrier>(0u, 1u, ct_size<N>{}, A, b);  // back:   Lᵀ x = y
+        }
+    
+        /**
+         * @brief Single-thread SPD solve from a precomputed Cholesky factor (LAPACK potrs), compile-time size.
+         *
+         * Given the lower factor `L` (e.g. from `thread::potrf`), solves `L Lᵀ x = b`
+         * by forward then back substitution — the reusable-factor path (no re-factor).
+         * `L` is read-only; `b` is overwritten with `x`. SciPy equivalent:
+         * `x = scipy.linalg.cho_solve((L, True), b)`.
+         *
+         * @tparam T  Scalar type.
+         * @tparam N  Dimension (`L` is `N×N`, `b` has length `N`).
+         * @param L  Lower Cholesky factor (column-major, `N*N`; read-only).
+         * @param b  In/out right-hand side; on return holds the solution `x`.
+         */
+        template <typename T, uint32_t N>
+        __device__ void potrs(const T *L, T *b)
+        {
+            trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false, ThreadBarrier>(0u, 1u, ct_size<N>{}, L, b);  // forward: L y = b
+            trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true , ThreadBarrier>(0u, 1u, ct_size<N>{}, L, b);  // back:   Lᵀ x = y
+        }
+    }
+    
+    /**
+     * @brief Solve the SPD system `A x = b` from a precomputed Cholesky factor (LAPACK potrs).
+     *
+     * Given the lower factor `L` (e.g. from `potrf`), solves
+     * `L Lᵀ x = b` by forward then back substitution — the reusable-factor /
+     * multi-solve path (no re-factor). `L` is read-only; `b` is overwritten with `x`.
+     * Thread-count invariant. SciPy equivalent: `x = scipy.linalg.cho_solve((L, True), b)`.
+     *
+     * @tparam T  Scalar type.
+     * @param n  Dimension (`L` is `n×n`, `b` has length `n`).
+     * @param L  Lower Cholesky factor (column-major, `n*n`; read-only).
+     * @param b  In/out right-hand side; on return holds the solution `x`.
+     */
+    // Shared body (runtime + compile-time overloads): SizeT deduced and forwarded
+    // through trsv_impl (see posv_impl).
+    template <typename T, typename SizeT>
+    __device__ void potrs_impl(SizeT n, const T *L, T *b)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false>(rank, size, n, L, b);  // forward: L y = b
+        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true >(rank, size, n, L, b);  // back:   Lᵀ x = y
+    }
+    
+    template <typename T>
+    __device__ void potrs(uint32_t n, const T *L, T *b)
+    {
+        potrs_impl<T>(n, L, b);
+    }
+    
+    /**
+     * @brief Compile-time-size SPD solve from a precomputed Cholesky factor (LAPACK potrs).
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Dimension.
+     * @param L  Lower Cholesky factor (column-major, `N*N`; read-only).
+     * @param b  In/out right-hand side; on return holds the solution `x`.
+     */
+    template <typename T, uint32_t N>
+    __device__ void potrs(const T *L, T *b) { potrs_impl<T>(ct_size<N>{}, L, b); }
+    
+    // ─── multi-RHS overloads (column-major B, factor once / solve per column) ─────
+    
+    /**
+     * @brief Solve the SPD system `A X = B` with multiple right-hand sides (LAPACK posv).
+     *
+     * Factors `A = L Lᵀ` in place **once** via Cholesky, then solves each of the
+     * `nrhs` columns of `B` by a forward (`L y = b`) and back (`Lᵀ x = y`)
+     * substitution. On return `A` holds its lower Cholesky factor `L` and `B` holds
+     * the solution `X`. `A` must be symmetric positive-definite; behaviour on non-SPD
+     * input is undefined (the Cholesky step produces NaN, no info flag).
+     *
+     * `B` (and `X`) is `n × nrhs` stored **column-major**: column `c` begins at
+     * `B + c*n` and occupies `n` contiguous elements. The Cholesky factor completes
+     * before the solve (its trailing `__syncthreads()`); all columns are then solved
+     * together by the multi-RHS `trsm` (per-step barriers shared across right-hand
+     * sides). Thread-count invariant. NumPy equivalent:
+     * `X = np.linalg.solve(A, B)` (A SPD, B `n×nrhs`).
+     *
+     * @par Regularize + check (`REGULARIZE` / `CHECK` / `REG_DIAG`, all compile-out, default off)
+     * `REGULARIZE` adds a shift to `A`'s diagonal before factoring — `rho·I`
+     * (Marquardt) by default, or `rho·diag(A)` (Levenberg, scale-invariant) when
+     * `REG_DIAG` is also set — used to push a borderline-indefinite Hessian (e.g. `Huu`)
+     * back to SPD; `CHECK` forwards to the checked Cholesky and sets `*s_fail = 1` on
+     * a non-PD pivot, so a caller can escalate `rho` and retry. All default false and
+     * compile out (`if constexpr`), leaving the unflagged instantiation byte-identical
+     * to the original. This is the fused "regularize → factor → solve" path: e.g.
+     * `posv<T, N, NRHS, true, true>(A, B, rho, s_fail)` (add a trailing `true` for Levenberg).
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam REGULARIZE  If true, shift A before factoring (default false, compiles out).
+     * @tparam CHECK  If true, report a non-PD pivot via `s_fail` (default false, compiles out).
+     * @tparam REG_DIAG    With REGULARIZE: shift by `rho·diag(A)` instead of `rho·I` (default false).
+     * @param n      Dimension (`A` is `n×n`, each column of `B` has length `n`).
+     * @param nrhs   Number of right-hand sides (columns of `B`).
+     * @param A      In/out SPD matrix (column-major); overwritten with its factor `L`.
+     * @param B      In/out right-hand sides (`n×nrhs`, column-major); on return holds `X`.
+     * @param rho    Diagonal shift added to A when REGULARIZE (ignored otherwise).
+     * @param s_fail Optional non-PD flag when CHECK (set to 1 on a non-PD pivot, else 0).
+     */
+    // Shared body (runtime + compile-time overloads): SizeT/SizeU deduced —
+    // uint32_t or ct_size<N>/ct_size<NRHS> — and forwarded down through
+    // _posv_regularize/potrf_impl/trsm_impl so the WHOLE compile-time chain folds.
+    template <typename T, bool REGULARIZE = false, bool CHECK = false, bool REG_DIAG = false,
+              typename SizeT, typename SizeU>
+    __device__ void posv_impl(SizeT n, SizeU nrhs, T *A, T *B, T rho, int *s_fail)
+    {
+        if constexpr (REGULARIZE) _posv_regularize<T, REG_DIAG>(n, A, rho);  // rho*I or rho*diag(A)
+        potrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, n, A, s_fail);   // A -> L (lower); trailing __syncthreads
+        trsm_impl<BlockBarrier, T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false>(BlockBarrier{}, n, nrhs, A, B);  // forward: L Y = B
+        trsm_impl<BlockBarrier, T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true >(BlockBarrier{}, n, nrhs, A, B);  // back:   Lᵀ X = Y
+    }
+    
+    template <typename T, bool REGULARIZE = false, bool CHECK = false, bool REG_DIAG = false>
+    __device__ void posv(uint32_t n, uint32_t nrhs, T *A, T *B, T rho = T(0), int *s_fail = nullptr)
+    {
+        posv_impl<T, REGULARIZE, CHECK, REG_DIAG>(n, nrhs, A, B, rho, s_fail);
+    }
+    
+    /**
+     * @brief Compile-time-size multi-RHS SPD solve `A X = B` (LAPACK posv).
+     *
+     * Same as the runtime multi-RHS `posv` with the dimension and right-hand-side
+     * count as template parameters. `B` is `N × NRHS` column-major (column `c` at
+     * `B + c*N`). Factored once, solved per column. NumPy equivalent:
+     * `X = np.linalg.solve(A, B)` (A SPD).
+     *
+     * The optional `REGULARIZE` / `CHECK` / `REG_DIAG` flags (default off, compile out)
+     * add a diagonal shift before factoring and report a non-PD pivot via `s_fail` — the
+     * fused regularize→factor→solve path `posv<T, N, NRHS, true, true>(A, B, rho, s_fail)`.
+     * `REG_DIAG` (appended last so existing `<…, true, true>` callers are unaffected)
+     * switches the shift from `rho·I` to `rho·diag(A)` (Levenberg). A flagged single-RHS
+     * solve is just NRHS=1: `posv<T, N, 1, true, true, true>(A, b, rho, s_fail)`.
+     *
+     * @tparam T     Scalar type.
+     * @tparam N     Dimension (`A` is `N×N`, each column of `B` has length `N`).
+     * @tparam NRHS  Number of right-hand sides (columns of `B`).
+     * @tparam REGULARIZE  If true, shift A before factoring (default false, compiles out).
+     * @tparam CHECK  If true, report a non-PD pivot via `s_fail` (default false, compiles out).
+     * @tparam REG_DIAG    With REGULARIZE: shift by `rho·diag(A)` instead of `rho·I` (default false).
+     * @param A  In/out SPD matrix (column-major); overwritten with its factor `L`.
+     * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
+     * @param rho    Diagonal shift added to A when REGULARIZE (ignored otherwise).
+     * @param s_fail Optional non-PD flag when CHECK (set to 1 on a non-PD pivot, else 0).
+     */
+    template <typename T, uint32_t N, uint32_t NRHS, bool REGULARIZE = false, bool CHECK = false, bool REG_DIAG = false>
+    __device__ void posv(T *A, T *B, T rho = T(0), int *s_fail = nullptr)
+    {
+        posv_impl<T, REGULARIZE, CHECK, REG_DIAG>(ct_size<N>{}, ct_size<NRHS>{}, A, B, rho, s_fail);
+    }
+    
+    /**
+     * @brief Multi-RHS SPD solve `A X = B` from a precomputed Cholesky factor (LAPACK potrs).
+     *
+     * Given the lower factor `L` (e.g. from `potrf`), solves
+     * `L Lᵀ X = B` for each of the `nrhs` columns by forward then back substitution
+     * — the reusable-factor / multi-solve path (no re-factor). `L` is read-only; `B`
+     * is overwritten with `X`.
+     *
+     * `B` (and `X`) is `n × nrhs` stored **column-major**: column `c` begins at
+     * `B + c*n`. All columns are solved together by the multi-RHS `trsm` (per-step
+     * barriers shared across right-hand sides). Thread-count invariant. SciPy
+     * equivalent: `X = scipy.linalg.cho_solve((L, True), B)`.
+     *
+     * @tparam T     Scalar type.
+     * @param n      Dimension (`L` is `n×n`, each column of `B` has length `n`).
+     * @param nrhs   Number of right-hand sides (columns of `B`).
+     * @param L      Lower Cholesky factor (column-major, `n*n`; read-only).
+     * @param B      In/out right-hand sides (`n×nrhs`, column-major); on return holds `X`.
+     */
+    // Shared body (runtime + compile-time overloads): SizeT/SizeU deduced and
+    // forwarded through trsm_impl (see the multi-RHS posv_impl).
+    template <typename T, typename SizeT, typename SizeU>
+    __device__ void potrs_impl(SizeT n, SizeU nrhs, const T *L, T *B)
+    {
+        trsm_impl<BlockBarrier, T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false>(BlockBarrier{}, n, nrhs, L, B);  // forward: L Y = B
+        trsm_impl<BlockBarrier, T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true >(BlockBarrier{}, n, nrhs, L, B);  // back:   Lᵀ X = Y
+    }
+    
+    template <typename T>
+    __device__ void potrs(uint32_t n, uint32_t nrhs, const T *L, T *B)
+    {
+        potrs_impl<T>(n, nrhs, L, B);
+    }
+    
+    /**
+     * @brief Compile-time-size multi-RHS SPD solve from a precomputed Cholesky factor (LAPACK potrs).
+     *
+     * `B` is `N × NRHS` column-major (column `c` at `B + c*N`). Solved per column,
+     * no re-factor. SciPy equivalent: `X = scipy.linalg.cho_solve((L, True), B)`.
+     *
+     * @tparam T     Scalar type.
+     * @tparam N     Dimension.
+     * @tparam NRHS  Number of right-hand sides (columns of `B`).
+     * @param L  Lower Cholesky factor (column-major, `N*N`; read-only).
+     * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
+     */
+    template <typename T, uint32_t N, uint32_t NRHS>
+    __device__ void potrs(const T *L, T *B) { potrs_impl<T>(ct_size<N>{}, ct_size<NRHS>{}, L, B); }
+    // END GLASS src/base/L3/posv.cuh
+    
+    // BEGIN GLASS src/base/L3/syrk.cuh
+    
+    // FillMode (see flags.cuh) selects which triangle of the symmetric result C is
+    // written:
+    //   Lower — only cells with row >= col
+    //   Upper — only cells with row <= col
+    //   Full  — both triangles (C is materialized as a full symmetric matrix)
+    
+    // ─── helpers: is this (row,col) cell in the canonical (computed) triangle? ────
+    // Lower/Full compute the lower triangle (row>=col); Upper computes row<=col.
+    // For Full we ALSO materialize the mirror, but only the lower-owning thread
+    // writes it — see the write phase below.
+    __device__ __forceinline__ bool syrk_in_canonical(FillMode fill, uint32_t row, uint32_t col)
+    {
+        return (fill == FillMode::Upper) ? (row <= col) : (row >= col);
+    }
+    
+    // ─── syrk core impl: explicit rank/size + layout flags ───────────────────────
+    // C = alpha * op(A) * op(A)^T + beta * C, C is n x n symmetric.
+    //   TRANSPOSE == false: op(A) = A   (A is n x k) → C = alpha*A*A^T + beta*C
+    //   TRANSPOSE == true : op(A) = A^T (A is k x n) → C = alpha*A^T*A + beta*C
+    // Flat-element parallelism over the n*n grid exactly like gemm_impl: each thread
+    // owns disjoint output cells, so NO interior barrier is needed (guide §1a
+    // counter-note). The k-loop runs only in the canonical triangle (the symmetry
+    // win); off-triangle cells are filled by the mirror write of their transpose.
+    template <typename T, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+    __device__ void syrk_impl(uint32_t rank, uint32_t size,
+                              uint32_t n, uint32_t k,
+                              T alpha, const T *A, T beta, T *C)
+    {
+        const uint32_t maxel = n * n;
+        for (uint32_t el = rank; el < maxel; el += size) {
+            uint32_t row = el % n, col = el / n;
+            if (!syrk_in_canonical(FILL, row, col)) continue;  // mirror handles it
+            T res = static_cast<T>(0);
+            for (uint32_t i = 0; i < k; i++) {
+                // TRANSPOSE=false: A is n x k → A[row,i], A[col,i].
+                // TRANSPOSE=true : A is k x n → A[i,row], A[i,col].
+                T ar, ac;
+                if (TRANSPOSE) {
+                    ar = ROW_MAJOR ? A[i*n + row] : A[row*k + i];
+                    ac = ROW_MAJOR ? A[i*n + col] : A[col*k + i];
+                } else {
+                    ar = ROW_MAJOR ? A[row*k + i] : A[i*n + row];
+                    ac = ROW_MAJOR ? A[col*k + i] : A[i*n + col];
+                }
+                res += ar * ac;
+            }
+            uint32_t cidx = ROW_MAJOR ? (row*n + col) : (col*n + row);
+            C[cidx] = beta_blend(alpha*res, beta, C[cidx]);
+            if (FILL == FillMode::Full && row != col) {
+                uint32_t midx = ROW_MAJOR ? (col*n + row) : (row*n + col);
+                C[midx] = beta_blend(alpha*res, beta, C[midx]);
+            }
+        }
+    }
+    
+    // beta = 0 form: never reads C.
+    template <typename T, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+    __device__ void syrk_impl(uint32_t rank, uint32_t size,
+                              uint32_t n, uint32_t k,
+                              T alpha, const T *A, T *C)
+    {
+        const uint32_t maxel = n * n;
+        for (uint32_t el = rank; el < maxel; el += size) {
+            uint32_t row = el % n, col = el / n;
+            if (!syrk_in_canonical(FILL, row, col)) continue;
+            T res = static_cast<T>(0);
+            for (uint32_t i = 0; i < k; i++) {
+                T ar, ac;
+                if (TRANSPOSE) {
+                    ar = ROW_MAJOR ? A[i*n + row] : A[row*k + i];
+                    ac = ROW_MAJOR ? A[i*n + col] : A[col*k + i];
+                } else {
+                    ar = ROW_MAJOR ? A[row*k + i] : A[i*n + row];
+                    ac = ROW_MAJOR ? A[col*k + i] : A[i*n + col];
+                }
+                res += ar * ac;
+            }
+            uint32_t cidx = ROW_MAJOR ? (row*n + col) : (col*n + row);
+            C[cidx] = alpha*res;
+            if (FILL == FillMode::Full && row != col) {
+                uint32_t midx = ROW_MAJOR ? (col*n + row) : (row*n + col);
+                C[midx] = alpha*res;
+            }
+        }
+    }
+    
+    // compile-time impl: N, K as template params so el%N / el/N use magic-number
+    // multiply instead of MUFU.RCP (mirrors gemm_impl_ct).
+    template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+    __device__ void syrk_impl_ct(uint32_t rank, uint32_t size,
+                                 T alpha, const T *A, T beta, T *C)
+    {
+        constexpr uint32_t maxel = N * N;
+        for (uint32_t el = rank; el < maxel; el += size) {
+            uint32_t row = el % N, col = el / N;
+            if (!syrk_in_canonical(FILL, row, col)) continue;
+            T res = static_cast<T>(0);
+            for (uint32_t i = 0; i < K; i++) {
+                T ar, ac;
+                if (TRANSPOSE) {
+                    ar = ROW_MAJOR ? A[i*N + row] : A[row*K + i];
+                    ac = ROW_MAJOR ? A[i*N + col] : A[col*K + i];
+                } else {
+                    ar = ROW_MAJOR ? A[row*K + i] : A[i*N + row];
+                    ac = ROW_MAJOR ? A[col*K + i] : A[i*N + col];
+                }
+                res += ar * ac;
+            }
+            uint32_t cidx = ROW_MAJOR ? (row*N + col) : (col*N + row);
+            C[cidx] = beta_blend(alpha*res, beta, C[cidx]);
+            if (FILL == FillMode::Full && row != col) {
+                uint32_t midx = ROW_MAJOR ? (col*N + row) : (row*N + col);
+                C[midx] = beta_blend(alpha*res, beta, C[midx]);
+            }
+        }
+    }
+    
+    template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+    __device__ void syrk_impl_ct(uint32_t rank, uint32_t size,
+                                 T alpha, const T *A, T *C)
+    {
+        constexpr uint32_t maxel = N * N;
+        for (uint32_t el = rank; el < maxel; el += size) {
+            uint32_t row = el % N, col = el / N;
+            if (!syrk_in_canonical(FILL, row, col)) continue;
+            T res = static_cast<T>(0);
+            for (uint32_t i = 0; i < K; i++) {
+                T ar, ac;
+                if (TRANSPOSE) {
+                    ar = ROW_MAJOR ? A[i*N + row] : A[row*K + i];
+                    ac = ROW_MAJOR ? A[i*N + col] : A[col*K + i];
+                } else {
+                    ar = ROW_MAJOR ? A[row*K + i] : A[i*N + row];
+                    ac = ROW_MAJOR ? A[col*K + i] : A[i*N + col];
+                }
+                res += ar * ac;
+            }
+            uint32_t cidx = ROW_MAJOR ? (row*N + col) : (col*N + row);
+            C[cidx] = alpha*res;
+            if (FILL == FillMode::Full && row != col) {
+                uint32_t midx = ROW_MAJOR ? (col*N + row) : (row*N + col);
+                C[midx] = alpha*res;
+            }
+        }
+    }
+    
+    // ─── syr2k core impl: explicit rank/size + layout flags ──────────────────────
+    // C = alpha*(op(A)*op(B)^T + op(B)*op(A)^T) + beta*C, C n x n symmetric.
+    // Symmetric by construction: cell (row,col) is the symmetric dot
+    //   Σ_i ( a(row,i)*b(col,i) + b(row,i)*a(col,i) )  [TRANSPOSE=false reading semantics]
+    // which equals cell (col,row), so the same mirror-write trick applies.
+    template <typename T, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+    __device__ void syr2k_impl(uint32_t rank, uint32_t size,
+                               uint32_t n, uint32_t k,
+                               T alpha, const T *A, const T *B, T beta, T *C)
+    {
+        const uint32_t maxel = n * n;
+        for (uint32_t el = rank; el < maxel; el += size) {
+            uint32_t row = el % n, col = el / n;
+            if (!syrk_in_canonical(FILL, row, col)) continue;
+            T res = static_cast<T>(0);
+            for (uint32_t i = 0; i < k; i++) {
+                T ar, ac, br, bc;
+                if (TRANSPOSE) {
+                    ar = ROW_MAJOR ? A[i*n + row] : A[row*k + i];
+                    ac = ROW_MAJOR ? A[i*n + col] : A[col*k + i];
+                    br = ROW_MAJOR ? B[i*n + row] : B[row*k + i];
+                    bc = ROW_MAJOR ? B[i*n + col] : B[col*k + i];
+                } else {
+                    ar = ROW_MAJOR ? A[row*k + i] : A[i*n + row];
+                    ac = ROW_MAJOR ? A[col*k + i] : A[i*n + col];
+                    br = ROW_MAJOR ? B[row*k + i] : B[i*n + row];
+                    bc = ROW_MAJOR ? B[col*k + i] : B[i*n + col];
+                }
+                res += ar*bc + br*ac;
+            }
+            uint32_t cidx = ROW_MAJOR ? (row*n + col) : (col*n + row);
+            C[cidx] = beta_blend(alpha*res, beta, C[cidx]);
+            if (FILL == FillMode::Full && row != col) {
+                uint32_t midx = ROW_MAJOR ? (col*n + row) : (row*n + col);
+                C[midx] = beta_blend(alpha*res, beta, C[midx]);
+            }
+        }
+    }
+    
+    template <typename T, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+    __device__ void syr2k_impl(uint32_t rank, uint32_t size,
+                               uint32_t n, uint32_t k,
+                               T alpha, const T *A, const T *B, T *C)
+    {
+        const uint32_t maxel = n * n;
+        for (uint32_t el = rank; el < maxel; el += size) {
+            uint32_t row = el % n, col = el / n;
+            if (!syrk_in_canonical(FILL, row, col)) continue;
+            T res = static_cast<T>(0);
+            for (uint32_t i = 0; i < k; i++) {
+                T ar, ac, br, bc;
+                if (TRANSPOSE) {
+                    ar = ROW_MAJOR ? A[i*n + row] : A[row*k + i];
+                    ac = ROW_MAJOR ? A[i*n + col] : A[col*k + i];
+                    br = ROW_MAJOR ? B[i*n + row] : B[row*k + i];
+                    bc = ROW_MAJOR ? B[i*n + col] : B[col*k + i];
+                } else {
+                    ar = ROW_MAJOR ? A[row*k + i] : A[i*n + row];
+                    ac = ROW_MAJOR ? A[col*k + i] : A[i*n + col];
+                    br = ROW_MAJOR ? B[row*k + i] : B[i*n + row];
+                    bc = ROW_MAJOR ? B[col*k + i] : B[i*n + col];
+                }
+                res += ar*bc + br*ac;
+            }
+            uint32_t cidx = ROW_MAJOR ? (row*n + col) : (col*n + row);
+            C[cidx] = alpha*res;
+            if (FILL == FillMode::Full && row != col) {
+                uint32_t midx = ROW_MAJOR ? (col*n + row) : (row*n + col);
+                C[midx] = alpha*res;
+            }
+        }
+    }
+    
+    template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+    __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
+                                  T alpha, const T *A, const T *B, T beta, T *C)
+    {
+        constexpr uint32_t maxel = N * N;
+        for (uint32_t el = rank; el < maxel; el += size) {
+            uint32_t row = el % N, col = el / N;
+            if (!syrk_in_canonical(FILL, row, col)) continue;
+            T res = static_cast<T>(0);
+            for (uint32_t i = 0; i < K; i++) {
+                T ar, ac, br, bc;
+                if (TRANSPOSE) {
+                    ar = ROW_MAJOR ? A[i*N + row] : A[row*K + i];
+                    ac = ROW_MAJOR ? A[i*N + col] : A[col*K + i];
+                    br = ROW_MAJOR ? B[i*N + row] : B[row*K + i];
+                    bc = ROW_MAJOR ? B[i*N + col] : B[col*K + i];
+                } else {
+                    ar = ROW_MAJOR ? A[row*K + i] : A[i*N + row];
+                    ac = ROW_MAJOR ? A[col*K + i] : A[i*N + col];
+                    br = ROW_MAJOR ? B[row*K + i] : B[i*N + row];
+                    bc = ROW_MAJOR ? B[col*K + i] : B[i*N + col];
+                }
+                res += ar*bc + br*ac;
+            }
+            uint32_t cidx = ROW_MAJOR ? (row*N + col) : (col*N + row);
+            C[cidx] = beta_blend(alpha*res, beta, C[cidx]);
+            if (FILL == FillMode::Full && row != col) {
+                uint32_t midx = ROW_MAJOR ? (col*N + row) : (row*N + col);
+                C[midx] = beta_blend(alpha*res, beta, C[midx]);
+            }
+        }
+    }
+    
+    template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+    __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
+                                  T alpha, const T *A, const T *B, T *C)
+    {
+        constexpr uint32_t maxel = N * N;
+        for (uint32_t el = rank; el < maxel; el += size) {
+            uint32_t row = el % N, col = el / N;
+            if (!syrk_in_canonical(FILL, row, col)) continue;
+            T res = static_cast<T>(0);
+            for (uint32_t i = 0; i < K; i++) {
+                T ar, ac, br, bc;
+                if (TRANSPOSE) {
+                    ar = ROW_MAJOR ? A[i*N + row] : A[row*K + i];
+                    ac = ROW_MAJOR ? A[i*N + col] : A[col*K + i];
+                    br = ROW_MAJOR ? B[i*N + row] : B[row*K + i];
+                    bc = ROW_MAJOR ? B[i*N + col] : B[col*K + i];
+                } else {
+                    ar = ROW_MAJOR ? A[row*K + i] : A[i*N + row];
+                    ac = ROW_MAJOR ? A[col*K + i] : A[i*N + col];
+                    br = ROW_MAJOR ? B[row*K + i] : B[i*N + row];
+                    bc = ROW_MAJOR ? B[col*K + i] : B[i*N + col];
+                }
+                res += ar*bc + br*ac;
+            }
+            uint32_t cidx = ROW_MAJOR ? (row*N + col) : (col*N + row);
+            C[cidx] = alpha*res;
+            if (FILL == FillMode::Full && row != col) {
+                uint32_t midx = ROW_MAJOR ? (col*N + row) : (row*N + col);
+                C[midx] = alpha*res;
+            }
+        }
+    }
+    
+    // ─── syrk runtime variants ───────────────────────────────────────────────────
+    
+    /**
+     * @brief Symmetric rank-k update: `C = alpha * op(A) * op(A)^T + beta * C` (SYRK).
+     *
+     * Runtime-size, single-block, flat-element parallelism: each thread owns output
+     * cells of the n x n symmetric `C` strided over the block. The length-k dot is
+     * computed ONLY in the canonical triangle (the symmetry win, ~half the FLOPs of
+     * a GEMM); for `Full` the lower-cell-owning thread also writes the mirror
+     * `C[col,row]` (diagonal written once) so each cell is written exactly once and
+     * NO interior barrier is needed. `Lower`/`Upper` write only the named triangle
+     * and leave the other untouched.
+     *
+     * @tparam T  Scalar type.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op(A)=A (A is n x k); if true, op(A)=A^T (A is k x n).
+     * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
+     * @param n  Dimension of the symmetric result C (n x n).
+     * @param k  Contraction length.
+     * @param alpha  Scalar multiplier on the product.
+     * @param A  Input matrix (n x k if TRANSPOSE=false, else k x n).
+     * @param beta  Scalar multiplier on the existing C (read only when `beta != 0`).
+     * @param C  In/out n x n symmetric result matrix.
+     *
+     * NumPy equivalent: TRANSPOSE=false → `alpha * A @ A.T + beta * C`;
+     * TRANSPOSE=true → `alpha * A.T @ A + beta * C`.
+     */
+    template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void syrk(uint32_t n, uint32_t k, T alpha, const T *A, T beta, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        syrk_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, beta, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief SYRK with implicit `beta = 0`: `C = alpha * op(A) * op(A)^T` (SYRK).
+     *
+     * Runtime-size overload that overwrites C (C is overwritten, not read), avoiding
+     * the `beta * C` term — safe to write into uninitialized scratch. For `Full`,
+     * the full symmetric matrix is written; for `Lower`/`Upper`, only the named
+     * triangle is written and the other is left untouched. Single-block,
+     * flat-element parallelism; no interior barrier.
+     *
+     * @tparam T  Scalar type.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op(A)=A (A is n x k); if true, op(A)=A^T (A is k x n).
+     * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
+     * @param n  Dimension of the symmetric result C (n x n).
+     * @param k  Contraction length.
+     * @param alpha  Scalar multiplier on the product.
+     * @param A  Input matrix (n x k if TRANSPOSE=false, else k x n).
+     * @param C  Output n x n symmetric result matrix (overwritten, not read).
+     *
+     * NumPy equivalent: TRANSPOSE=false → `alpha * A @ A.T`; TRANSPOSE=true → `alpha * A.T @ A`.
+     */
+    template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void syrk(uint32_t n, uint32_t k, T alpha, const T *A, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        syrk_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── syrk compile-time size variants ─────────────────────────────────────────
+    
+    /**
+     * @brief Compile-time-size SYRK: `C = alpha * op(A) * op(A)^T + beta * C` (SYRK).
+     *
+     * Dimensions are template parameters so the compiler unrolls the inner loop and
+     * replaces the `el % N` / `el / N` index math with magic-number multiplies.
+     * Single-block, flat-element parallelism, symmetry-exploiting (canonical
+     * triangle + mirror write), no interior barrier. C is read; caller must
+     * initialize it.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Compile-time dimension of the symmetric result C (N x N).
+     * @tparam K  Compile-time contraction length.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op(A)=A (A is N x K); if true, op(A)=A^T (A is K x N).
+     * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A  Input matrix (N x K if TRANSPOSE=false, else K x N).
+     * @param beta  Scalar multiplier on the existing C (read only when `beta != 0`).
+     * @param C  In/out N x N symmetric result matrix.
+     *
+     * NumPy equivalent: TRANSPOSE=false → `alpha * A @ A.T + beta * C`;
+     * TRANSPOSE=true → `alpha * A.T @ A + beta * C`.
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void syrk(T alpha, const T *A, T beta, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, beta, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Compile-time-size SYRK with implicit `beta = 0`: `C = alpha * op(A) * op(A)^T`.
+     *
+     * Compile-time-size overload that overwrites C (C is overwritten, not read).
+     * Single-block, flat-element parallelism, symmetry-exploiting; no interior
+     * barrier. Safe to write into uninitialized scratch.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Compile-time dimension of the symmetric result C (N x N).
+     * @tparam K  Compile-time contraction length.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op(A)=A (A is N x K); if true, op(A)=A^T (A is K x N).
+     * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A  Input matrix (N x K if TRANSPOSE=false, else K x N).
+     * @param C  Output N x N symmetric result matrix (overwritten, not read).
+     *
+     * NumPy equivalent: TRANSPOSE=false → `alpha * A @ A.T`; TRANSPOSE=true → `alpha * A.T @ A`.
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void syrk(T alpha, const T *A, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── syr2k runtime variants ──────────────────────────────────────────────────
+    
+    /**
+     * @brief Symmetric rank-2k update: `C = alpha*(op(A)*op(B)^T + op(B)*op(A)^T) + beta*C` (SYR2K).
+     *
+     * Runtime-size, single-block, flat-element parallelism. The result is symmetric
+     * by construction; the length-k dot is computed only in the canonical triangle
+     * and (for `Full`) mirrored, so each cell is written once and NO interior
+     * barrier is needed. `Lower`/`Upper` write only the named triangle.
+     *
+     * @tparam T  Scalar type.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op = identity (A,B are n x k); if true, op = transpose (A,B are k x n).
+     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @param n  Dimension of the symmetric result C (n x n).
+     * @param k  Contraction length.
+     * @param alpha  Scalar multiplier on the symmetrized product.
+     * @param A,B  Input matrices (n x k if TRANSPOSE=false, else k x n).
+     * @param beta  Scalar multiplier on the existing C (read only when `beta != 0`).
+     * @param C  In/out n x n symmetric result matrix.
+     *
+     * NumPy equivalent: TRANSPOSE=false → `alpha*(A@B.T + B@A.T) + beta*C`;
+     * TRANSPOSE=true → `alpha*(A.T@B + B.T@A) + beta*C`.
+     */
+    template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void syr2k(uint32_t n, uint32_t k, T alpha, const T *A, const T *B, T beta, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        syr2k_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, B, beta, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief SYR2K with implicit `beta = 0`: `C = alpha*(op(A)*op(B)^T + op(B)*op(A)^T)`.
+     *
+     * Runtime-size overload that overwrites C (C is overwritten, not read). Safe to
+     * write into uninitialized scratch. Single-block, flat-element parallelism,
+     * symmetry-exploiting; no interior barrier.
+     *
+     * @tparam T  Scalar type.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op = identity (A,B are n x k); if true, op = transpose (A,B are k x n).
+     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @param n  Dimension of the symmetric result C (n x n).
+     * @param k  Contraction length.
+     * @param alpha  Scalar multiplier on the symmetrized product.
+     * @param A,B  Input matrices (n x k if TRANSPOSE=false, else k x n).
+     * @param C  Output n x n symmetric result matrix (overwritten, not read).
+     *
+     * NumPy equivalent: TRANSPOSE=false → `alpha*(A@B.T + B@A.T)`;
+     * TRANSPOSE=true → `alpha*(A.T@B + B.T@A)`.
+     */
+    template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void syr2k(uint32_t n, uint32_t k, T alpha, const T *A, const T *B, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        syr2k_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, B, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── syr2k compile-time size variants ────────────────────────────────────────
+    
+    /**
+     * @brief Compile-time-size SYR2K: `C = alpha*(op(A)*op(B)^T + op(B)*op(A)^T) + beta*C`.
+     *
+     * Dimensions are template parameters so the inner loop unrolls and `el % N` /
+     * `el / N` become magic-number multiplies. Single-block, flat-element
+     * parallelism, symmetry-exploiting; no interior barrier. C is read; caller must
+     * initialize it.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Compile-time dimension of the symmetric result C (N x N).
+     * @tparam K  Compile-time contraction length.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op = identity (A,B are N x K); if true, op = transpose (A,B are K x N).
+     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @param alpha  Scalar multiplier on the symmetrized product.
+     * @param A,B  Input matrices (N x K if TRANSPOSE=false, else K x N).
+     * @param beta  Scalar multiplier on the existing C (read only when `beta != 0`).
+     * @param C  In/out N x N symmetric result matrix.
+     *
+     * NumPy equivalent: TRANSPOSE=false → `alpha*(A@B.T + B@A.T) + beta*C`;
+     * TRANSPOSE=true → `alpha*(A.T@B + B.T@A) + beta*C`.
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, B, beta, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Compile-time-size SYR2K with implicit `beta = 0`: `C = alpha*(op(A)*op(B)^T + op(B)*op(A)^T)`.
+     *
+     * Compile-time-size overload that overwrites C (C is overwritten, not read).
+     * Safe to write into uninitialized scratch. Single-block, flat-element
+     * parallelism, symmetry-exploiting; no interior barrier.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Compile-time dimension of the symmetric result C (N x N).
+     * @tparam K  Compile-time contraction length.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op = identity (A,B are N x K); if true, op = transpose (A,B are K x N).
+     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @param alpha  Scalar multiplier on the symmetrized product.
+     * @param A,B  Input matrices (N x K if TRANSPOSE=false, else K x N).
+     * @param C  Output N x N symmetric result matrix (overwritten, not read).
+     *
+     * NumPy equivalent: TRANSPOSE=false → `alpha*(A@B.T + B@A.T)`;
+     * TRANSPOSE=true → `alpha*(A.T@B + B.T@A)`.
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, B, C);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── single-thread SYRK / SYR2K ──────────────────────────────────────────────
+    namespace thread {
+        // Single-thread SYRK / SYR2K: ONE thread owns the whole symmetric update via
+        // the SAME validated `syrk_impl_ct` / `syr2k_impl_ct` flat-element bodies,
+        // dispatched with (rank=0, size=1) — those bodies contain no barrier, no
+        // shuffle, and no `threadIdx` read, so the ops are safe in ragged-tail
+        // thread-per-problem launches. Compile-time size only, mirroring
+        // `warp::syrk`/`warp::syr2k` (beta and implicit-beta=0 overloads).
+    
+        /**
+         * @brief Single-thread compile-time-size SYRK: `C = alpha * op(A) * op(A)^T + beta * C`.
+         *
+         * ONE thread computes the symmetric rank-k update serially (canonical
+         * triangle + mirror write for `Full`) — for thread-per-problem packing of
+         * low-DOF normal-equation builds (32 problems per warp). Reuses the same
+         * `syrk_impl_ct` body as the block/warp surfaces with `(rank=0, size=1)`;
+         * no barriers, no shuffles, no `threadIdx` read, so operands may be
+         * thread-local register arrays (a `T[N*N]` C stays register-resident up to
+         * the tier's measured N<=7 ceiling — see the thread-tier constraints in
+         * CLAUDE.md; larger N still computes correctly but spills to local memory).
+         * Same algorithm and operand order as the `glass::` twin, agreeing to a few
+         * ULP (bit-identity across the two instantiations is NOT guaranteed).
+         *
+         * @tparam T  Scalar type.
+         * @tparam N  Compile-time dimension of the symmetric result C (N x N).
+         * @tparam K  Compile-time contraction length.
+         * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+         * @tparam TRANSPOSE  If false, op(A)=A (A is N x K); if true, op(A)=A^T (A is K x N).
+         * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
+         * @param alpha  Scalar multiplier on the product.
+         * @param A  Input matrix (N x K if TRANSPOSE=false, else K x N).
+         * @param beta  Scalar multiplier on the existing C (read only when `beta != 0`).
+         * @param C  In/out N x N symmetric result matrix.
+         */
+        template <typename T, uint32_t N, uint32_t K,
+                  FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void syrk(T alpha, const T *A, T beta, T *C)
+        {
+            syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, beta, C);
+        }
+    
+        /**
+         * @brief Single-thread SYRK with implicit `beta = 0`: `C = alpha * op(A) * op(A)^T` (overwrite).
+         *
+         * Overwrites C (the existing C is not read — safe on uninitialized
+         * scratch). Otherwise identical to the beta overload above.
+         *
+         * @tparam T,N,K,FILL,TRANSPOSE,ROW_MAJOR  See the beta overload.
+         * @param alpha  Scalar multiplier on the product.
+         * @param A  Input matrix (N x K if TRANSPOSE=false, else K x N).
+         * @param C  Output N x N symmetric result matrix (overwritten, not read).
+         */
+        template <typename T, uint32_t N, uint32_t K,
+                  FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void syrk(T alpha, const T *A, T *C)
+        {
+            syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, C);
+        }
+    
+        /**
+         * @brief Single-thread compile-time-size SYR2K: `C = alpha*(op(A)*op(B)^T + op(B)*op(A)^T) + beta*C`.
+         *
+         * ONE thread computes the symmetric rank-2k update serially, reusing the
+         * shared `syr2k_impl_ct` body with `(rank=0, size=1)` — no barriers, no
+         * shuffles, no `threadIdx` read; operands may be thread-local register
+         * arrays (register-resident up to the tier's N<=7 ceiling, CLAUDE.md).
+         * Same algorithm and operand order as the `glass::` twin, agreeing to a
+         * few ULP (cross-tier bit-identity is NOT guaranteed).
+         *
+         * @tparam T  Scalar type.
+         * @tparam N  Compile-time dimension of the symmetric result C (N x N).
+         * @tparam K  Compile-time contraction length.
+         * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+         * @tparam TRANSPOSE  If false, op = identity (A,B are N x K); if true, op = transpose (A,B are K x N).
+         * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+         * @param alpha  Scalar multiplier on the symmetrized product.
+         * @param A,B  Input matrices (N x K if TRANSPOSE=false, else K x N).
+         * @param beta  Scalar multiplier on the existing C (read only when `beta != 0`).
+         * @param C  In/out N x N symmetric result matrix.
+         */
+        template <typename T, uint32_t N, uint32_t K,
+                  FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
+        {
+            syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, B, beta, C);
+        }
+    
+        /**
+         * @brief Single-thread SYR2K with implicit `beta = 0` (overwrite).
+         *
+         * Overwrites C (the existing C is not read — safe on uninitialized
+         * scratch). Otherwise identical to the beta overload above.
+         *
+         * @tparam T,N,K,FILL,TRANSPOSE,ROW_MAJOR  See the beta overload.
+         * @param alpha  Scalar multiplier on the symmetrized product.
+         * @param A,B  Input matrices (N x K if TRANSPOSE=false, else K x N).
+         * @param C  Output N x N symmetric result matrix (overwritten, not read).
+         */
+        template <typename T, uint32_t N, uint32_t K,
+                  FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
+        {
+            syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, B, C);
+        }
+    }
+    
+    namespace warp {
+        // Single-warp SYRK / SYR2K: one 32-lane warp owns the symmetric output via the
+        // SAME validated `syrk_impl_ct` / `syr2k_impl_ct` flat-element kernels, just
+        // dispatched with (lane, 32) instead of (rank, blockDim). Each output element is
+        // written once (no cross-lane reduction — the K contraction is a per-lane serial
+        // loop), so this is bit-identical to the block form restricted to one warp. For
+        // warp-per-problem normal-equation builds (e.g. HJCD's JᵀJ). Full 32 lanes
+        // required; independent warps may run distinct problems. No `__syncwarp` needed
+        // (no inter-lane dependency); compile-time size only, mirroring `warp::gemm`.
+    
+        /**
+         * @brief Single-warp SYRK `C = alpha*op(A)*op(A)ᵀ + beta*C` (compile-time size).
+         * @see ::syrk  (block form; identical math, `(lane,32)` element striping)
+         */
+        template <typename T, uint32_t N, uint32_t K,
+                  FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void syrk(T alpha, const T *A, T beta, T *C)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, beta, C);
+        }
+    
+        /**
+         * @brief Single-warp SYRK with implicit `beta = 0`: `C = alpha*op(A)*op(A)ᵀ` (overwrite).
+         * @see ::syrk
+         */
+        template <typename T, uint32_t N, uint32_t K,
+                  FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void syrk(T alpha, const T *A, T *C)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, C);
+        }
+    
+        /**
+         * @brief Single-warp SYR2K `C = alpha*(op(A)op(B)ᵀ + op(B)op(A)ᵀ) + beta*C` (compile-time size).
+         * @see ::syr2k
+         */
+        template <typename T, uint32_t N, uint32_t K,
+                  FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, B, beta, C);
+        }
+    
+        /**
+         * @brief Single-warp SYR2K with implicit `beta = 0` (overwrite).
+         * @see ::syr2k
+         */
+        template <typename T, uint32_t N, uint32_t K,
+                  FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+        __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, B, C);
+        }
+    }
+    // END GLASS src/base/L3/syrk.cuh
+    
+    // BEGIN GLASS src/base/L3/syev.cuh
+    
+    /**
+     * @file syev.cuh
+     * @brief Symmetric eigendecomposition via cyclic Jacobi (`syev`) and the
+     *        eigenvalue-clamping consumer op (`eig_clamp`).
+     *
+     * Device-side small symmetric eigensolver (target sizes n ≤ 32 — robot
+     * state/control dimensions). Kills the host round-trip solvers like PDDP
+     * currently make to `Eigen::SelfAdjointEigenSolver` mid-solve just to clamp
+     * Hessian eigenvalues: `eig_clamp` does decompose → clamp → reconstruct
+     * entirely inside the block.
+     *
+     * Algorithm (classical cyclic Jacobi): work on a copy `B = A` in scratch and
+     * accumulate `V = I`. For each pair `(p, q)`, `p < q`, in a FIXED cyclic order,
+     * compute the Jacobi rotation `(c, s)` annihilating `B[p,q]` (standard stable
+     * formulas: `theta = (B_qq - B_pp)/(2 B_pq)`,
+     * `t = sign(theta)/(|theta| + sqrt(1 + theta^2))`, `c = 1/sqrt(1 + t^2)`,
+     * `s = t*c`) and apply it to rows/cols `p, q` of `B` and columns `p, q` of `V`.
+     * Sweeps repeat until `off(B)_F <= eps_T * ||A||_F` (checked once per sweep) or
+     * a fixed cap of 15 sweeps; typical convergence is 5–8 sweeps for n ≤ 32.
+     * Jacobi always converges for (finite) symmetric input, so there is no
+     * CHECK-style failure flag; **NaN/Inf input propagates** into `W`/`V`
+     * (garbage-in, NaN-out — the deterministic sort still terminates).
+     *
+     * Thread-count invariance (bit-identical at any block size): the `(p, q)` pair
+     * loop is SERIAL in a fixed order; rank 0 computes `(c, s)` into shared slots
+     * followed by a barrier (one FMA chain, identical for every launch); the
+     * row/col rotation is thread-strided over the n affected indices, where index
+     * `k` owns exactly the entries `{(k,p),(k,q),(p,k),(q,k)}` of `B` (mirror
+     * writes keep `B` exactly symmetric) and row `k` of `V` — its new values read
+     * only slots owned by the same `k` (the pivot 2x2 block is owned by `k == p`),
+     * so the rotation phase has no cross-thread read-after-write hazard and needs
+     * no staging. The sweep-end `off(B)` probe and the final ascending selection
+     * sort run serially on rank 0 (deterministic), each published through a shared
+     * slot + barrier; the sorted copy-out permutes `V`'s columns in parallel
+     * through the no-longer-needed `B` scratch.
+     */
+    
+    /**
+     * @brief Machine epsilon by scalar width (float / double).
+     *
+     * Used to scale `syev`'s deterministic convergence / rotation-skip thresholds.
+     * Spelled locally (sizeof-keyed constants) so no `<limits>` lands inside
+     * `namespace glass` (this header is included inside the namespace).
+     *
+     * @tparam T  Scalar type (4-byte -> FLT_EPSILON, 8-byte -> DBL_EPSILON).
+     * @return Machine epsilon of `T`.
+     */
+    template <typename T>
+    __host__ __device__ constexpr T syev_eps()
+    {
+        return static_cast<T>(sizeof(T) >= 8 ? 2.220446049250313e-16
+                                             : 1.1920928955078125e-7);
+    }
+    
+    /**
+     * @brief Scratch size in bytes for `syev`.
+     *
+     * Exact layout (in `T` elements): `n*n` for the working copy `B` (reused at the
+     * end as the eigenvector permutation staging buffer) + `n` slots holding the
+     * ascending sort permutation (stored as `uint32_t`, one per `T` slot) + 4
+     * control slots (`c`, `s`, the sweep-converged flag, one pad).
+     *
+     * @tparam T  Scalar type.
+     * @param n  Matrix dimension (A is n x n).
+     * @return Bytes to allocate for `syev`'s `s_scratch`.
+     */
+    template <typename T>
+    __host__ __device__ constexpr std::size_t syev_scratch_bytes(uint32_t n)
+    {
+        return static_cast<std::size_t>(n*n + n + 4) * sizeof(T);
+    }
+    
+    /**
+     * @brief Symmetric eigendecomposition `A = V diag(W) Vᵀ` (cyclic Jacobi;
+     *        LAPACK `syev` analogue).
+     *
+     * Computes all eigenvalues and eigenvectors of the symmetric `n x n`
+     * column-major matrix `A`. **`A` is preserved** (read-only — the iteration
+     * works on a copy in `s_scratch`). On return `W[0..n-1]` holds the eigenvalues
+     * in ASCENDING order and column `i` of the column-major `V` holds the unit
+     * eigenvector matching `W[i]` (eigenvector signs are arbitrary, as with any
+     * eigensolver). NumPy equivalent: `W, V = np.linalg.eigh(A)`.
+     *
+     * Single-block, thread-count invariant (bit-identical output at any block
+     * size), deterministic: fixed cyclic pair order, rank-0 rotation coefficients
+     * broadcast via shared memory + barrier, per-sweep `off(B) <= eps*||A||_F`
+     * early exit decided by rank 0 into a shared flag, capped at 15 sweeps
+     * (typical: 5–8 for n ≤ 32). Rotations with `|B[p,q]|` below a deterministic
+     * tiny threshold (`eps*||A||_F / n²`) are skipped. Always converges for finite
+     * symmetric input (no failure flag); NaN/Inf input propagates into the outputs.
+     *
+     * @tparam T  Scalar type (`float` / `double`; use `double` when eigenvalue
+     *            clusters must be resolved tightly).
+     * @param n          Matrix dimension (A is n x n; designed for n <= 32).
+     * @param A          In: n x n symmetric matrix (column-major). NOT modified.
+     * @param W          Out: n eigenvalues, ascending.
+     * @param V          Out: n x n eigenvectors (column-major; column i ↔ W[i]).
+     * @param s_scratch  Shared scratch of `syev_scratch_bytes<T>(n)` bytes.
+     */
+    // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
+    // ct_size<N> (constant-folds the trip counts / indexing).
+    template <typename T, typename SizeT>
+    __device__ void syev_impl(SizeT n, const T *A, T *W, T *V, T *s_scratch)
+    {
+        static_assert(sizeof(uint32_t) <= sizeof(T),
+                      "syev: the permutation slots assume sizeof(T) >= 4");
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        // Scratch layout — see syev_scratch_bytes: [0, n*n) working copy B (reused
+        // as the V-permutation staging buffer at the end); [n*n, n*n + n) the sort
+        // permutation (as uint32_t); then 4 control slots: [0]=c, [1]=s,
+        // [2]=sweep-converged flag, [3]=pad.
+        T *s_B = s_scratch;
+        uint32_t *s_perm = reinterpret_cast<uint32_t *>(s_scratch + n*n);
+        T *s_ctrl = s_scratch + n*n + n;
+    
+        // B := A (A stays read-only), V := I. One barrier before the sweeps.
+        for (uint32_t idx = rank; idx < n*n; idx += size) {
+            s_B[idx] = A[idx];
+            uint32_t r = idx % n, c = idx / n;
+            V[idx] = (r == c) ? static_cast<T>(1) : static_cast<T>(0);
+        }
+        __syncthreads();
+    
+        // Deterministic thresholds, rank-0 registers only (no other thread ever
+        // branches on them): convergence target off(B)_F <= eps*||A||_F, and a
+        // much smaller per-rotation skip cutoff eps*||A||_F/n² (so the sum of all
+        // skipped entries stays far below the convergence target).
+        T tol_off = static_cast<T>(0), tol_skip = static_cast<T>(0);
+        if (rank == 0) {
+            T fro2 = static_cast<T>(0);
+            for (uint32_t i = 0; i < n*n; i++) fro2 += s_B[i]*s_B[i];
+            tol_off  = syev_eps<T>() * sqrt(fro2);   // type-generic sqrt
+            tol_skip = tol_off / static_cast<T>(n*n);
+        }
+    
+        constexpr uint32_t SYEV_MAX_SWEEPS = 15;   // typical convergence: 5-8 sweeps (n <= 32)
+        for (uint32_t sweep = 0; sweep < SYEV_MAX_SWEEPS; sweep++) {
+            // One cyclic sweep: fixed (p, q) order => deterministic.
+            for (uint32_t p = 0; p + 1 < n; p++) {
+                for (uint32_t q = p + 1; q < n; q++) {
+                    // Rank 0 computes the rotation into shared (identical FMA chain
+                    // every launch); a skipped rotation publishes the identity.
+                    if (rank == 0) {
+                        T bpq = s_B[p + q*n];
+                        T abpq = (bpq < static_cast<T>(0)) ? -bpq : bpq;
+                        T c = static_cast<T>(1), s = static_cast<T>(0);
+                        if (abpq > tol_skip) {
+                            T theta = (s_B[q + q*n] - s_B[p + p*n]) / (static_cast<T>(2)*bpq);
+                            T atheta = (theta < static_cast<T>(0)) ? -theta : theta;
+                            T t = static_cast<T>(1) / (atheta + sqrt(static_cast<T>(1) + theta*theta));
+                            if (theta < static_cast<T>(0)) t = -t;
+                            c = static_cast<T>(1) / sqrt(static_cast<T>(1) + t*t);
+                            s = t*c;
+                        }
+                        s_ctrl[0] = c; s_ctrl[1] = s;
+                    }
+                    __syncthreads();                 // (c, s) visible to the block
+                    T c = s_ctrl[0], s = s_ctrl[1];
+                    if (s != static_cast<T>(0)) {    // uniform branch: same shared values everywhere
+                        // Rotate rows/cols p,q of B. Index k owns entries
+                        // {(k,p),(k,q),(p,k),(q,k)} — mirror writes keep B exactly
+                        // symmetric — and its new values read only k-owned slots
+                        // (B[k+p*n], B[k+q*n]), so there is no cross-thread hazard.
+                        // The 2x2 pivot block is owned by k == p (k == q idles);
+                        // its stable update uses t = s/c: B_pp -= t*B_pq,
+                        // B_qq += t*B_pq, B_pq = 0 exactly (the annihilation).
+                        T t = s / c;
+                        for (uint32_t k = rank; k < n; k += size) {
+                            if (k == q) continue;
+                            if (k == p) {
+                                T bpq = s_B[p + q*n];
+                                s_B[p + p*n] -= t*bpq;
+                                s_B[q + q*n] += t*bpq;
+                                s_B[p + q*n] = static_cast<T>(0);
+                                s_B[q + p*n] = static_cast<T>(0);
+                            } else {
+                                T bkp = s_B[k + p*n], bkq = s_B[k + q*n];
+                                T nkp = c*bkp - s*bkq;
+                                T nkq = s*bkp + c*bkq;
+                                s_B[k + p*n] = nkp; s_B[p + k*n] = nkp;
+                                s_B[k + q*n] = nkq; s_B[q + k*n] = nkq;
+                            }
+                        }
+                        // Accumulate the rotation into V's columns p,q (row k is
+                        // k-owned; disjoint from the B loop's data, no barrier
+                        // needed between the two loops).
+                        for (uint32_t k = rank; k < n; k += size) {
+                            T vkp = V[k + p*n], vkq = V[k + q*n];
+                            V[k + p*n] = c*vkp - s*vkq;
+                            V[k + q*n] = s*vkp + c*vkq;
+                        }
+                    }
+                    // UNCONDITIONAL trailing barrier: rotated B/V visible before the
+                    // next (c, s) — and, on a skipped rotation, it keeps rank 0 from
+                    // overwriting s_ctrl[0..1] while another thread is still reading
+                    // the previous pair's values (which could diverge the skip branch).
+                    __syncthreads();
+                }
+            }
+            // Sweep-end early exit: rank 0 serially sums the squared off-diagonals
+            // (deterministic for any block size) and publishes the verdict.
+            if (rank == 0) {
+                T off2 = static_cast<T>(0);
+                for (uint32_t c = 0; c < n; c++)
+                    for (uint32_t r = 0; r < n; r++)
+                        if (r != c) off2 += s_B[r + c*n]*s_B[r + c*n];
+                s_ctrl[2] = (off2 <= tol_off*tol_off) ? static_cast<T>(1) : static_cast<T>(0);
+            }
+            __syncthreads();                         // flag visible to the block
+            bool done = (s_ctrl[2] != static_cast<T>(0));
+            __syncthreads();                         // all reads done before rank 0 rewrites s_ctrl
+            if (done) break;                         // uniform: same shared value everywhere
+        }
+    
+        // Ascending sort: rank 0 selection-sorts the diagonal into a permutation
+        // (strict '<' => ties keep the lower original index — deterministic).
+        if (rank == 0) {
+            for (uint32_t i = 0; i < n; i++) s_perm[i] = i;
+            for (uint32_t i = 0; i + 1 < n; i++) {
+                uint32_t best = i;
+                for (uint32_t j = i + 1; j < n; j++)
+                    if (s_B[s_perm[j]*n + s_perm[j]] < s_B[s_perm[best]*n + s_perm[best]]) best = j;
+                uint32_t tmp = s_perm[i]; s_perm[i] = s_perm[best]; s_perm[best] = tmp;
+            }
+        }
+        __syncthreads();                             // permutation visible to the block
+        // Permuted copy-out. Eigenvalues first (they read diag(B))...
+        for (uint32_t i = rank; i < n; i += size) {
+            uint32_t pi = s_perm[i];
+            W[i] = s_B[pi*n + pi];
+        }
+        __syncthreads();                             // W extracted before B is overwritten
+        // ...then permute V's columns through the B scratch (B is dead now).
+        for (uint32_t idx = rank; idx < n*n; idx += size) s_B[idx] = V[idx];
+        __syncthreads();                             // staging complete before the permuted write
+        for (uint32_t idx = rank; idx < n*n; idx += size) {
+            uint32_t r = idx % n, c = idx / n;
+            V[idx] = s_B[r + s_perm[c]*n];
+        }
+        __syncthreads();                             // outputs valid for every thread on return
+    }
+    
+    template <typename T>
+    __device__ void syev(uint32_t n, const T *A, T *W, T *V, T *s_scratch)
+    {
+        syev_impl<T>(n, A, W, V, s_scratch);
+    }
+    
+    /**
+     * @brief Compile-time-size symmetric eigendecomposition (cyclic Jacobi).
+     *
+     * Same as the runtime `syev` but with the dimension as a template parameter,
+     * letting the compiler bake `N` in (constant-folded trip counts / indexing).
+     * `A` is preserved; `W` ascending; `V` column i ↔ `W[i]`. NumPy equivalent:
+     * `W, V = np.linalg.eigh(A)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Matrix dimension (A is N x N; designed for N <= 32).
+     * @param A          In: N x N symmetric matrix (column-major). NOT modified.
+     * @param W          Out: N eigenvalues, ascending.
+     * @param V          Out: N x N eigenvectors (column-major; column i ↔ W[i]).
+     * @param s_scratch  Shared scratch of `syev_scratch_bytes<T>(N)` bytes.
+     */
+    template <typename T, uint32_t N>
+    __device__ void syev(const T *A, T *W, T *V, T *s_scratch)
+    {
+        syev_impl<T>(ct_size<N>{}, A, W, V, s_scratch);
+    }
+    
+    /**
+     * @brief Scratch size in bytes for `eig_clamp`.
+     *
+     * Exact layout (in `T` elements): `n` eigenvalues + `n*n` eigenvectors +
+     * `syev`'s own scratch (`n*n + n + 4` — see `syev_scratch_bytes`), i.e.
+     * `2*n*n + 2*n + 4` elements total.
+     *
+     * @tparam T  Scalar type.
+     * @param n  Matrix dimension (A is n x n).
+     * @return Bytes to allocate for `eig_clamp`'s `s_scratch`.
+     */
+    template <typename T>
+    __host__ __device__ constexpr std::size_t eig_clamp_scratch_bytes(uint32_t n)
+    {
+        return static_cast<std::size_t>(2*n*n + 2*n + 4) * sizeof(T);
+    }
+    
+    /**
+     * @brief Clamp the eigenvalues of a symmetric matrix in place:
+     *        `A := V diag(max(W, eps)) Vᵀ` where `W, V = eigh(A)`.
+     *
+     * The Hessian-regularization op solvers host-round-trip for: eigendecompose the
+     * symmetric `n x n` column-major `A` (device-side `syev`), floor every
+     * eigenvalue at `eps`, and reconstruct in place — the result is symmetric
+     * positive-definite for any symmetric input when `eps > 0` (indefinite and
+     * negative-definite inputs included). If `A`'s eigenvalues already all exceed
+     * `eps`, the result is `A` up to the eigensolver's round-off. NumPy equivalent:
+     * `W, V = np.linalg.eigh(A); A = (V * np.maximum(W, eps)) @ V.T`.
+     *
+     * The reconstruction is a hand-rolled thread-strided loop (each thread owns
+     * disjoint output entries of `A`; it reads only the shared `W`/`V`, so no
+     * barrier is needed inside the pass): entry `(r, c)` accumulates
+     * `sum_k max(W[k], eps) * V[lo,k] * V[hi,k]` with `lo = min(r,c)`,
+     * `hi = max(r,c)` — the canonical operand order makes the mirror entries'
+     * FMA chains identical, so the output is exactly symmetric bit-for-bit.
+     * Thread-count invariant end to end (inherits `syev`'s determinism).
+     *
+     * @tparam T  Scalar type.
+     * @param n          Matrix dimension (A is n x n; designed for n <= 32).
+     * @param A          In/out: n x n symmetric matrix (column-major); on return
+     *                   holds the eigenvalue-clamped reconstruction (SPD).
+     * @param eps        Eigenvalue floor (e.g. a small positive regularizer).
+     * @param s_scratch  Shared scratch of `eig_clamp_scratch_bytes<T>(n)` bytes.
+     */
+    // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
+    // ct_size<N> (constant-folds the trip counts / indexing).
+    template <typename T, typename SizeT>
+    __device__ void eig_clamp_impl(SizeT n, T *A, T eps, T *s_scratch)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        // Scratch layout — see eig_clamp_scratch_bytes: W (n) | V (n*n) | syev scratch.
+        T *s_W = s_scratch;
+        T *s_V = s_scratch + n;
+        T *s_sy = s_scratch + n + n*n;
+        // syev reads A only in its initial copy phase and ends on a barrier, so A
+        // is safely overwritten by the reconstruction below.
+        syev_impl<T>(n, A, s_W, s_V, s_sy);
+        for (uint32_t idx = rank; idx < n*n; idx += size) {
+            uint32_t r = idx % n, c = idx / n;
+            uint32_t lo = (r < c) ? r : c, hi = (r < c) ? c : r;
+            T sum = static_cast<T>(0);
+            for (uint32_t k = 0; k < n; k++) {
+                T w = s_W[k];
+                if (w < eps) w = eps;
+                T t = w * s_V[lo + k*n];       // canonical (lo, hi) order => the
+                sum += t * s_V[hi + k*n];      // mirror entry is bit-identical
+            }
+            A[idx] = sum;
+        }
+        __syncthreads();                       // clamped A valid for every thread on return
+    }
+    
+    template <typename T>
+    __device__ void eig_clamp(uint32_t n, T *A, T eps, T *s_scratch)
+    {
+        eig_clamp_impl<T>(n, A, eps, s_scratch);
+    }
+    
+    /**
+     * @brief Compile-time-size eigenvalue clamp `A := V diag(max(W, eps)) Vᵀ`.
+     *
+     * Same as the runtime `eig_clamp` but with the dimension as a template
+     * parameter. NumPy equivalent:
+     * `W, V = np.linalg.eigh(A); A = (V * np.maximum(W, eps)) @ V.T`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Matrix dimension (A is N x N; designed for N <= 32).
+     * @param A          In/out: N x N symmetric matrix (column-major); on return
+     *                   holds the eigenvalue-clamped reconstruction (SPD).
+     * @param eps        Eigenvalue floor.
+     * @param s_scratch  Shared scratch of `eig_clamp_scratch_bytes<T>(N)` bytes.
+     */
+    template <typename T, uint32_t N>
+    __device__ void eig_clamp(T *A, T eps, T *s_scratch)
+    {
+        eig_clamp_impl<T>(ct_size<N>{}, A, eps, s_scratch);
+    }
+    // END GLASS src/base/L3/syev.cuh
+    
+    // BEGIN GLASS src/base/L3/eigh.cuh
+    
+    /**
+     * @file eigh.cuh
+     * @brief Fixed-sweep cyclic Jacobi eigendecomposition (`eigh`) and the PSD
+     *        projection built on it (`psd_project`).
+     *
+     * The DETERMINISTIC sibling of `glass::syev` (syev.cuh). `syev` is also cyclic
+     * Jacobi, but adaptive: convergence-checked with early exit, rotation-skip
+     * thresholds, and an ascending sort of the spectrum. `eigh` strips all of that
+     * for the batched-solver hot path (GATO's stage-local PSD projection): a FIXED
+     * sweep count (no data-dependent loop, no convergence check), a round-robin
+     * (circle-method) pair schedule whose per-round pairs are DISJOINT — so every
+     * rotation in a round applies concurrently with one barrier per phase — and an
+     * UNSORTED spectrum (`W[i]` pairs with `V(:,i)`; the consumer clips, never
+     * ranks). Fixed schedule + fixed sweeps + no reductions ⇒ output is
+     * bit-identical across thread counts and across runs.
+     *
+     * Reference/parity oracle: `jacobi_study.py` (GATO so_sqp_prototype) —
+     * `round_robin_rounds()` + `jacobi_eigh()`. The rotation formulas here mirror
+     * it exactly (theta/t/c/s including the theta==0 → t=1 branch and the
+     * `apq == 0` skip). One deliberate divergence: the oracle applies a round's
+     * pairs serially, this kernel applies them phased (all row updates, barrier,
+     * all col+V updates) — disjoint-pair rotations commute exactly in real
+     * arithmetic, so the two agree to rounding (near-bitwise in f64, ~1e-7 rel in
+     * f32), not bit-for-bit.
+     *
+     * Compile-time `N` only: the schedule is a compile-time constant (`N <= 64`;
+     * sized by the consumer's stage blocks, n = 12..21 today).
+     */
+    
+    namespace detail {
+    
+    /// Circle-method round-robin schedule for N indices: M-1 rounds (M = N padded
+    /// even) of M/2 disjoint (p<q) pairs; slots touching the pad index hold the
+    /// 0xFF sentinel. Mirrors jacobi_study.py's round_robin_rounds() exactly
+    /// (same rotation rule `idx = [idx[0], idx[-1], idx[1:-1]]`, same pair sets).
+    template <uint32_t N>
+    struct EighSchedule {
+        static_assert(N >= 2 && N <= 64, "eigh: schedule is uint8-indexed, N in [2, 64]");
+        static constexpr uint32_t M = N + (N & 1u);
+        uint8_t p[M - 1][M / 2];
+        uint8_t q[M - 1][M / 2];
+    };
+    
+    // __host__ __device__: the call sits in a device function's static constexpr
+    // initializer — compile-time evaluated, but nvcc (no --expt-relaxed-constexpr)
+    // still requires the device annotation.
+    template <uint32_t N>
+    __host__ __device__ constexpr EighSchedule<N> eigh_schedule()
+    {
+        constexpr uint32_t M = EighSchedule<N>::M;
+        EighSchedule<N> S{};
+        uint8_t idx[M] = {};
+        for (uint32_t i = 0; i < M; i++) idx[i] = static_cast<uint8_t>(i);
+        for (uint32_t r = 0; r < M - 1; r++) {
+            for (uint32_t k = 0; k < M / 2; k++) {
+                uint8_t a = idx[k], b = idx[M - 1 - k];
+                if (a < N && b < N) {
+                    S.p[r][k] = (a < b) ? a : b;
+                    S.q[r][k] = (a < b) ? b : a;
+                } else {
+                    S.p[r][k] = 0xFF; S.q[r][k] = 0xFF;   // pad-index slot: no rotation
+                }
+            }
+            uint8_t last = idx[M - 1];                    // rotate all but idx[0]
+            for (uint32_t i = M - 1; i >= 2; i--) idx[i] = idx[i - 1];
+            idx[1] = last;
+        }
+        return S;
+    }
+    
+    }  // namespace detail
+    
+    /**
+     * @brief Default sweep count for `eigh` by scalar width.
+     *
+     * From the de-risk study on real GATO stage Hessians (n = 12..21): p95
+     * convergence is 5 sweeps, so f32 ships 6; f64 (tests/debug) ships 12. A
+     * caller with harder spectra can override the SWEEPS template parameter.
+     */
+    template <typename T>
+    __host__ __device__ constexpr uint32_t eigh_sweeps() { return sizeof(T) == 8 ? 12u : 6u; }
+    
+    /**
+     * @brief Scratch size in bytes for `eigh`.
+     *
+     * Exact layout (in `T` elements): `N*N` working copy of `A` + `2*ceil(N/2)`
+     * per-pair rotation coefficients (c then s).
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Matrix dimension.
+     * @return Bytes to allocate for `eigh`'s `s_scratch`.
+     */
+    template <typename T, uint32_t N>
+    __host__ __device__ constexpr std::size_t eigh_scratch_bytes()
+    {
+        return static_cast<std::size_t>(N*N + 2*((N + 1) / 2)) * sizeof(T);
+    }
+    
+    /**
+     * @brief Fixed-sweep cyclic Jacobi eigendecomposition `A = V diag(W) Vᵀ`.
+     *
+     * SWEEPS full round-robin sweeps (no convergence check — see the file header
+     * for the design and the `glass::syev` cross-reference), each sweep M-1 rounds
+     * of disjoint pairs applied phased: per round, one worker per pair computes
+     * (c, s) from the current 2×2 block (`apq == 0` skips, publishing the
+     * identity), barrier; all pairs' ROW rotations apply concurrently (pairs own
+     * disjoint rows), barrier; all pairs' COLUMN rotations plus the V-column
+     * accumulation apply concurrently (disjoint columns), barrier. The row/col
+     * split is mandatory: rows p,q and cols p,q overlap at the four pivot entries
+     * `(p,p),(p,q),(q,p),(q,q)`, so an unfenced one-pass update would read
+     * half-updated values.
+     *
+     * `W` is UNSORTED (`W[i]` ↔ `V(:,i)`, the natural Jacobi order) — the PSD
+     * projection consumer clips eigenvalues and never ranks them; callers needing
+     * an ascending spectrum want `glass::syev`. Output is bit-identical across
+     * thread counts and across runs (fixed schedule, fixed sweeps, no reductions,
+     * no atomics). NumPy equivalent (up to eigenvalue order):
+     * `W, V = np.linalg.eigh(A)`.
+     *
+     * @tparam T       Scalar type (`float` ships 6 sweeps, `double` 12 — see
+     *                 `eigh_sweeps`).
+     * @tparam N       Matrix dimension (compile-time; 2..64).
+     * @tparam SWEEPS  Full Jacobi sweeps to run (fixed; no early exit).
+     * @param A          In: `N x N` symmetric matrix (column-major; read-only).
+     * @param W          Out: `N` eigenvalues, UNSORTED.
+     * @param V          Out: `N x N` eigenvectors (column-major; column i ↔ W[i]).
+     * @param s_scratch  Shared scratch of `eigh_scratch_bytes<T, N>()` bytes.
+     */
+    template <typename T, uint32_t N, uint32_t SWEEPS = eigh_sweeps<T>()>
+    __device__ void eigh(const T *A, T *W, T *V, T *s_scratch)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        constexpr uint32_t M      = N + (N & 1u);
+        constexpr uint32_t ROUNDS = M - 1u;
+        constexpr uint32_t KMAX   = M / 2u;
+        static constexpr detail::EighSchedule<N> sched = detail::eigh_schedule<N>();
+        // Scratch layout — see eigh_scratch_bytes: [0, N*N) working copy B; then
+        // KMAX c's; then KMAX s's.
+        T *s_B = s_scratch;
+        T *s_c = s_scratch + N*N;
+        T *s_s = s_c + KMAX;
+    
+        // B := A (A stays read-only), V := I. One barrier before the sweeps.
+        for (uint32_t idx = rank; idx < N*N; idx += size) {
+            s_B[idx] = A[idx];
+            uint32_t r = idx % N, c = idx / N;
+            V[idx] = (r == c) ? static_cast<T>(1) : static_cast<T>(0);
+        }
+        __syncthreads();
+    
+        for (uint32_t sweep = 0; sweep < SWEEPS; sweep++) {
+            for (uint32_t r = 0; r < ROUNDS; r++) {
+                // Phase 0: one worker per pair computes (c, s) — the oracle's exact
+                // formulas: theta = (B_qq - B_pp) / (2 B_pq); t = sign(theta) /
+                // (|theta| + sqrt(1 + theta²)) with theta == 0 → t = 1;
+                // c = 1/sqrt(1+t²); s = t c. `apq == 0` publishes the identity
+                // (mirrors the oracle's `continue`; the update phases skip s == 0
+                // rather than multiply through, so a -0 row entry can't flip sign).
+                for (uint32_t k = rank; k < KMAX; k += size) {
+                    T c = static_cast<T>(1), s = static_cast<T>(0);
+                    uint32_t p = sched.p[r][k];
+                    if (p != 0xFFu) {
+                        uint32_t q = sched.q[r][k];
+                        T apq = s_B[p + q*N];
+                        if (apq != static_cast<T>(0)) {
+                            T theta = (s_B[q + q*N] - s_B[p + p*N]) / (static_cast<T>(2) * apq);
+                            T at = (theta < static_cast<T>(0)) ? -theta : theta;
+                            T t = static_cast<T>(1) / (at + sqrt(static_cast<T>(1) + theta*theta));
+                            if (theta < static_cast<T>(0)) t = -t;
+                            if (theta == static_cast<T>(0)) t = static_cast<T>(1);
+                            c = static_cast<T>(1) / sqrt(static_cast<T>(1) + t*t);
+                            s = t * c;
+                        }
+                    }
+                    s_c[k] = c; s_s[k] = s;
+                }
+                __syncthreads();                 // (c, s) visible to the block
+    
+                // Phase 1: row rotations, all pairs concurrently — worker (k, j)
+                // rewrites B(p, j) and B(q, j); pairs own DISJOINT row sets, and
+                // each worker reads only the two entries it writes.
+                for (uint32_t idx = rank; idx < KMAX*N; idx += size) {
+                    uint32_t k = idx / N, j = idx % N;
+                    uint32_t p = sched.p[r][k];
+                    T s = s_s[k];
+                    if (p == 0xFFu || s == static_cast<T>(0)) continue;
+                    uint32_t q = sched.q[r][k];
+                    T c = s_c[k];
+                    T bpj = s_B[p + j*N], bqj = s_B[q + j*N];
+                    s_B[p + j*N] = c*bpj - s*bqj;
+                    s_B[q + j*N] = s*bpj + c*bqj;
+                }
+                __syncthreads();                 // rows settled before columns read them
+    
+                // Phase 2: column rotations + V-column accumulation, all pairs
+                // concurrently — worker (k, i) rewrites B(i, p), B(i, q) (which
+                // read the phase-1 output, resolving the pivot-entry overlap) and
+                // V(i, p), V(i, q) (V is untouched by phase 1; same disjointness).
+                for (uint32_t idx = rank; idx < KMAX*N; idx += size) {
+                    uint32_t k = idx / N, i = idx % N;
+                    uint32_t p = sched.p[r][k];
+                    T s = s_s[k];
+                    if (p == 0xFFu || s == static_cast<T>(0)) continue;
+                    uint32_t q = sched.q[r][k];
+                    T c = s_c[k];
+                    T bip = s_B[i + p*N], biq = s_B[i + q*N];
+                    s_B[i + p*N] = c*bip - s*biq;
+                    s_B[i + q*N] = s*bip + c*biq;
+                    T vip = V[i + p*N], viq = V[i + q*N];
+                    V[i + p*N] = c*vip - s*viq;
+                    V[i + q*N] = s*vip + c*viq;
+                }
+                __syncthreads();                 // round complete before the next (c, s)
+            }
+        }
+    
+        // W := diag(B), unsorted.
+        for (uint32_t i = rank; i < N; i += size) W[i] = s_B[i + i*N];
+        __syncthreads();                         // outputs valid for every thread on return
+    }
+    
+    /**
+     * @brief Scratch size in bytes for `psd_project`.
+     *
+     * Exact layout (in `T` elements): `N` eigenvalues + `N*N` eigenvectors +
+     * `eigh`'s own scratch (`N*N + 2*ceil(N/2)` — see `eigh_scratch_bytes`).
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Matrix dimension.
+     * @return Bytes to allocate for `psd_project`'s `s_scratch`.
+     */
+    template <typename T, uint32_t N>
+    __host__ __device__ constexpr std::size_t psd_project_scratch_bytes()
+    {
+        return static_cast<std::size_t>(N + N*N) * sizeof(T) + eigh_scratch_bytes<T, N>();
+    }
+    
+    /**
+     * @brief PSD projection in place: `A := V diag(max(W, eps)) Vᵀ` with
+     *        `W, V = eigh(A)` — the fixed-sweep, deterministic eigenvalue clip.
+     *
+     * The batched-solver counterpart of `glass::eig_clamp` (same math, different
+     * engine): `eig_clamp` runs the adaptive `syev`, this runs the fixed-sweep
+     * `eigh`, so its cost is compile-time constant and its output bit-identical
+     * across thread counts and runs — what a batched SQP stage-Hessian projection
+     * wants (GATO computes `eps = 1e-6 * (1 + max(diag))` per block). The result
+     * is symmetric PSD for any symmetric input when `eps > 0`; the reconstruction
+     * accumulates entry `(r, c)` in canonical `(lo, hi)` operand order, so mirror
+     * entries' FMA chains are identical and the output is symmetric bit-for-bit
+     * (same pattern as `eig_clamp`). NumPy equivalent:
+     * `W, V = np.linalg.eigh(A); A = (V * np.maximum(W, eps)) @ V.T`.
+     *
+     * @tparam T       Scalar type.
+     * @tparam N       Matrix dimension (compile-time; 2..64).
+     * @tparam SWEEPS  Jacobi sweeps for the `eigh` call (fixed; default by dtype).
+     * @param A          In/out: `N x N` symmetric matrix (column-major); on return
+     *                   holds the eigenvalue-clipped reconstruction (PSD).
+     * @param eps        Eigenvalue floor (runtime scalar; >= 0).
+     * @param s_scratch  Shared scratch of `psd_project_scratch_bytes<T, N>()` bytes.
+     */
+    template <typename T, uint32_t N, uint32_t SWEEPS = eigh_sweeps<T>()>
+    __device__ void psd_project(T *A, T eps, T *s_scratch)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        // Scratch layout — see psd_project_scratch_bytes: W (N) | V (N*N) | eigh scratch.
+        T *s_W = s_scratch;
+        T *s_V = s_scratch + N;
+        T *s_e = s_scratch + N + N*N;
+        // eigh reads A only in its initial copy phase and ends on a barrier, so A
+        // is safely overwritten by the reconstruction below.
+        eigh<T, N, SWEEPS>(A, s_W, s_V, s_e);
+        for (uint32_t idx = rank; idx < N*N; idx += size) {
+            uint32_t r = idx % N, c = idx / N;
+            uint32_t lo = (r < c) ? r : c, hi = (r < c) ? c : r;
+            T sum = static_cast<T>(0);
+            for (uint32_t k = 0; k < N; k++) {
+                T w = s_W[k];
+                if (w < eps) w = eps;
+                T t = w * s_V[lo + k*N];       // canonical (lo, hi) order => the
+                sum += t * s_V[hi + k*N];      // mirror entry is bit-identical
+            }
+            A[idx] = sum;
+        }
+        __syncthreads();                       // projected A valid for every thread on return
+    }
+    // END GLASS src/base/L3/eigh.cuh
+    
+    // BEGIN GLASS src/base/spatial/cross.cuh
+    
+    // ─── Featherstone spatial (6-D) cross products (robotics ops) ────────────────
+    //
+    // The rigid-body-dynamics core: motion and force cross-product matrices and
+    // their fused applies, plus the operand-swapped dual. Every RNEA/ABA/CRBA
+    // kernel and every analytic dynamics gradient is built from these; the
+    // formulas are promoted verbatim from GRiD's Pinocchio-validated codegen
+    // emitters (and the same op set was independently reinvented by cuRobo's RNEA
+    // kernels and ships in MuJoCo/mujoco-warp/Warp — this is the field's shared
+    // primitive layer).
+    //
+    // CONVENTION — Featherstone spatial vectors, ANGULAR-FIRST:
+    //   * A spatial MOTION vector is `v = [ω(3); v_lin(3)]`, a spatial FORCE
+    //     vector is `f = [n(3); f_lin(3)]` (moment first). This is the
+    //     Featherstone/GRiD/MuJoCo ordering — note Pinocchio's USER-facing order
+    //     is linear-first, and the SE(3)-tangent blocks in `lie/se3.cuh` are
+    //     linear-first: the two families keep their native literature
+    //     conventions; permute explicitly when crossing between them.
+    //   * 6x6 matrices are column-major (`M[c*6 + r]`), matching the rest of GLASS.
+    //   * `motion_cross(v)` (a.k.a. `v ×`, "crm") = `[[ωₓ, 0], [v_linₓ, ωₓ]]`.
+    //   * `force_cross(v)` (a.k.a. `v ×*`, "crf"/"fx") = `−motion_cross(v)ᵀ`
+    //     = `[[ωₓ, v_linₓ], [0, ωₓ]]`.
+    //   * `force_cross_dual(f)` (a.k.a. "icrf") is DEFINED by the identity
+    //     `force_cross(v)·f == force_cross_dual(f)·v` — it swaps which operand
+    //     becomes the matrix (the object inertia-gradient kernels need).
+    //
+    // The fused `*_mul` applies never materialize the 6x6 (each output row is a
+    // 2-4 term formula) and carry BLAS-style `(alpha, beta)` scaling with
+    // `beta_blend` beta==0 semantics — one signature replaces the historical
+    // `_peq`/`_scaled`/`_peq_scaled` twin explosion. The compile-time `AXIS`
+    // parameter on `motion_cross_mul` specializes the multiply to a cardinal
+    // basis column (`x = e_AXIS`), the motion-subspace fast path of joint sweeps.
+    //
+    // Tiers: block/warp/thread share the row/entry formulas (strided over the 6 or
+    // 36 outputs). Outputs must not alias inputs at block/warp scope.
+    
+    namespace spatial_detail {
+        // Entry (r, c) of motion_cross(v), column-major reading order. The table is
+        // the GRiD `crm` emitter's (already column-major) index table, verbatim.
+        template <typename T>
+        __device__ __forceinline__ T motion_cross_entry(uint32_t r, uint32_t c, const T *v) {
+            const T zero = static_cast<T>(0);
+            switch (c*6 + r) {
+                case  1: return  v[2];  case  2: return -v[1];
+                case  4: return  v[5];  case  5: return -v[4];
+                case  6: return -v[2];  case  8: return  v[0];
+                case  9: return -v[5];  case 11: return  v[3];
+                case 12: return  v[1];  case 13: return -v[0];
+                case 15: return  v[4];  case 16: return -v[3];
+                case 22: return  v[2];  case 23: return -v[1];
+                case 27: return -v[2];  case 29: return  v[0];
+                case 33: return  v[1];  case 34: return -v[0];
+                default: return zero;
+            }
+        }
+    
+        // Row r of motion_cross(v)·x (the fused apply; GRiD `crm_mul` rows, verbatim).
+        template <typename T>
+        __device__ __forceinline__ T motion_cross_mul_row(uint32_t r, const T *v, const T *x) {
+            switch (r) {
+                case 0: return -v[2]*x[1] + v[1]*x[2];
+                case 1: return  v[2]*x[0] - v[0]*x[2];
+                case 2: return -v[1]*x[0] + v[0]*x[1];
+                case 3: return -v[5]*x[1] + v[4]*x[2] - v[2]*x[4] + v[1]*x[5];
+                case 4: return  v[5]*x[0] - v[3]*x[2] + v[2]*x[3] - v[0]*x[5];
+                default: return -v[4]*x[0] + v[3]*x[1] - v[1]*x[3] + v[0]*x[4];
+            }
+        }
+    
+        // Entry (r, c) of force_cross(v) = −motion_cross(v)ᵀ (GRiD `fx` table, verbatim).
+        template <typename T>
+        __device__ __forceinline__ T force_cross_entry(uint32_t r, uint32_t c, const T *v) {
+            return -motion_cross_entry(c, r, v);
+        }
+    
+        // Row r of force_cross(v)·f (GRiD `fx_times_v` rows, verbatim).
+        template <typename T>
+        __device__ __forceinline__ T force_cross_mul_row(uint32_t r, const T *v, const T *f) {
+            switch (r) {
+                case 0: return -v[2]*f[1] + v[1]*f[2] - v[5]*f[4] + v[4]*f[5];
+                case 1: return  v[2]*f[0] - v[0]*f[2] + v[5]*f[3] - v[3]*f[5];
+                case 2: return -v[1]*f[0] + v[0]*f[1] - v[4]*f[3] + v[3]*f[4];
+                case 3: return -v[2]*f[4] + v[1]*f[5];
+                case 4: return  v[2]*f[3] - v[0]*f[5];
+                default: return -v[1]*f[3] + v[0]*f[4];
+            }
+        }
+    
+        // Entry (r, c) of force_cross_dual(f) (GRiD `icrf` table incl. its global
+        // negation, verbatim; column-major).
+        template <typename T>
+        __device__ __forceinline__ T force_cross_dual_entry(uint32_t r, uint32_t c, const T *f) {
+            const T zero = static_cast<T>(0);
+            T result;
+            switch (c*6 + r) {
+                case  1: result =  f[2]; break;  case  2: result = -f[1]; break;
+                case  4: result =  f[5]; break;  case  5: result = -f[4]; break;
+                case  6: result = -f[2]; break;  case  8: result =  f[0]; break;
+                case  9: result = -f[5]; break;  case 11: result =  f[3]; break;
+                case 12: result =  f[1]; break;  case 13: result = -f[0]; break;
+                case 15: result =  f[4]; break;  case 16: result = -f[3]; break;
+                case 19: result =  f[5]; break;  case 20: result = -f[4]; break;
+                case 24: result = -f[5]; break;  case 26: result =  f[3]; break;
+                case 30: result =  f[4]; break;  case 31: result = -f[3]; break;
+                default: result = zero; break;
+            }
+            return -result;
+        }
+    
+        // tier-shared bodies (strided over outputs; rank/size from the tier glue).
+        template <typename T>
+        __device__ __forceinline__ void motion_cross_impl(uint32_t rank, uint32_t size,
+                                                          const T *v, T *M) {
+            for (uint32_t i = rank; i < 36; i += size)
+                M[i] = motion_cross_entry<T>(i % 6, i / 6, v);
+        }
+    
+        template <typename T, int AXIS, bool HAS_BETA, bool FULL_UNROLL = false>
+        __device__ __forceinline__ void motion_cross_mul_impl(uint32_t rank, uint32_t size,
+                                                              T alpha, const T *v, const T *x,
+                                                              T beta, T *y) {
+            static_assert(AXIS >= -1 && AXIS < 6, "AXIS must be -1 (dense x) or 0..5");
+            // unroll 1: differing FMA contraction between unroll copies would break
+            // bit-identity across thread counts (see se3_retract_hessian_impl). The
+            // thread:: tier opts back into full unrolling (FULL_UNROLL) — one thread
+            // owns every row, so there is no cross-thread split to keep bit-stable
+            // (cross-tier agreement stays within the documented ULP policy).
+            if constexpr (FULL_UNROLL) {
+                #pragma unroll
+                for (uint32_t r = rank; r < 6; r += size) {
+                    T res;
+                    if constexpr (AXIS >= 0) res = motion_cross_entry<T>(r, (uint32_t)AXIS, v);
+                    else                     res = motion_cross_mul_row<T>(r, v, x);
+                    y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+                }
+            } else {
+                #pragma unroll 1
+                for (uint32_t r = rank; r < 6; r += size) {
+                    T res;
+                    if constexpr (AXIS >= 0) res = motion_cross_entry<T>(r, (uint32_t)AXIS, v);
+                    else                     res = motion_cross_mul_row<T>(r, v, x);
+                    y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+                }
+            }
+        }
+    
+        template <typename T>
+        __device__ __forceinline__ void force_cross_impl(uint32_t rank, uint32_t size,
+                                                         const T *v, T *M) {
+            for (uint32_t i = rank; i < 36; i += size)
+                M[i] = force_cross_entry<T>(i % 6, i / 6, v);
+        }
+    
+        template <typename T, bool HAS_BETA, bool FULL_UNROLL = false>
+        __device__ __forceinline__ void force_cross_mul_impl(uint32_t rank, uint32_t size,
+                                                             T alpha, const T *v, const T *f,
+                                                             T beta, T *y) {
+            // unroll policy: see motion_cross_mul_impl.
+            if constexpr (FULL_UNROLL) {
+                #pragma unroll
+                for (uint32_t r = rank; r < 6; r += size) {
+                    const T res = force_cross_mul_row<T>(r, v, f);
+                    y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+                }
+            } else {
+                #pragma unroll 1
+                for (uint32_t r = rank; r < 6; r += size) {
+                    const T res = force_cross_mul_row<T>(r, v, f);
+                    y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+                }
+            }
+        }
+    
+        template <typename T>
+        __device__ __forceinline__ void force_cross_dual_impl(uint32_t rank, uint32_t size,
+                                                              const T *f, T *M) {
+            for (uint32_t i = rank; i < 36; i += size)
+                M[i] = force_cross_dual_entry<T>(i % 6, i / 6, f);
+        }
+    } // namespace spatial_detail
+    
+    /**
+     * @brief Spatial motion cross-product matrix: `M = motion_cross(v)` (6x6, "crm").
+     *
+     * `M·x = v ×ₘ x` for spatial motion vectors, `M = [[ωₓ, 0],[v_linₓ, ωₓ]]`
+     * with `v = [ω; v_lin]` (angular-first) and column-major storage. Prefer the
+     * fused `motion_cross_mul` when only the product is needed.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+     * @param v  Spatial motion vector (6 elements, `[ω; v_lin]`).
+     * @param M  Output 6x6 matrix (36 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void motion_cross(const T *v, T *M)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        spatial_detail::motion_cross_impl(rank, size, v, M);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Fused spatial motion cross apply: `y = alpha·(v ×ₘ x) + beta·y`.
+     *
+     * Never materializes the 6x6 — each output row is its 2-4 term formula (the
+     * hot inner op of RNEA/ABA velocity sweeps; ~70 call sites in a typical
+     * generated dynamics suite). With compile-time `AXIS` in 0..5 the multiply
+     * specializes to the cardinal basis column `x = e_AXIS` (the revolute/
+     * prismatic motion-subspace fast path; `x` is ignored and may be nullptr).
+     * `beta` is only read when `HAS_BETA` (BLAS beta==0 semantics via
+     * `beta_blend`); the `(alpha, beta)` pair replaces the `_peq`/`_scaled`
+     * variant explosion. Equivalent to `gemv(motion_cross(v), x)` — tested
+     * against exactly that composition.
+     *
+     * @tparam T  Scalar type.
+     * @tparam AXIS  −1 for a dense `x` (default), or 0..5 for `x = e_AXIS`.
+     * @tparam HAS_BETA  Read/accumulate into `y` (default false = overwrite).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+     * @param alpha  Scalar on the product.
+     * @param v      Spatial motion vector (6 elements, `[ω; v_lin]`).
+     * @param x      Right operand (6 elements; ignored when `AXIS >= 0`).
+     * @param beta   Scalar on the existing `y` (read only when `HAS_BETA`).
+     * @param y      Output spatial vector (6 elements; no aliasing with `v`/`x`).
+     */
+    template <typename T, int AXIS = -1, bool HAS_BETA = false, bool TRAILING_SYNC = true>
+    __device__ void motion_cross_mul(T alpha, const T *v, const T *x, T beta, T *y)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        spatial_detail::motion_cross_mul_impl<T, AXIS, HAS_BETA>(rank, size, alpha, v, x, beta, y);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Spatial force cross-product matrix: `M = force_cross(v)` (6x6, "crf"/"fx").
+     *
+     * The dual cross for spatial FORCE vectors: `force_cross(v) = −motion_cross(v)ᵀ
+     * = [[ωₓ, v_linₓ],[0, ωₓ]]`. Column-major; always writes all 36 entries (no
+     * pre-zeroed-destination variant). Prefer the fused `force_cross_mul`.
+     *
+     * @tparam T,TRAILING_SYNC  See `motion_cross`.
+     * @param v  Spatial motion vector (6 elements, `[ω; v_lin]`).
+     * @param M  Output 6x6 matrix (36 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void force_cross(const T *v, T *M)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        spatial_detail::force_cross_impl(rank, size, v, M);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Fused spatial force cross apply: `y = alpha·(v ×* f) + beta·y`.
+     *
+     * Row formulas of `force_cross(v)·f`, fused (no 6x6 materialized). Same
+     * `(alpha, beta)`/`beta_blend` semantics as `motion_cross_mul`. Tested against
+     * the `gemv(force_cross(v), f)` composition.
+     *
+     * @tparam T,HAS_BETA,TRAILING_SYNC  See `motion_cross_mul`.
+     * @param alpha  Scalar on the product.
+     * @param v      Spatial motion vector (6 elements, `[ω; v_lin]`).
+     * @param f      Spatial force vector (6 elements, `[n; f_lin]`).
+     * @param beta   Scalar on the existing `y` (read only when `HAS_BETA`).
+     * @param y      Output spatial force vector (6 elements; no aliasing).
+     */
+    template <typename T, bool HAS_BETA = false, bool TRAILING_SYNC = true>
+    __device__ void force_cross_mul(T alpha, const T *v, const T *f, T beta, T *y)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        spatial_detail::force_cross_mul_impl<T, HAS_BETA>(rank, size, alpha, v, f, beta, y);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Operand-swapped force cross matrix: `M = force_cross_dual(f)` (6x6, "icrf").
+     *
+     * DEFINED by the identity `force_cross(v)·f == force_cross_dual(f)·v` for all
+     * `v` — it swaps which operand becomes the matrix, the rearrangement
+     * inertia-gradient kernels need (∂/∂q of `v ×* (I·v)` terms). Column-major.
+     *
+     * @tparam T,TRAILING_SYNC  See `motion_cross`.
+     * @param f  Spatial force vector (6 elements, `[n; f_lin]`).
+     * @param M  Output 6x6 matrix (36 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void force_cross_dual(const T *f, T *M)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        spatial_detail::force_cross_dual_impl(rank, size, f, M);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── single-thread spatial cross ops ─────────────────────────────────────────
+    namespace thread {
+        // One thread owns the whole 6-/36-element result: the SAME row/entry
+        // formulas run serially. No barriers, no threadIdx read; register operands
+        // fine (all sizes are under the tier's element-count ceiling).
+    
+        /** @brief Single-thread motion cross matrix. See `glass::motion_cross`. */
+        template <typename T>
+        __device__ void motion_cross(const T *v, T *M)
+        { spatial_detail::motion_cross_impl(0u, 1u, v, M); }
+    
+        /** @brief Single-thread fused motion cross apply (fully unrolled). See `glass::motion_cross_mul`. */
+        template <typename T, int AXIS = -1, bool HAS_BETA = false>
+        __device__ void motion_cross_mul(T alpha, const T *v, const T *x, T beta, T *y)
+        { spatial_detail::motion_cross_mul_impl<T, AXIS, HAS_BETA, true>(0u, 1u, alpha, v, x, beta, y); }
+    
+        /** @brief Single-thread force cross matrix. See `glass::force_cross`. */
+        template <typename T>
+        __device__ void force_cross(const T *v, T *M)
+        { spatial_detail::force_cross_impl(0u, 1u, v, M); }
+    
+        /** @brief Single-thread fused force cross apply (fully unrolled). See `glass::force_cross_mul`. */
+        template <typename T, bool HAS_BETA = false>
+        __device__ void force_cross_mul(T alpha, const T *v, const T *f, T beta, T *y)
+        { spatial_detail::force_cross_mul_impl<T, HAS_BETA, true>(0u, 1u, alpha, v, f, beta, y); }
+    
+        /** @brief Single-thread operand-swapped force cross matrix. See `glass::force_cross_dual`. */
+        template <typename T>
+        __device__ void force_cross_dual(const T *f, T *M)
+        { spatial_detail::force_cross_dual_impl(0u, 1u, f, M); }
+    }
+    
+    // ─── single-warp spatial cross ops ───────────────────────────────────────────
+    namespace warp {
+        // One 32-lane warp owns the result: lane-strided over the outputs,
+        // `__syncwarp()` close. Outputs must not alias inputs.
+    
+        /** @brief Single-warp motion cross matrix. See `glass::motion_cross`. */
+        template <typename T>
+        __device__ void motion_cross(const T *v, T *M)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            spatial_detail::motion_cross_impl(lane, 32u, v, M);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp fused motion cross apply. See `glass::motion_cross_mul`. */
+        template <typename T, int AXIS = -1, bool HAS_BETA = false>
+        __device__ void motion_cross_mul(T alpha, const T *v, const T *x, T beta, T *y)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            spatial_detail::motion_cross_mul_impl<T, AXIS, HAS_BETA>(lane, 32u, alpha, v, x, beta, y);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp force cross matrix. See `glass::force_cross`. */
+        template <typename T>
+        __device__ void force_cross(const T *v, T *M)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            spatial_detail::force_cross_impl(lane, 32u, v, M);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp fused force cross apply. See `glass::force_cross_mul`. */
+        template <typename T, bool HAS_BETA = false>
+        __device__ void force_cross_mul(T alpha, const T *v, const T *f, T beta, T *y)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            spatial_detail::force_cross_mul_impl<T, HAS_BETA>(lane, 32u, alpha, v, f, beta, y);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp operand-swapped force cross matrix. See `glass::force_cross_dual`. */
+        template <typename T>
+        __device__ void force_cross_dual(const T *f, T *M)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            spatial_detail::force_cross_dual_impl(lane, 32u, f, M);
+            __syncwarp();
+        }
+    }
+    // END GLASS src/base/spatial/cross.cuh
+    
+    // BEGIN GLASS src/base/lie/quat.cuh
+    
+    // ─── quaternion primitives (robotics ops, Lie family) ────────────────────────
+    //
+    // Unit-quaternion algebra: Hamilton product, conjugate, normalize, exponential,
+    // vector rotation, quaternion↔rotation-matrix conversion, and the SO(3)
+    // quaternion retract. These recur in every GPU robotics codebase (rigid-body
+    // dynamics integrators, batched IK, sampling-based control, motion generation)
+    // and are classically reimplemented with silently-different conventions — the
+    // point of this header is ONE tested home with the conventions pinned:
+    //
+    //   * ALL quaternions are HAMILTON quaternions (i·j = k). The STORAGE order is
+    //     a compile-time `QuatLayout` tag: `xyzw` (default; Eigen/Warp/cuRobo/GRiD
+    //     storage) or `wxyz` (MuJoCo/Ceres/GTSAM/ROS message order). The math is
+    //     written once against accessor indices, so both layouts share one body.
+    //   * Rotation matrices are 3x3 COLUMN-MAJOR (GLASS-wide convention).
+    //   * `quat_exp` takes the FULL rotation vector φ (axis·angle) and internally
+    //     halves it: `q = [sin(|φ|/2)·φ̂ ; cos(|φ|/2)]`. (Some codebases pass the
+    //     pre-halved vector — check twice when porting call sites.)
+    //   * Rotation action is `R(q)·p = q ⊗ [p;0] ⊗ q⁻¹` (body→world for a body
+    //     orientation quaternion).
+    //
+    // Tiers: every array-shaped op has block (`glass::`), warp (`glass::warp::`),
+    // and thread (`glass::thread::`) forms sharing one serial core: each active
+    // thread computes the (tiny, fixed-size) result redundantly into registers and
+    // the tier strides the copy-out — deterministic and thread-count invariant by
+    // construction (no reductions, no cross-thread data flow). Outputs must NOT
+    // alias inputs at block/warp scope (a strided writer may overwrite an operand
+    // another thread is still reading); the thread:: tier buffers through
+    // registers, so aliasing is safe there.
+    
+    /**
+     * @brief Compile-time quaternion storage layout tag.
+     *
+     * `xyzw` — vector part first, scalar last (Eigen / NVIDIA Warp / cuRobo / GRiD
+     * storage order; the GLASS default). `wxyz` — scalar first (MuJoCo / Ceres /
+     * GTSAM / ROS geometry_msgs order). Both are HAMILTON quaternions; the tag only
+     * moves where each component is stored.
+     */
+    enum class QuatLayout { xyzw, wxyz };
+    
+    namespace quat_detail {
+        // storage indices for a layout — formulas are written once against these.
+        template <QuatLayout L> struct layout;
+        template <> struct layout<QuatLayout::xyzw> {
+            static constexpr uint32_t X = 0, Y = 1, Z = 2, W = 3;
+        };
+        template <> struct layout<QuatLayout::wxyz> {
+            static constexpr uint32_t X = 1, Y = 2, Z = 3, W = 0;
+        };
+    
+        // serial core: Hamilton product out = a ⊗ b (out must not alias a/b).
+        template <typename T, QuatLayout L>
+        __device__ __forceinline__ void quat_mul_core(const T *a, const T *b, T *out) {
+            using QL = layout<L>;
+            const T ax = a[QL::X], ay = a[QL::Y], az = a[QL::Z], aw = a[QL::W];
+            const T bx = b[QL::X], by = b[QL::Y], bz = b[QL::Z], bw = b[QL::W];
+            out[QL::X] = aw*bx + ax*bw + ay*bz - az*by;
+            out[QL::Y] = aw*by - ax*bz + ay*bw + az*bx;
+            out[QL::Z] = aw*bz + ax*by - ay*bx + az*bw;
+            out[QL::W] = aw*bw - ax*bx - ay*by - az*bz;
+        }
+    
+        // serial core: q = exp([φ/2]) — φ is the FULL rotation vector.
+        template <typename T, QuatLayout L>
+        __device__ __forceinline__ void quat_exp_core(const T *phi, T *out) {
+            using QL = layout<L>;
+            const T hx = static_cast<T>(0.5)*phi[0], hy = static_cast<T>(0.5)*phi[1],
+                    hz = static_cast<T>(0.5)*phi[2];
+            const T theta = sqrt(hx*hx + hy*hy + hz*hz);
+            T sinc, cos_t;
+            if (theta < static_cast<T>(1e-12)) {   // sin(θ)/θ and cos(θ) Taylor heads
+                sinc  = static_cast<T>(1) - theta*theta/static_cast<T>(6);
+                cos_t = static_cast<T>(1) - static_cast<T>(0.5)*theta*theta;
+            } else {
+                sinc  = sin(theta)/theta;
+                cos_t = cos(theta);
+            }
+            out[QL::X] = sinc*hx; out[QL::Y] = sinc*hy; out[QL::Z] = sinc*hz;
+            out[QL::W] = cos_t;
+        }
+    
+        // serial core: unit normalize (optionally canonicalize the double cover to w >= 0).
+        template <typename T, QuatLayout L, bool CANONICAL>
+        __device__ __forceinline__ void quat_normalize_core(const T *q, T *out) {
+            using QL = layout<L>;
+            const T n = sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]);
+            T s = static_cast<T>(1) / n;
+            if constexpr (CANONICAL) { if (q[QL::W] < static_cast<T>(0)) s = -s; }
+            out[0] = q[0]*s; out[1] = q[1]*s; out[2] = q[2]*s; out[3] = q[3]*s;
+        }
+    
+        // serial core: p' = R(q)·p via p + 2w(v×p) + 2 v×(v×p), v = vec(q). Unit q assumed.
+        template <typename T, QuatLayout L>
+        __device__ __forceinline__ void quat_rotate_core(const T *q, const T *p, T *out) {
+            using QL = layout<L>;
+            const T x = q[QL::X], y = q[QL::Y], z = q[QL::Z], w = q[QL::W];
+            // c = v × p
+            const T cx = y*p[2] - z*p[1];
+            const T cy = z*p[0] - x*p[2];
+            const T cz = x*p[1] - y*p[0];
+            // p + 2w·c + 2 v×c
+            out[0] = p[0] + static_cast<T>(2)*(w*cx + y*cz - z*cy);
+            out[1] = p[1] + static_cast<T>(2)*(w*cy + z*cx - x*cz);
+            out[2] = p[2] + static_cast<T>(2)*(w*cz + x*cy - y*cx);
+        }
+    
+        // serial core: R (3x3 column-major) from a UNIT quaternion.
+        template <typename T, QuatLayout L>
+        __device__ __forceinline__ void quat_to_rot_core(const T *q, T *R) {
+            using QL = layout<L>;
+            const T x = q[QL::X], y = q[QL::Y], z = q[QL::Z], w = q[QL::W];
+            const T xx = x*x, yy = y*y, zz = z*z;
+            const T xy = x*y, xz = x*z, yz = y*z;
+            const T wx = w*x, wy = w*y, wz = w*z;
+            const T one = static_cast<T>(1), two = static_cast<T>(2);
+            // column-major: R[c*3 + r] = R(r,c)
+            R[0] = one - two*(yy + zz); R[3] = two*(xy - wz);       R[6] = two*(xz + wy);
+            R[1] = two*(xy + wz);       R[4] = one - two*(xx + zz); R[7] = two*(yz - wx);
+            R[2] = two*(xz - wy);       R[5] = two*(yz + wx);       R[8] = one - two*(xx + yy);
+        }
+    
+        // serial core: quaternion from a rotation matrix (Shepperd max-pivot: branch
+        // on the largest of trace/diagonal so the divisor is never small). R is 3x3
+        // column-major; the result is unit up to the orthonormality of R, with the
+        // canonical w >= 0 sign.
+        template <typename T, QuatLayout L>
+        __device__ __forceinline__ void rot_to_quat_core(const T *R, T *q) {
+            using QL = layout<L>;
+            // column-major reads: R(r,c) = R[c*3 + r]
+            const T r00 = R[0], r10 = R[1], r20 = R[2];
+            const T r01 = R[3], r11 = R[4], r21 = R[5];
+            const T r02 = R[6], r12 = R[7], r22 = R[8];
+            const T tr = r00 + r11 + r22;
+            T x, y, z, w;
+            if (tr > static_cast<T>(0)) {
+                T s = sqrt(tr + static_cast<T>(1)) * static_cast<T>(2);   // 4w
+                w = static_cast<T>(0.25)*s;
+                x = (r21 - r12)/s; y = (r02 - r20)/s; z = (r10 - r01)/s;
+            } else if (r00 > r11 && r00 > r22) {
+                T s = sqrt(static_cast<T>(1) + r00 - r11 - r22) * static_cast<T>(2);   // 4x
+                w = (r21 - r12)/s;
+                x = static_cast<T>(0.25)*s;
+                y = (r01 + r10)/s; z = (r02 + r20)/s;
+            } else if (r11 > r22) {
+                T s = sqrt(static_cast<T>(1) + r11 - r00 - r22) * static_cast<T>(2);   // 4y
+                w = (r02 - r20)/s;
+                x = (r01 + r10)/s;
+                y = static_cast<T>(0.25)*s;
+                z = (r12 + r21)/s;
+            } else {
+                T s = sqrt(static_cast<T>(1) + r22 - r00 - r11) * static_cast<T>(2);   // 4z
+                w = (r10 - r01)/s;
+                x = (r02 + r20)/s; y = (r12 + r21)/s;
+                z = static_cast<T>(0.25)*s;
+            }
+            if (w < static_cast<T>(0)) { w = -w; x = -x; y = -y; z = -z; }   // canonical cover
+            q[QL::X] = x; q[QL::Y] = y; q[QL::Z] = z; q[QL::W] = w;
+        }
+    
+        // serial core: SO(3) retract on the quaternion chart —
+        // q_new = normalize(q ⊗ exp([φ/2])). Renormalizing every step keeps the
+        // integrated quaternion on the unit sphere (drift-free).
+        template <typename T, QuatLayout L>
+        __device__ __forceinline__ void quat_retract_core(const T *q, const T *phi, T *q_new) {
+            T dq[4]; quat_exp_core<T, L>(phi, dq);
+            T qm[4]; quat_mul_core<T, L>(q, dq, qm);
+            quat_normalize_core<T, L, false>(qm, q_new);
+        }
+    
+        // serial core: φ = log(q) — the rotation vector of a UNIT quaternion,
+        // canonical branch |φ| ≤ π (the double cover folds via the w-sign flip, so
+        // q and −q give the same shortest-path answer). `φ = 2·atan2(|v|, w)·v̂`
+        // with the series head `2/w − 2|v|²/(3w³)` below |v| = 1e-8 keeping the
+        // map smooth through the identity.
+        template <typename T, QuatLayout L>
+        __device__ __forceinline__ void quat_log_core(const T *q, T *phi) {
+            using QL = layout<L>;
+            T x = q[QL::X], y = q[QL::Y], z = q[QL::Z], w = q[QL::W];
+            if (w < static_cast<T>(0)) { x = -x; y = -y; z = -z; w = -w; }
+            const T n = sqrt(x*x + y*y + z*z);
+            T s;   // scale = θ/|v| with θ = 2·atan2(|v|, w)
+            if (n < static_cast<T>(1e-8)) {
+                s = static_cast<T>(2)/w - static_cast<T>(2)*n*n/(static_cast<T>(3)*w*w*w);
+            } else {
+                s = static_cast<T>(2)*atan2(n, w)/n;
+            }
+            phi[0] = s*x; phi[1] = s*y; phi[2] = s*z;
+        }
+    
+        // tier glue: strided copy-out of a register tmp (the redundant-core pattern).
+        template <typename T, uint32_t N>
+        __device__ __forceinline__ void copy_out(uint32_t rank, uint32_t size,
+                                                 const T *tmp, T *out) {
+            for (uint32_t i = rank; i < N; i += size) out[i] = tmp[i];
+        }
+    } // namespace quat_detail
+    
+    /**
+     * @brief Hamilton quaternion product: `out = a ⊗ b`.
+     *
+     * Composition of rotations: `R(out) = R(a)·R(b)` (apply `b` first in the body
+     * frame of `a`). Layout via the `L` tag (default `xyzw`); both operands and the
+     * result share one layout. `out` must not alias `a`/`b` at block/warp scope.
+     * NumPy equivalent (xyzw, scipy): `(Rotation.from_quat(a) * Rotation.from_quat(b)).as_quat()`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam L  Quaternion storage layout (default `QuatLayout::xyzw`).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+     * @param a    Left quaternion (4 elements).
+     * @param b    Right quaternion (4 elements).
+     * @param out  Result quaternion (4 elements; no aliasing).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void quat_mul(const T *a, const T *b, T *out)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[4]; quat_detail::quat_mul_core<T, L>(a, b, tmp);
+        quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Quaternion conjugate (= inverse for unit quaternions): `out = a*`.
+     *
+     * Negates the vector part. NumPy equivalent (xyzw): `[-x, -y, -z, w]`.
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @param a    Input quaternion (4 elements).
+     * @param out  Conjugated quaternion (4 elements; no aliasing at block/warp scope).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void quat_conj(const T *a, T *out)
+    {
+        using QL = quat_detail::layout<L>;
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[4];
+        tmp[QL::X] = -a[QL::X]; tmp[QL::Y] = -a[QL::Y]; tmp[QL::Z] = -a[QL::Z];
+        tmp[QL::W] =  a[QL::W];
+        quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Normalize a quaternion to unit length: `out = q / |q|`.
+     *
+     * With `CANONICAL = true` the result is also flipped onto the `w >= 0` half of
+     * the double cover (`q` and `-q` encode the same rotation) — useful before
+     * comparing or interpolating quaternions. In-place (`out == q`) is safe at
+     * thread:: scope only.
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @tparam CANONICAL  Also canonicalize the sign to `w >= 0` (default false).
+     * @param q    Input quaternion (4 elements, nonzero).
+     * @param out  Unit quaternion (4 elements).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool CANONICAL = false,
+              bool TRAILING_SYNC = true>
+    __device__ void quat_normalize(const T *q, T *out)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[4]; quat_detail::quat_normalize_core<T, L, CANONICAL>(q, tmp);
+        quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Quaternion exponential of a rotation vector: `out = exp([φ/2])`.
+     *
+     * `φ` is the FULL rotation vector (axis · angle, radians); the half-angle is
+     * taken internally: `out = [sin(|φ|/2)·φ̂ ; cos(|φ|/2)]`, with the `sin(θ)/θ`
+     * Taylor head below θ = 1e-12 so the derivative is exact through φ = 0.
+     * NumPy equivalent (xyzw): `Rotation.from_rotvec(phi).as_quat()`.
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @param phi  Rotation vector (3 elements).
+     * @param out  Unit quaternion (4 elements; no aliasing at block/warp scope).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void quat_exp(const T *phi, T *out)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[4]; quat_detail::quat_exp_core<T, L>(phi, tmp);
+        quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Quaternion logarithm: the rotation vector `φ` of a unit quaternion.
+     *
+     * The inverse of `quat_exp` on the canonical branch `|φ| ≤ π`: `φ = 2·log(q)`
+     * with the double cover folded (q and −q return the SAME shortest-path
+     * vector). Routed through `2·atan2(|v|, w)` — stable across the whole range
+     * including θ near π — with a series head below `|v| = 1e-8` keeping the map
+     * smooth through the identity. `q` must be unit length. NumPy equivalent
+     * (xyzw): `Rotation.from_quat(q).as_rotvec()`.
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @param q    Unit quaternion (4 elements).
+     * @param phi  Output rotation vector (3 elements; no aliasing at block/warp scope).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void quat_log(const T *q, T *phi)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
+        quat_detail::copy_out<T, 3>(rank, size, tmp, phi);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Rotate a 3-vector by a unit quaternion: `out = R(q)·p`.
+     *
+     * Uses the cross-product form `p + 2w(v×p) + 2v×(v×p)` (no 3x3 materialized;
+     * 18 mul + 12 add vs 15 mul + 15 add through the matrix, but with no scratch).
+     * `q` must be unit length. NumPy equivalent (xyzw):
+     * `Rotation.from_quat(q).apply(p)`.
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @param q    Unit quaternion (4 elements).
+     * @param p    Input vector (3 elements).
+     * @param out  Rotated vector (3 elements; no aliasing at block/warp scope).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void quat_rotate(const T *q, const T *p, T *out)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[3]; quat_detail::quat_rotate_core<T, L>(q, p, tmp);
+        quat_detail::copy_out<T, 3>(rank, size, tmp, out);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Rotation matrix (3x3 column-major) from a unit quaternion.
+     *
+     * NumPy equivalent (xyzw): `Rotation.from_quat(q).as_matrix()` (flatten
+     * Fortran-order for the column-major array).
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @param q  Unit quaternion (4 elements).
+     * @param R  Output 3x3 rotation matrix (9 elements, column-major; no aliasing).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void quat_to_rot(const T *q, T *R)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[9]; quat_detail::quat_to_rot_core<T, L>(q, tmp);
+        quat_detail::copy_out<T, 9>(rank, size, tmp, R);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Unit quaternion from a rotation matrix (Shepperd max-pivot extraction).
+     *
+     * Branches on the largest of the trace and the three diagonal entries so the
+     * divisor is never small — numerically safe for every rotation including the
+     * θ = π family. Result is canonicalized to `w >= 0`. `R` is 3x3 column-major.
+     * NumPy equivalent (xyzw): `Rotation.from_matrix(R).as_quat()` (up to the
+     * double-cover sign).
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @param R  Input 3x3 rotation matrix (9 elements, column-major).
+     * @param q  Output unit quaternion (4 elements; no aliasing at block/warp scope).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void rot_to_quat(const T *R, T *q)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[4]; quat_detail::rot_to_quat_core<T, L>(R, tmp);
+        quat_detail::copy_out<T, 4>(rank, size, tmp, q);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Normalize a quaternion and return the three rotation-matrix columns.
+     *
+     * `u`/`v`/`w` receive columns 0/1/2 of `R(q/|q|)` — the body frame's three axes
+     * in the parent frame. The explicit normalize makes this safe on raw stored
+     * quaternions (e.g. parsed poses). Collision-geometry / frame-setup helper.
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @param q  Quaternion (4 elements; NOT required to be unit).
+     * @param u  Output column 0 (3 elements).
+     * @param v  Output column 1 (3 elements).
+     * @param w  Output column 2 (3 elements).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void quat_to_basis(const T *q, T *u, T *v, T *w)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T qn[4]; quat_detail::quat_normalize_core<T, L, false>(q, qn);
+        T R[9];  quat_detail::quat_to_rot_core<T, L>(qn, R);
+        for (uint32_t i = rank; i < 9; i += size) {
+            T *dst = (i < 3) ? u : (i < 6) ? v : w;
+            dst[i % 3] = R[i];
+        }
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief SO(3) retract on the quaternion chart: `q_new = normalize(q ⊗ exp([φ/2]))`.
+     *
+     * The manifold update `q ⊞ φ` (body-frame tangent `φ`, radians): one integrator
+     * step of a spherical joint / orientation state under angular velocity is
+     * `quat_retract(q, ω·dt, q_new)`. The trailing renormalize keeps repeated
+     * retracts on the unit sphere (drift-free). NumPy equivalent (xyzw):
+     * `(Rotation.from_quat(q) * Rotation.from_rotvec(phi)).as_quat()`.
+     *
+     * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+     * @param q      Current unit quaternion (4 elements).
+     * @param phi    Tangent step — full rotation vector (3 elements).
+     * @param q_new  Updated unit quaternion (4 elements; no aliasing at block/warp scope).
+     */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+    __device__ void quat_retract(const T *q, const T *phi, T *q_new)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[4]; quat_detail::quat_retract_core<T, L>(q, phi, tmp);
+        quat_detail::copy_out<T, 4>(rank, size, tmp, q_new);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── single-thread quaternion ops ────────────────────────────────────────────
+    namespace thread {
+        // One thread owns the whole (4/9-element) result: the SAME serial cores as
+        // the block/warp tiers with a plain serial copy-out. No barriers, no
+        // shuffles, no threadIdx read; operands may be thread-local register
+        // arrays, and in-place aliasing is safe (the core buffers via registers).
+    
+        /** @brief Single-thread `out = a ⊗ b`. See `glass::quat_mul`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_mul(const T *a, const T *b, T *out)
+        {
+            T tmp[4]; quat_detail::quat_mul_core<T, L>(a, b, tmp);
+            for (uint32_t i = 0; i < 4; i++) out[i] = tmp[i];
+        }
+    
+        /** @brief Single-thread conjugate. See `glass::quat_conj`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_conj(const T *a, T *out)
+        {
+            using QL = quat_detail::layout<L>;
+            const T x = a[QL::X], y = a[QL::Y], z = a[QL::Z], w = a[QL::W];
+            out[QL::X] = -x; out[QL::Y] = -y; out[QL::Z] = -z; out[QL::W] = w;
+        }
+    
+        /** @brief Single-thread normalize (optional `w>=0` canonicalization). See `glass::quat_normalize`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw, bool CANONICAL = false>
+        __device__ void quat_normalize(const T *q, T *out)
+        {
+            quat_detail::quat_normalize_core<T, L, CANONICAL>(q, out);
+        }
+    
+        /** @brief Single-thread `exp([φ/2])`. See `glass::quat_exp`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_exp(const T *phi, T *out)
+        {
+            quat_detail::quat_exp_core<T, L>(phi, out);
+        }
+    
+        /** @brief Single-thread quaternion logarithm. See `glass::quat_log`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_log(const T *q, T *phi)
+        {
+            T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
+            phi[0] = tmp[0]; phi[1] = tmp[1]; phi[2] = tmp[2];
+        }
+    
+        /** @brief Single-thread `R(q)·p`. See `glass::quat_rotate`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_rotate(const T *q, const T *p, T *out)
+        {
+            T tmp[3]; quat_detail::quat_rotate_core<T, L>(q, p, tmp);
+            out[0] = tmp[0]; out[1] = tmp[1]; out[2] = tmp[2];
+        }
+    
+        /** @brief Single-thread quaternion → column-major 3x3. See `glass::quat_to_rot`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_to_rot(const T *q, T *R)
+        {
+            quat_detail::quat_to_rot_core<T, L>(q, R);
+        }
+    
+        /** @brief Single-thread column-major 3x3 → quaternion (Shepperd). See `glass::rot_to_quat`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void rot_to_quat(const T *R, T *q)
+        {
+            quat_detail::rot_to_quat_core<T, L>(R, q);
+        }
+    
+        /** @brief Single-thread normalize + rotation columns. See `glass::quat_to_basis`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_to_basis(const T *q, T *u, T *v, T *w)
+        {
+            T qn[4]; quat_detail::quat_normalize_core<T, L, false>(q, qn);
+            T R[9];  quat_detail::quat_to_rot_core<T, L>(qn, R);
+            for (uint32_t i = 0; i < 3; i++) { u[i] = R[i]; v[i] = R[3+i]; w[i] = R[6+i]; }
+        }
+    
+        /** @brief Single-thread SO(3) quaternion retract. See `glass::quat_retract`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_retract(const T *q, const T *phi, T *q_new)
+        {
+            T tmp[4]; quat_detail::quat_retract_core<T, L>(q, phi, tmp);
+            for (uint32_t i = 0; i < 4; i++) q_new[i] = tmp[i];
+        }
+    }
+    
+    // ─── single-warp quaternion ops ──────────────────────────────────────────────
+    namespace warp {
+        // One 32-lane warp owns the result: the same serial cores, lane-strided
+        // copy-out, `__syncwarp()` close. For warp-per-problem kernels. Outputs must
+        // not alias inputs (lanes write while others may still read).
+    
+        /** @brief Single-warp `out = a ⊗ b`. See `glass::quat_mul`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_mul(const T *a, const T *b, T *out)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[4]; quat_detail::quat_mul_core<T, L>(a, b, tmp);
+            quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp conjugate. See `glass::quat_conj`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_conj(const T *a, T *out)
+        {
+            using QL = quat_detail::layout<L>;
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[4];
+            tmp[QL::X] = -a[QL::X]; tmp[QL::Y] = -a[QL::Y]; tmp[QL::Z] = -a[QL::Z];
+            tmp[QL::W] =  a[QL::W];
+            quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp normalize. See `glass::quat_normalize`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw, bool CANONICAL = false>
+        __device__ void quat_normalize(const T *q, T *out)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[4]; quat_detail::quat_normalize_core<T, L, CANONICAL>(q, tmp);
+            quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp `exp([φ/2])`. See `glass::quat_exp`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_exp(const T *phi, T *out)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[4]; quat_detail::quat_exp_core<T, L>(phi, tmp);
+            quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp quaternion logarithm. See `glass::quat_log`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_log(const T *q, T *phi)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
+            quat_detail::copy_out<T, 3>(lane, 32u, tmp, phi);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp `R(q)·p`. See `glass::quat_rotate`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_rotate(const T *q, const T *p, T *out)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[3]; quat_detail::quat_rotate_core<T, L>(q, p, tmp);
+            quat_detail::copy_out<T, 3>(lane, 32u, tmp, out);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp quaternion → column-major 3x3. See `glass::quat_to_rot`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_to_rot(const T *q, T *R)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[9]; quat_detail::quat_to_rot_core<T, L>(q, tmp);
+            quat_detail::copy_out<T, 9>(lane, 32u, tmp, R);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp 3x3 → quaternion (Shepperd). See `glass::rot_to_quat`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void rot_to_quat(const T *R, T *q)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[4]; quat_detail::rot_to_quat_core<T, L>(R, tmp);
+            quat_detail::copy_out<T, 4>(lane, 32u, tmp, q);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp normalize + rotation columns. See `glass::quat_to_basis`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_to_basis(const T *q, T *u, T *v, T *w)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T qn[4]; quat_detail::quat_normalize_core<T, L, false>(q, qn);
+            T R[9];  quat_detail::quat_to_rot_core<T, L>(qn, R);
+            for (uint32_t i = lane; i < 9; i += 32u) {
+                T *dst = (i < 3) ? u : (i < 6) ? v : w;
+                dst[i % 3] = R[i];
+            }
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp SO(3) quaternion retract. See `glass::quat_retract`. */
+        template <typename T, QuatLayout L = QuatLayout::xyzw>
+        __device__ void quat_retract(const T *q, const T *phi, T *q_new)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[4]; quat_detail::quat_retract_core<T, L>(q, phi, tmp);
+            quat_detail::copy_out<T, 4>(lane, 32u, tmp, q_new);
+            __syncwarp();
+        }
+    }
+    // END GLASS src/base/lie/quat.cuh
+    
+    // BEGIN GLASS src/base/lie/so3.cuh
+    
+    // ─── SO(3) maps and Jacobians (robotics ops, Lie family) ─────────────────────
+    //
+    // The rotation-group toolkit: hat map (`skew`), exponential (Rodrigues) and
+    // logarithm, and the right/left Jacobians of the exponential with their
+    // inverses. Every estimator (GTSAM/Sophus/manif/Pinocchio/Ceres) hand-rolls
+    // this family with subtly different conventions and small-angle series — and
+    // GPU simulators typically ship none of it. Convention here:
+    //
+    //   * 3x3 matrices are COLUMN-MAJOR (GLASS-wide).
+    //   * `so3_exp(φ)` is the Rodrigues formula on the FULL rotation vector φ
+    //     (axis·angle, radians): `R = I + a·[φ]ₓ + b·[φ]ₓ²`, a = sinθ/θ,
+    //     b = (1−cosθ)/θ², θ = |φ|.
+    //   * The RIGHT Jacobian `Jr(φ) = I − b·[φ]ₓ + c·[φ]ₓ²` (b as above,
+    //     c = (θ−sinθ)/θ³) maps body-frame tangent perturbations:
+    //     `exp(φ + δ) ≈ exp(φ)·exp(Jr(φ)·δ)`. The LEFT Jacobian
+    //     `Jl(φ) = Jr(−φ) = I + b·[φ]ₓ + c·[φ]ₓ²` is also the SE(3) translation
+    //     "V matrix": `exp_se3(ρ,φ)` translates by `Jl(φ)·ρ`.
+    //   * `so3_log` returns the canonical branch |φ| ≤ π. It routes through the
+    //     Shepperd quaternion extraction + `2·atan2(|v|, w)`, which is
+    //     numerically stable across the whole range INCLUDING θ near π (where the
+    //     naive `vee(R−Rᵀ)` formula loses the axis).
+    //   * Small-angle Taylor heads keep every map smooth through θ = 0 (thresholds
+    //     documented per function; validated against mpmath ground truth).
+    //
+    // Tiers: block/warp/thread share one serial core per op (redundant-core +
+    // strided copy-out; see quat.cuh's header note). Outputs must not alias inputs
+    // at block/warp scope.
+    
+    namespace lie_detail {
+        // serial core: S = [v]ₓ (3x3 column-major hat map).
+        template <typename T>
+        __device__ __forceinline__ void skew_core(const T *v, T *S) {
+            const T zero = static_cast<T>(0);
+            // column-major: S[c*3 + r] = S(r,c)
+            S[0] = zero;   S[3] = -v[2];  S[6] =  v[1];
+            S[1] =  v[2];  S[4] = zero;   S[7] = -v[0];
+            S[2] = -v[1];  S[5] =  v[0];  S[8] = zero;
+        }
+    
+        // serial core: C = A·B, 3x3 column-major (C must not alias A/B).
+        template <typename T>
+        __device__ __forceinline__ void mat3_mul_core(const T *A, const T *B, T *C) {
+            #pragma unroll
+            for (uint32_t c = 0; c < 3; ++c) {
+                #pragma unroll
+                for (uint32_t r = 0; r < 3; ++r) {
+                    C[c*3 + r] = A[r]*B[c*3] + A[3 + r]*B[c*3 + 1] + A[6 + r]*B[c*3 + 2];
+                }
+            }
+        }
+    
+        // serial core: out = A·v, 3x3 column-major times 3-vector (out must not alias v).
+        template <typename T>
+        __device__ __forceinline__ void mat3_vec_core(const T *A, const T *v, T *out) {
+            out[0] = A[0]*v[0] + A[3]*v[1] + A[6]*v[2];
+            out[1] = A[1]*v[0] + A[4]*v[1] + A[7]*v[2];
+            out[2] = A[2]*v[0] + A[5]*v[1] + A[8]*v[2];
+        }
+    
+        // serial core: M = I + ca·S + cb·S² for S = [φ]ₓ — the shared shape of
+        // exp / Jr / Jl (coefficients differ per map).
+        template <typename T>
+        __device__ __forceinline__ void rodrigues_core(const T *phi, T ca, T cb, T *M) {
+            T S[9];  skew_core(phi, S);
+            T S2[9]; mat3_mul_core(S, S, S2);
+            #pragma unroll
+            for (uint32_t i = 0; i < 9; ++i) {
+                const T id = (i % 4 == 0) ? static_cast<T>(1) : static_cast<T>(0);
+                M[i] = id + ca*S[i] + cb*S2[i];
+            }
+        }
+    
+        // Rodrigues coefficients a = sinθ/θ, b = (1−cosθ)/θ², c = (θ−sinθ)/θ³ with
+        // the θ→0 Taylor heads (a→1, b→1/2, c→1/6). Threshold 1e-8 matches the
+        // validated GRiD emitters this family is promoted from.
+        template <typename T>
+        __device__ __forceinline__ void rodrigues_coefs(T theta, T &a, T &b, T &c) {
+            if (theta < static_cast<T>(1e-8)) {
+                a = static_cast<T>(1);
+                b = static_cast<T>(0.5);
+                c = static_cast<T>(1.0/6.0);
+            } else {
+                const T t2 = theta*theta;
+                a = sin(theta)/theta;
+                b = (static_cast<T>(1) - cos(theta))/t2;
+                c = (theta - sin(theta))/(t2*theta);
+            }
+        }
+    
+        template <typename T>
+        __device__ __forceinline__ T vec3_norm(const T *v) {
+            return sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        }
+    
+        // serial core: R = exp([φ]ₓ).
+        template <typename T>
+        __device__ __forceinline__ void so3_exp_core(const T *phi, T *R) {
+            T a, b, c; rodrigues_coefs(vec3_norm(phi), a, b, c);
+            rodrigues_core(phi, a, b, R);
+        }
+    
+        // serial core: Jr(φ) = I − b·S + c·S².
+        template <typename T>
+        __device__ __forceinline__ void so3_right_jacobian_core(const T *phi, T *J) {
+            T a, b, c; rodrigues_coefs(vec3_norm(phi), a, b, c);
+            rodrigues_core(phi, -b, c, J);
+        }
+    
+        // serial core: Jl(φ) = Jr(−φ) = I + b·S + c·S² (the SE(3) "V matrix").
+        template <typename T>
+        __device__ __forceinline__ void so3_left_jacobian_core(const T *phi, T *J) {
+            T a, b, c; rodrigues_coefs(vec3_norm(phi), a, b, c);
+            rodrigues_core(phi, b, c, J);
+        }
+    
+        // Inverse-Jacobian S² coefficient e = 1/θ² − cot(θ/2)/(2θ), written in the
+        // half-angle form so the only removable singularity is θ→0 (series head
+        // 1/12 + θ²/720 + θ⁴/30240); the naive (1+cosθ)/(2θ sinθ) form is 0/0 at
+        // θ = π, where this one is exactly 1/π². (θ → 2π is a GENUINE singularity
+        // of Jr⁻¹ — out of the |φ| ≤ π canonical range this library works in.)
+        template <typename T>
+        __device__ __forceinline__ T inv_jacobian_coef(T theta) {
+            if (theta < static_cast<T>(1e-4)) {
+                const T t2 = theta*theta;
+                return static_cast<T>(1.0/12.0) + t2*(static_cast<T>(1.0/720.0)
+                     + t2*static_cast<T>(1.0/30240.0));
+            }
+            const T half = static_cast<T>(0.5)*theta;
+            return static_cast<T>(1)/(theta*theta)
+                 - cos(half)/(static_cast<T>(2)*theta*sin(half));
+        }
+    
+        // serial core: Jr(φ)⁻¹ = I + S/2 + e·S².
+        template <typename T>
+        __device__ __forceinline__ void so3_right_jacobian_inv_core(const T *phi, T *J) {
+            const T e = inv_jacobian_coef(vec3_norm(phi));
+            rodrigues_core(phi, static_cast<T>(0.5), e, J);
+        }
+    
+        // serial core: Jl(φ)⁻¹ = I − S/2 + e·S².
+        template <typename T>
+        __device__ __forceinline__ void so3_left_jacobian_inv_core(const T *phi, T *J) {
+            const T e = inv_jacobian_coef(vec3_norm(phi));
+            rodrigues_core(phi, static_cast<T>(-0.5), e, J);
+        }
+    
+        // serial core: φ = log(R), canonical branch |φ| ≤ π. Route through the
+        // Shepperd quaternion (stable at EVERY rotation) then the quaternion log
+        // (quat_detail::quat_log_core) — no near-π axis loss, no trace clamping
+        // games. Shepperd already yields w >= 0, so the log's cover fold is a no-op.
+        template <typename T>
+        __device__ __forceinline__ void so3_log_core(const T *R, T *phi) {
+            T q[4];
+            quat_detail::rot_to_quat_core<T, QuatLayout::xyzw>(R, q);
+            quat_detail::quat_log_core<T, QuatLayout::xyzw>(q, phi);
+        }
+    } // namespace lie_detail
+    
+    /**
+     * @brief Hat map: `S = [v]ₓ` (3x3 column-major skew-symmetric matrix).
+     *
+     * `S·x = v × x`. The SO(3) building block under every op in this family.
+     * NumPy equivalent: `np.array([[0,-v[2],v[1]],[v[2],0,-v[0]],[-v[1],v[0],0]])`
+     * (flatten Fortran-order for the column-major array).
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+     * @param v  Input 3-vector.
+     * @param S  Output 3x3 skew matrix (9 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void skew(const T *v, T *S)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[9]; lie_detail::skew_core(v, tmp);
+        quat_detail::copy_out<T, 9>(rank, size, tmp, S);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief SO(3) exponential (Rodrigues): `R = exp([φ]ₓ)`.
+     *
+     * `φ` is the full rotation vector (axis·angle). Taylor heads below θ = 1e-8
+     * keep the map smooth through the identity. NumPy equivalent:
+     * `Rotation.from_rotvec(phi).as_matrix()` (Fortran-order flatten).
+     *
+     * @tparam T,TRAILING_SYNC  See `skew`.
+     * @param phi  Rotation vector (3 elements).
+     * @param R    Output 3x3 rotation (9 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void so3_exp(const T *phi, T *R)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[9]; lie_detail::so3_exp_core(phi, tmp);
+        quat_detail::copy_out<T, 9>(rank, size, tmp, R);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief SO(3) logarithm: `φ = log(R)`, canonical branch `|φ| ≤ π`.
+     *
+     * Implemented through the Shepperd quaternion extraction plus
+     * `φ = 2·atan2(|v|, w)·v̂` — numerically stable across the WHOLE range,
+     * including θ near π where the textbook `θ/(2 sinθ)·vee(R−Rᵀ)` formula loses
+     * the axis. Inverse of `so3_exp` (round-trip exact to floating tolerance for
+     * |φ| < π; at exactly θ = π the axis sign is the canonical-cover choice).
+     * NumPy equivalent: `Rotation.from_matrix(R).as_rotvec()`.
+     *
+     * @tparam T,TRAILING_SYNC  See `skew`.
+     * @param R    Input 3x3 rotation (9 elements, column-major).
+     * @param phi  Output rotation vector (3 elements; no aliasing at block/warp scope).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void so3_log(const T *R, T *phi)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[3]; lie_detail::so3_log_core(R, tmp);
+        quat_detail::copy_out<T, 3>(rank, size, tmp, phi);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief SO(3) right Jacobian: `Jr(φ) = I − b·[φ]ₓ + c·[φ]ₓ²`.
+     *
+     * `b = (1−cosθ)/θ²`, `c = (θ−sinθ)/θ³`. Maps additive tangent perturbations to
+     * the manifold: `exp(φ+δ) ≈ exp(φ)·exp(Jr(φ)·δ)` — the object every on-manifold
+     * optimizer and covariance propagation needs. Identity: `Jr(φ) = Jl(−φ)`.
+     *
+     * @tparam T,TRAILING_SYNC  See `skew`.
+     * @param phi  Rotation vector (3 elements).
+     * @param J    Output 3x3 Jacobian (9 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void so3_right_jacobian(const T *phi, T *J)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[9]; lie_detail::so3_right_jacobian_core(phi, tmp);
+        quat_detail::copy_out<T, 9>(rank, size, tmp, J);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Inverse right Jacobian: `Jr(φ)⁻¹ = I + [φ]ₓ/2 + e·[φ]ₓ²`.
+     *
+     * `e = 1/θ² − cot(θ/2)/(2θ)` (half-angle form — finite at θ = π, exactly 1/π²;
+     * series `1/12 + θ²/720 + …` below θ = 1e-4). `Jr⁻¹` pulls manifold
+     * differences back to the tangent (IMU preintegration, on-manifold GN steps).
+     * Genuinely singular only at θ = 2π, outside the canonical |φ| ≤ π range.
+     *
+     * @tparam T,TRAILING_SYNC  See `skew`.
+     * @param phi  Rotation vector (3 elements).
+     * @param J    Output 3x3 inverse Jacobian (9 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void so3_right_jacobian_inv(const T *phi, T *J)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[9]; lie_detail::so3_right_jacobian_inv_core(phi, tmp);
+        quat_detail::copy_out<T, 9>(rank, size, tmp, J);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief SO(3) left Jacobian: `Jl(φ) = Jr(−φ) = I + b·[φ]ₓ + c·[φ]ₓ²`.
+     *
+     * Also the SE(3) translation "V matrix": `exp_se3(ρ,φ)` translates by
+     * `Jl(φ)·ρ` — some codebases (including the GRiD emitters this is promoted
+     * from) carry it under that name; it is the SAME matrix.
+     *
+     * @tparam T,TRAILING_SYNC  See `skew`.
+     * @param phi  Rotation vector (3 elements).
+     * @param J    Output 3x3 Jacobian (9 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void so3_left_jacobian(const T *phi, T *J)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[9]; lie_detail::so3_left_jacobian_core(phi, tmp);
+        quat_detail::copy_out<T, 9>(rank, size, tmp, J);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    /**
+     * @brief Inverse left Jacobian: `Jl(φ)⁻¹ = I − [φ]ₓ/2 + e·[φ]ₓ²`.
+     *
+     * Same `e` coefficient (and the same θ = 2π caveat) as
+     * `so3_right_jacobian_inv`; `Jl⁻¹(φ) = Jr⁻¹(−φ)`.
+     *
+     * @tparam T,TRAILING_SYNC  See `skew`.
+     * @param phi  Rotation vector (3 elements).
+     * @param J    Output 3x3 inverse Jacobian (9 elements, column-major; no aliasing).
+     */
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void so3_left_jacobian_inv(const T *phi, T *J)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T tmp[9]; lie_detail::so3_left_jacobian_inv_core(phi, tmp);
+        quat_detail::copy_out<T, 9>(rank, size, tmp, J);
+        if constexpr (TRAILING_SYNC) __syncthreads();
+    }
+    
+    // ─── single-thread SO(3) ops ─────────────────────────────────────────────────
+    namespace thread {
+        // One thread owns the whole 3x3/3-vector result — the same serial cores,
+        // serial copy-out. No barriers, no threadIdx read; register operands fine.
+    
+        /** @brief Single-thread hat map. See `glass::skew`. */
+        template <typename T>
+        __device__ void skew(const T *v, T *S) { lie_detail::skew_core(v, S); }
+    
+        /** @brief Single-thread Rodrigues exponential. See `glass::so3_exp`. */
+        template <typename T>
+        __device__ void so3_exp(const T *phi, T *R) { lie_detail::so3_exp_core(phi, R); }
+    
+        /** @brief Single-thread SO(3) log (canonical branch). See `glass::so3_log`. */
+        template <typename T>
+        __device__ void so3_log(const T *R, T *phi)
+        {
+            T tmp[3]; lie_detail::so3_log_core(R, tmp);
+            phi[0] = tmp[0]; phi[1] = tmp[1]; phi[2] = tmp[2];
+        }
+    
+        /** @brief Single-thread right Jacobian. See `glass::so3_right_jacobian`. */
+        template <typename T>
+        __device__ void so3_right_jacobian(const T *phi, T *J)
+        { lie_detail::so3_right_jacobian_core(phi, J); }
+    
+        /** @brief Single-thread inverse right Jacobian. See `glass::so3_right_jacobian_inv`. */
+        template <typename T>
+        __device__ void so3_right_jacobian_inv(const T *phi, T *J)
+        { lie_detail::so3_right_jacobian_inv_core(phi, J); }
+    
+        /** @brief Single-thread left Jacobian (SE(3) "V matrix"). See `glass::so3_left_jacobian`. */
+        template <typename T>
+        __device__ void so3_left_jacobian(const T *phi, T *J)
+        { lie_detail::so3_left_jacobian_core(phi, J); }
+    
+        /** @brief Single-thread inverse left Jacobian. See `glass::so3_left_jacobian_inv`. */
+        template <typename T>
+        __device__ void so3_left_jacobian_inv(const T *phi, T *J)
+        { lie_detail::so3_left_jacobian_inv_core(phi, J); }
+    }
+    
+    // ─── single-warp SO(3) ops ───────────────────────────────────────────────────
+    namespace warp {
+        // One 32-lane warp owns the result: same serial cores, lane-strided
+        // copy-out, `__syncwarp()` close. Outputs must not alias inputs.
+    
+        /** @brief Single-warp hat map. See `glass::skew`. */
+        template <typename T>
+        __device__ void skew(const T *v, T *S)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[9]; lie_detail::skew_core(v, tmp);
+            quat_detail::copy_out<T, 9>(lane, 32u, tmp, S);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp Rodrigues exponential. See `glass::so3_exp`. */
+        template <typename T>
+        __device__ void so3_exp(const T *phi, T *R)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[9]; lie_detail::so3_exp_core(phi, tmp);
+            quat_detail::copy_out<T, 9>(lane, 32u, tmp, R);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp SO(3) log (canonical branch). See `glass::so3_log`. */
+        template <typename T>
+        __device__ void so3_log(const T *R, T *phi)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[3]; lie_detail::so3_log_core(R, tmp);
+            quat_detail::copy_out<T, 3>(lane, 32u, tmp, phi);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp right Jacobian. See `glass::so3_right_jacobian`. */
+        template <typename T>
+        __device__ void so3_right_jacobian(const T *phi, T *J)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[9]; lie_detail::so3_right_jacobian_core(phi, tmp);
+            quat_detail::copy_out<T, 9>(lane, 32u, tmp, J);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp inverse right Jacobian. See `glass::so3_right_jacobian_inv`. */
+        template <typename T>
+        __device__ void so3_right_jacobian_inv(const T *phi, T *J)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[9]; lie_detail::so3_right_jacobian_inv_core(phi, tmp);
+            quat_detail::copy_out<T, 9>(lane, 32u, tmp, J);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp left Jacobian (SE(3) "V matrix"). See `glass::so3_left_jacobian`. */
+        template <typename T>
+        __device__ void so3_left_jacobian(const T *phi, T *J)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[9]; lie_detail::so3_left_jacobian_core(phi, tmp);
+            quat_detail::copy_out<T, 9>(lane, 32u, tmp, J);
+            __syncwarp();
+        }
+    
+        /** @brief Single-warp inverse left Jacobian. See `glass::so3_left_jacobian_inv`. */
+        template <typename T>
+        __device__ void so3_left_jacobian_inv(const T *phi, T *J)
+        {
+            uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+            T tmp[9]; lie_detail::so3_left_jacobian_inv_core(phi, tmp);
+            quat_detail::copy_out<T, 9>(lane, 32u, tmp, J);
+            __syncwarp();
+        }
+    }
+    // END GLASS src/base/lie/so3.cuh
     
     } // namespace glass
     
@@ -3502,12 +8732,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx0(T *s_vecX, const T *s_vec) {
-        s_vecX[0] = static_cast<T>(0);
-        s_vecX[1] = s_vec[2];
-        s_vecX[2] = -s_vec[1];
-        s_vecX[3] = static_cast<T>(0);
-        s_vecX[4] = s_vec[5];
-        s_vecX[5] = -s_vec[4];
+        glass::thread::motion_cross_mul<T, 0, false>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3522,10 +8747,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx0_peq(T *s_vecX, const T *s_vec) {
-        s_vecX[1] += s_vec[2];
-        s_vecX[2] += -s_vec[1];
-        s_vecX[4] += s_vec[5];
-        s_vecX[5] += -s_vec[4];
+        glass::thread::motion_cross_mul<T, 0, true>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3541,12 +8763,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx0_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[0] = static_cast<T>(0);
-        s_vecX[1] = s_vec[2]*alpha;
-        s_vecX[2] = -s_vec[1]*alpha;
-        s_vecX[3] = static_cast<T>(0);
-        s_vecX[4] = s_vec[5]*alpha;
-        s_vecX[5] = -s_vec[4]*alpha;
+        glass::thread::motion_cross_mul<T, 0, false>(alpha, s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3562,10 +8779,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx0_peq_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[1] += s_vec[2]*alpha;
-        s_vecX[2] += -s_vec[1]*alpha;
-        s_vecX[4] += s_vec[5]*alpha;
-        s_vecX[5] += -s_vec[4]*alpha;
+        glass::thread::motion_cross_mul<T, 0, true>(alpha, s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3580,12 +8794,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx1(T *s_vecX, const T *s_vec) {
-        s_vecX[0] = -s_vec[2];
-        s_vecX[1] = static_cast<T>(0);
-        s_vecX[2] = s_vec[0];
-        s_vecX[3] = -s_vec[5];
-        s_vecX[4] = static_cast<T>(0);
-        s_vecX[5] = s_vec[3];
+        glass::thread::motion_cross_mul<T, 1, false>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3600,10 +8809,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx1_peq(T *s_vecX, const T *s_vec) {
-        s_vecX[0] += -s_vec[2];
-        s_vecX[2] += s_vec[0];
-        s_vecX[3] += -s_vec[5];
-        s_vecX[5] += s_vec[3];
+        glass::thread::motion_cross_mul<T, 1, true>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3619,12 +8825,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx1_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[0] = -s_vec[2]*alpha;
-        s_vecX[1] = static_cast<T>(0);
-        s_vecX[2] = s_vec[0]*alpha;
-        s_vecX[3] = -s_vec[5]*alpha;
-        s_vecX[4] = static_cast<T>(0);
-        s_vecX[5] = s_vec[3]*alpha;
+        glass::thread::motion_cross_mul<T, 1, false>(alpha, s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3640,10 +8841,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx1_peq_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[0] += -s_vec[2]*alpha;
-        s_vecX[2] += s_vec[0]*alpha;
-        s_vecX[3] += -s_vec[5]*alpha;
-        s_vecX[5] += s_vec[3]*alpha;
+        glass::thread::motion_cross_mul<T, 1, true>(alpha, s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3658,12 +8856,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx2(T *s_vecX, const T *s_vec) {
-        s_vecX[0] = s_vec[1];
-        s_vecX[1] = -s_vec[0];
-        s_vecX[2] = static_cast<T>(0);
-        s_vecX[3] = s_vec[4];
-        s_vecX[4] = -s_vec[3];
-        s_vecX[5] = static_cast<T>(0);
+        glass::thread::motion_cross_mul<T, 2, false>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3678,10 +8871,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx2_peq(T *s_vecX, const T *s_vec) {
-        s_vecX[0] += s_vec[1];
-        s_vecX[1] += -s_vec[0];
-        s_vecX[3] += s_vec[4];
-        s_vecX[4] += -s_vec[3];
+        glass::thread::motion_cross_mul<T, 2, true>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3697,12 +8887,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx2_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[0] = s_vec[1]*alpha;
-        s_vecX[1] = -s_vec[0]*alpha;
-        s_vecX[2] = static_cast<T>(0);
-        s_vecX[3] = s_vec[4]*alpha;
-        s_vecX[4] = -s_vec[3]*alpha;
-        s_vecX[5] = static_cast<T>(0);
+        glass::thread::motion_cross_mul<T, 2, false>(alpha, s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3718,10 +8903,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx2_peq_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[0] += s_vec[1]*alpha;
-        s_vecX[1] += -s_vec[0]*alpha;
-        s_vecX[3] += s_vec[4]*alpha;
-        s_vecX[4] += -s_vec[3]*alpha;
+        glass::thread::motion_cross_mul<T, 2, true>(alpha, s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3736,12 +8918,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx3(T *s_vecX, const T *s_vec) {
-        s_vecX[0] = static_cast<T>(0);
-        s_vecX[1] = static_cast<T>(0);
-        s_vecX[2] = static_cast<T>(0);
-        s_vecX[3] = static_cast<T>(0);
-        s_vecX[4] = s_vec[2];
-        s_vecX[5] = -s_vec[1];
+        glass::thread::motion_cross_mul<T, 3, false>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3756,8 +8933,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx3_peq(T *s_vecX, const T *s_vec) {
-        s_vecX[4] += s_vec[2];
-        s_vecX[5] += -s_vec[1];
+        glass::thread::motion_cross_mul<T, 3, true>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3773,12 +8949,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx3_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[0] = static_cast<T>(0);
-        s_vecX[1] = static_cast<T>(0);
-        s_vecX[2] = static_cast<T>(0);
-        s_vecX[3] = static_cast<T>(0);
-        s_vecX[4] = s_vec[2]*alpha;
-        s_vecX[5] = -s_vec[1]*alpha;
+        glass::thread::motion_cross_mul<T, 3, false>(alpha, s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3794,8 +8965,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx3_peq_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[4] += s_vec[2]*alpha;
-        s_vecX[5] += -s_vec[1]*alpha;
+        glass::thread::motion_cross_mul<T, 3, true>(alpha, s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3810,12 +8980,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx4(T *s_vecX, const T *s_vec) {
-        s_vecX[0] = static_cast<T>(0);
-        s_vecX[1] = static_cast<T>(0);
-        s_vecX[2] = static_cast<T>(0);
-        s_vecX[3] = -s_vec[2];
-        s_vecX[4] = static_cast<T>(0);
-        s_vecX[5] = s_vec[0];
+        glass::thread::motion_cross_mul<T, 4, false>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3830,8 +8995,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx4_peq(T *s_vecX, const T *s_vec) {
-        s_vecX[3] += -s_vec[2];
-        s_vecX[5] += s_vec[0];
+        glass::thread::motion_cross_mul<T, 4, true>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3847,12 +9011,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx4_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[0] = static_cast<T>(0);
-        s_vecX[1] = static_cast<T>(0);
-        s_vecX[2] = static_cast<T>(0);
-        s_vecX[3] = -s_vec[2]*alpha;
-        s_vecX[4] = static_cast<T>(0);
-        s_vecX[5] = s_vec[0]*alpha;
+        glass::thread::motion_cross_mul<T, 4, false>(alpha, s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3868,8 +9027,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx4_peq_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[3] += -s_vec[2]*alpha;
-        s_vecX[5] += s_vec[0]*alpha;
+        glass::thread::motion_cross_mul<T, 4, true>(alpha, s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3884,12 +9042,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx5(T *s_vecX, const T *s_vec) {
-        s_vecX[0] = static_cast<T>(0);
-        s_vecX[1] = static_cast<T>(0);
-        s_vecX[2] = static_cast<T>(0);
-        s_vecX[3] = s_vec[1];
-        s_vecX[4] = -s_vec[0];
-        s_vecX[5] = static_cast<T>(0);
+        glass::thread::motion_cross_mul<T, 5, false>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3904,8 +9057,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx5_peq(T *s_vecX, const T *s_vec) {
-        s_vecX[3] += s_vec[1];
-        s_vecX[4] += -s_vec[0];
+        glass::thread::motion_cross_mul<T, 5, true>(static_cast<T>(1), s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -3921,12 +9073,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx5_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[0] = static_cast<T>(0);
-        s_vecX[1] = static_cast<T>(0);
-        s_vecX[2] = static_cast<T>(0);
-        s_vecX[3] = s_vec[1]*alpha;
-        s_vecX[4] = -s_vec[0]*alpha;
-        s_vecX[5] = static_cast<T>(0);
+        glass::thread::motion_cross_mul<T, 5, false>(alpha, s_vec, nullptr, static_cast<T>(0), s_vecX);
     }
 
     /**
@@ -3942,8 +9089,7 @@ namespace grid {
     template <typename T>
     __device__
     void mx5_peq_scaled(T *s_vecX, const T *s_vec, const T alpha) {
-        s_vecX[3] += s_vec[1]*alpha;
-        s_vecX[4] += -s_vec[0]*alpha;
+        glass::thread::motion_cross_mul<T, 5, true>(alpha, s_vec, nullptr, static_cast<T>(1), s_vecX);
     }
 
     /**
@@ -4037,90 +9183,7 @@ namespace grid {
     }
 
     /**
-     * Generates the motion vector cross product matrix
-     *
-     * Notes:
-     *   Assumes only one thread is running each function call
-     *
-     * @param s_matX is the destination matrix
-     * @param s_vecX is the source vector
-     */
-    template <typename T>
-    __device__
-    void fx(T *s_matX, const T *s_vecX) {
-        s_matX[6*0 + 0] = static_cast<T>(0);
-        s_matX[6*0 + 1] = s_vecX[2];
-        s_matX[6*0 + 2] = -s_vecX[1];
-        s_matX[6*0 + 3] = static_cast<T>(0);
-        s_matX[6*0 + 4] = static_cast<T>(0);
-        s_matX[6*0 + 5] = static_cast<T>(0);
-        s_matX[6*1 + 0] = -s_vecX[2];
-        s_matX[6*1 + 1] = static_cast<T>(0);
-        s_matX[6*1 + 2] = s_vecX[0];
-        s_matX[6*1 + 3] = static_cast<T>(0);
-        s_matX[6*1 + 4] = static_cast<T>(0);
-        s_matX[6*1 + 5] = static_cast<T>(0);
-        s_matX[6*2 + 0] = s_vecX[1];
-        s_matX[6*2 + 1] = -s_vecX[0];
-        s_matX[6*2 + 2] = static_cast<T>(0);
-        s_matX[6*2 + 3] = static_cast<T>(0);
-        s_matX[6*2 + 4] = static_cast<T>(0);
-        s_matX[6*2 + 5] = static_cast<T>(0);
-        s_matX[6*3 + 0] = static_cast<T>(0);
-        s_matX[6*3 + 1] = s_vecX[5];
-        s_matX[6*3 + 2] = -s_vecX[4];
-        s_matX[6*3 + 3] = static_cast<T>(0);
-        s_matX[6*3 + 4] = s_vecX[2];
-        s_matX[6*3 + 5] = -s_vecX[1];
-        s_matX[6*4 + 0] = -s_vecX[5];
-        s_matX[6*4 + 1] = static_cast<T>(0);
-        s_matX[6*4 + 2] = s_vecX[3];
-        s_matX[6*4 + 3] = -s_vecX[2];
-        s_matX[6*4 + 4] = static_cast<T>(0);
-        s_matX[6*4 + 5] = s_vecX[0];
-        s_matX[6*5 + 0] = s_vecX[4];
-        s_matX[6*5 + 1] = -s_vecX[3];
-        s_matX[6*5 + 2] = static_cast<T>(0);
-        s_matX[6*5 + 3] = s_vecX[1];
-        s_matX[6*5 + 4] = -s_vecX[0];
-        s_matX[6*5 + 5] = static_cast<T>(0);
-    }
-
-    /**
-     * Generates the motion vector cross product matrix for a pre-zeroed destination
-     *
-     * Notes:
-     *   Assumes only one thread is running each function call
-     *   Assumes destination is zeroed
-     *
-     * @param s_matX is the destination matrix
-     * @param s_vecX is the source vector
-     */
-    template <typename T>
-    __device__
-    void fx_zeroed(T *s_matX, const T *s_vecX) {
-        s_matX[6*0 + 1] = s_vecX[2];
-        s_matX[6*0 + 2] = -s_vecX[1];
-        s_matX[6*1 + 0] = -s_vecX[2];
-        s_matX[6*1 + 2] = s_vecX[0];
-        s_matX[6*2 + 0] = s_vecX[1];
-        s_matX[6*2 + 1] = -s_vecX[0];
-        s_matX[6*3 + 1] = s_vecX[5];
-        s_matX[6*3 + 2] = -s_vecX[4];
-        s_matX[6*3 + 4] = s_vecX[2];
-        s_matX[6*3 + 5] = -s_vecX[1];
-        s_matX[6*4 + 0] = -s_vecX[5];
-        s_matX[6*4 + 2] = s_vecX[3];
-        s_matX[6*4 + 3] = -s_vecX[2];
-        s_matX[6*4 + 5] = s_vecX[0];
-        s_matX[6*5 + 0] = s_vecX[4];
-        s_matX[6*5 + 1] = -s_vecX[3];
-        s_matX[6*5 + 3] = s_vecX[1];
-        s_matX[6*5 + 4] = -s_vecX[0];
-    }
-
-    /**
-     * Generates the motion vector cross product matrix and multiples by the input vector
+     * Generates the force cross product matrix and multiplies by the input vector
      *
      * Notes:
      *   Assumes only one thread is running each function call
@@ -4132,16 +9195,11 @@ namespace grid {
     template <typename T>
     __device__
     void fx_times_v(T *s_result, const T *s_fxVec, const T *s_timesVec) {
-        s_result[0] = -s_fxVec[2] * s_timesVec[1] + s_fxVec[1] * s_timesVec[2] - s_fxVec[5] * s_timesVec[4] + s_fxVec[4] * s_timesVec[5];
-        s_result[1] =  s_fxVec[2] * s_timesVec[0] - s_fxVec[0] * s_timesVec[2] + s_fxVec[5] * s_timesVec[3] - s_fxVec[3] * s_timesVec[5];
-        s_result[2] = -s_fxVec[1] * s_timesVec[0] + s_fxVec[0] * s_timesVec[1] - s_fxVec[4] * s_timesVec[3] + s_fxVec[3] * s_timesVec[4];
-        s_result[3] =                                                          - s_fxVec[2] * s_timesVec[4] + s_fxVec[1] * s_timesVec[5];
-        s_result[4] =                                                            s_fxVec[2] * s_timesVec[3] - s_fxVec[0] * s_timesVec[5];
-        s_result[5] =                                                          - s_fxVec[1] * s_timesVec[3] + s_fxVec[0] * s_timesVec[4];
+        glass::thread::force_cross_mul<T, false>(static_cast<T>(1), s_fxVec, s_timesVec, static_cast<T>(0), s_result);
     }
 
     /**
-     * Adds the motion vector cross product matrix multiplied by the input vector
+     * Adds the force cross product matrix multiplied by the input vector
      *
      * Notes:
      *   Assumes only one thread is running each function call
@@ -4153,53 +9211,24 @@ namespace grid {
     template <typename T>
     __device__
     void fx_times_v_peq(T *s_result, const T *s_fxVec, const T *s_timesVec) {
-        s_result[0] += -s_fxVec[2] * s_timesVec[1] + s_fxVec[1] * s_timesVec[2] - s_fxVec[5] * s_timesVec[4] + s_fxVec[4] * s_timesVec[5];
-        s_result[1] +=  s_fxVec[2] * s_timesVec[0] - s_fxVec[0] * s_timesVec[2] + s_fxVec[5] * s_timesVec[3] - s_fxVec[3] * s_timesVec[5];
-        s_result[2] += -s_fxVec[1] * s_timesVec[0] + s_fxVec[0] * s_timesVec[1] - s_fxVec[4] * s_timesVec[3] + s_fxVec[3] * s_timesVec[4];
-        s_result[3] +=                                                          - s_fxVec[2] * s_timesVec[4] + s_fxVec[1] * s_timesVec[5];
-        s_result[4] +=                                                            s_fxVec[2] * s_timesVec[3] - s_fxVec[0] * s_timesVec[5];
-        s_result[5] +=                                                          - s_fxVec[1] * s_timesVec[3] + s_fxVec[0] * s_timesVec[4];
+        glass::thread::force_cross_mul<T, true>(static_cast<T>(1), s_fxVec, s_timesVec, static_cast<T>(1), s_result);
     }
+
+    /**
+     * Generates the full motion vector cross product matrix (6x6, column-major)
+     *
+     * Notes:
+     *   Assumes only one thread is running each function call
+     *
+     * @param dest is the destination 6x6 matrix
+     * @param v is the source 6-vector
+     */
     template <typename T>
     __device__
     void vcross(T *dest, T *v){
-        dest[0] = static_cast<T>(0);
-        dest[1] = v[2];
-        dest[2] = -1*v[1];
-        dest[3] = static_cast<T>(0);
-        dest[4] = v[5];
-        dest[5] = -1*v[4];
-        dest[6] = -1*v[2];
-        dest[7] = static_cast<T>(0);
-        dest[8] = v[0];
-        dest[9] = -1*v[5];
-        dest[10] = static_cast<T>(0);
-        dest[11] = v[3];
-        dest[12] = v[1];
-        dest[13] = -1*v[0];
-        dest[14] = static_cast<T>(0);
-        dest[15] = v[4];
-        dest[16] = -1*v[3];
-        dest[17] = static_cast<T>(0);
-        dest[18] = static_cast<T>(0);
-        dest[19] = static_cast<T>(0);
-        dest[20] = static_cast<T>(0);
-        dest[21] = static_cast<T>(0);
-        dest[22] = v[2];
-        dest[23] = -1*v[1];
-        dest[24] = static_cast<T>(0);
-        dest[25] = static_cast<T>(0);
-        dest[26] = static_cast<T>(0);
-        dest[27] = -1*v[2];
-        dest[28] = static_cast<T>(0);
-        dest[29] = v[0];
-        dest[30] = static_cast<T>(0);
-        dest[31] = static_cast<T>(0);
-        dest[32] = static_cast<T>(0);
-        dest[33] = v[1];
-        dest[34] = -1*v[0];
-        dest[35] = static_cast<T>(0);
+        glass::thread::motion_cross(v, dest);
     }
+
     /**
      * Compute the inverse force cross product matrix of a 6-vector, v Returns the entry at the index.
      *
@@ -4212,43 +9241,7 @@ namespace grid {
     template <typename T>
     __device__
     T icrf(int index, T *v) {
-        T result;
-        if (index == 0) result = static_cast<T>(0);
-        if (index == 1) result = v[2];
-        if (index == 2) result = -v[1];
-        if (index == 3) result = static_cast<T>(0);
-        if (index == 4) result = v[5];
-        if (index == 5) result = -v[4];
-        if (index == 6) result = -v[2];
-        if (index == 7) result = static_cast<T>(0);
-        if (index == 8) result = v[0];
-        if (index == 9) result = -v[5];
-        if (index == 10) result = static_cast<T>(0);
-        if (index == 11) result = v[3];
-        if (index == 12) result = v[1];
-        if (index == 13) result = -v[0];
-        if (index == 14) result = static_cast<T>(0);
-        if (index == 15) result = v[4];
-        if (index == 16) result = -v[3];
-        if (index == 17) result = static_cast<T>(0);if (index == 18) result = static_cast<T>(0);
-        if (index == 19) result = v[5];
-        if (index == 20) result = -v[4];
-        if (index == 21) result = static_cast<T>(0);
-        if (index == 22) result = static_cast<T>(0);
-        if (index == 23) result = static_cast<T>(0);
-        if (index == 24) result = -v[5];
-        if (index == 25) result = static_cast<T>(0);
-        if (index == 26) result = v[3];
-        if (index == 27) result = static_cast<T>(0);
-        if (index == 28) result = static_cast<T>(0);
-        if (index == 29) result = static_cast<T>(0);
-        if (index == 30) result = v[4];
-        if (index == 31) result = -v[3];
-        if (index == 32) result = static_cast<T>(0);
-        if (index == 33) result = static_cast<T>(0);
-        if (index == 34) result = static_cast<T>(0);
-        if (index == 35) result = static_cast<T>(0);
-        return -result;
+        return glass::spatial_detail::force_cross_dual_entry<T>((uint32_t)(index % 6), (uint32_t)(index / 6), v);
     }
 
     /**
@@ -4263,43 +9256,7 @@ namespace grid {
     template <typename T>
     __device__
     T crm(int index, T *v) {
-        T result;
-        if (index == 0) result = static_cast<T>(0);
-        if (index == 1) result = v[2];
-        if (index == 2) result = -v[1];
-        if (index == 3) result = static_cast<T>(0);
-        if (index == 4) result = v[5];
-        if (index == 5) result = -v[4];
-        if (index == 6) result = -v[2];
-        if (index == 7) result = static_cast<T>(0);
-        if (index == 8) result = v[0];
-        if (index == 9) result = -v[5];
-        if (index == 10) result = static_cast<T>(0);
-        if (index == 11) result = v[3];
-        if (index == 12) result = v[1];
-        if (index == 13) result = -v[0];
-        if (index == 14) result = static_cast<T>(0);
-        if (index == 15) result = v[4];
-        if (index == 16) result = -v[3];
-        if (index == 17) result = static_cast<T>(0);if (index == 18) result = static_cast<T>(0);
-        if (index == 19) result = static_cast<T>(0);
-        if (index == 20) result = static_cast<T>(0);
-        if (index == 21) result = static_cast<T>(0);
-        if (index == 22) result = v[2];
-        if (index == 23) result = -v[1];
-        if (index == 24) result = static_cast<T>(0);
-        if (index == 25) result = static_cast<T>(0);
-        if (index == 26) result = static_cast<T>(0);
-        if (index == 27) result = -v[2];
-        if (index == 28) result = static_cast<T>(0);
-        if (index == 29) result = v[0];
-        if (index == 30) result = static_cast<T>(0);
-        if (index == 31) result = static_cast<T>(0);
-        if (index == 32) result = static_cast<T>(0);
-        if (index == 33) result = v[1];
-        if (index == 34) result = -v[0];
-        if (index == 35) result = static_cast<T>(0);
-        return result;
+        return glass::spatial_detail::motion_cross_entry<T>((uint32_t)(index % 6), (uint32_t)(index / 6), v);
     }
 
     /**
@@ -4312,14 +9269,7 @@ namespace grid {
     template <typename T>
     __device__
     T crm_mul(int index, T *v_crm, T *v) {
-        T result;
-        if (index == 0) result = -v_crm[2] * v[1] + v_crm[1] * v[2];
-        if (index == 1) result = v_crm[2] * v[0] - v_crm[0] * v[2];
-        if (index == 2) result = -v_crm[1] * v[0] + v_crm[0] * v[1];
-        if (index == 3) result = -v_crm[5] * v[1] + v_crm[4] * v[2] - v_crm[2] * v[4] + v_crm[1] * v[5];
-        if (index == 4) result = v_crm[5] * v[0] - v_crm[3] * v[2] + v_crm[2] * v[3] - v_crm[0] * v[5];
-        if (index == 5) result = -v_crm[4] * v[0] + v_crm[3] * v[1] - v_crm[1] * v[3] + v_crm[0] * v[4];
-        return result;
+        return glass::spatial_detail::motion_cross_mul_row<T>((uint32_t)index, v_crm, v);
     }
 
     /**
@@ -5405,23 +10355,39 @@ namespace grid {
             gpuErrchk(cudaMalloc((void**)&hd_data->d_Minv, NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_qdd, NUM_JOINTS*NUM_TIMESTEPS*sizeof(T)));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_M, NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
+            #if GRID_HAS_INVERSE_DYNAMICS_GRADIENT
             gpuErrchk(cudaMalloc((void**)&hd_data->d_dc_du, 2*NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
+            #endif
+            #if GRID_HAS_FORWARD_DYNAMICS_GRADIENT
             gpuErrchk(cudaMalloc((void**)&hd_data->d_df_du, 2*NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
+            #endif
             // f_ext gradient column (section A): dtau/dfext, dqdd/dfext are each nv x (6*NB)
+            #if GRID_HAS_F_EXT_GRADIENT
             gpuErrchk(cudaMalloc((void**)&hd_data->d_dtau_dfext, NUM_VEL*6*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_dqdd_dfext, NUM_VEL*6*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
+            #endif
             hd_data->h_dtau_dfext = (T *)malloc(NUM_VEL*6*NUM_BODIES*NUM_TIMESTEPS*sizeof(T));
             hd_data->h_dqdd_dfext = (T *)malloc(NUM_VEL*6*NUM_BODIES*NUM_TIMESTEPS*sizeof(T));
-            // f_ext A.3: -dJ^T/dq = d(inverse_dynamics_gradient)/dfext, nv*6NB*nv (both base modes)
+            // f_ext A.3: -dJ^T/dq = d(inverse_dynamics_gradient)/dfext, nv*6NB*nv (fixed base only; the largest per-timestep buffer)
+            #if GRID_HAS_F_EXT_GRADIENT_DQ
             gpuErrchk(cudaMalloc((void**)&hd_data->d_f_ext_gradient_dq, NUM_VEL*6*NUM_BODIES*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_f_ext_gradient_dq = (T *)malloc(NUM_VEL*6*NUM_BODIES*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
+            #endif
             // R2: regressor Y and FD param-gradient dqdd/dpi (each nv x 10*NUM_BODIES)
+            #if GRID_HAS_INVERSE_DYNAMICS_REGRESSOR
             gpuErrchk(cudaMalloc((void**)&hd_data->d_Y, NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
-            gpuErrchk(cudaMalloc((void**)&hd_data->d_dqdd_dpi, NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_Y = (T *)malloc(NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_FORWARD_DYNAMICS_PARAMETER_GRADIENT
+            gpuErrchk(cudaMalloc((void**)&hd_data->d_dqdd_dpi, NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_dqdd_dpi = (T *)malloc(NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_IDSVA_SO
             gpuErrchk(cudaMalloc((void**)&hd_data->d_idsva_so, SECOND_ORDER_TENSOR_SIZE*NUM_TIMESTEPS*sizeof(T)));
+            #endif
+            #if GRID_HAS_FDSVA_SO
             gpuErrchk(cudaMalloc((void**)&hd_data->d_df2, SECOND_ORDER_TENSOR_SIZE*NUM_TIMESTEPS*sizeof(T)));
+            #endif
             gpuErrchk(cudaMalloc((void**)&hd_data->d_workspace, GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>()*GRID_WORKSPACE_SLOTS*NUM_TIMESTEPS));
             // Phase 3a/b/c/e: L2-pin d_workspace for its lifetime. Spilled buffers
             // (Minv-F, FD's Minv-F, ABA's inner scratch, FDSVA_SO's df_du/Minv) are
@@ -5431,14 +10397,26 @@ namespace grid {
             hd_data->h_Minv = (T *)malloc(NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
             hd_data->h_M = (T *)malloc(NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
             hd_data->h_qdd = (T *)malloc(NUM_JOINTS*NUM_TIMESTEPS*sizeof(T));
+            #if GRID_HAS_INVERSE_DYNAMICS_GRADIENT
             hd_data->h_dc_du = (T *)malloc(2*NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_FORWARD_DYNAMICS_GRADIENT
             hd_data->h_df_du = (T *)malloc(2*NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_IDSVA_SO
             hd_data->h_idsva_so = (T *)malloc(SECOND_ORDER_TENSOR_SIZE*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_FDSVA_SO
             hd_data->h_df2 = (T *)malloc(SECOND_ORDER_TENSOR_SIZE*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_INTEGRATOR
             gpuErrchk(cudaMalloc((void**)&hd_data->d_x_kp1, 2*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T)));
-            gpuErrchk(cudaMalloc((void**)&hd_data->d_dAB, 2*NUM_JOINTS*3*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_x_kp1 = (T *)malloc(2*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_INTEGRATOR_GRADIENT
+            gpuErrchk(cudaMalloc((void**)&hd_data->d_dAB, 2*NUM_JOINTS*3*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_dAB = (T *)malloc(2*NUM_JOINTS*3*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T));
+            #endif
         }
         // kinematics outputs
         if (needs_kinematics) {
@@ -5457,8 +10435,9 @@ namespace grid {
             hd_data->h_osc_inertia = (T *)malloc(36*NUM_TIMESTEPS*sizeof(T));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_eePose, 6*NUM_TIMESTEPS*sizeof(T)));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_eePoseGrad, 6*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
-            gpuErrchk(cudaMalloc((void**)&hd_data->d_eepose_runtime_offset, 3*sizeof(T)));
-            gpuErrchk(cudaMemset(hd_data->d_eepose_runtime_offset, 0, 3*sizeof(T)));
+            gpuErrchk(cudaMalloc((void**)&hd_data->d_eepose_runtime_offset, 16*sizeof(T)));
+            { T h_Xtool_identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+              gpuErrchk(cudaMemcpy(hd_data->d_eepose_runtime_offset, h_Xtool_identity, 16*sizeof(T), cudaMemcpyHostToDevice)); }
             hd_data->h_eePose = (T *)malloc(6*NUM_TIMESTEPS*sizeof(T));
             hd_data->h_eePoseGrad = (T *)malloc(6*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
         }
@@ -5522,23 +10501,39 @@ namespace grid {
             gpuErrchk(cudaMalloc((void**)&hd_data->d_Minv, NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_qdd, NUM_JOINTS*NUM_TIMESTEPS*sizeof(T)));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_M, NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
+            #if GRID_HAS_INVERSE_DYNAMICS_GRADIENT
             gpuErrchk(cudaMalloc((void**)&hd_data->d_dc_du, 2*NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
+            #endif
+            #if GRID_HAS_FORWARD_DYNAMICS_GRADIENT
             gpuErrchk(cudaMalloc((void**)&hd_data->d_df_du, 2*NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
+            #endif
             // f_ext gradient column (section A): dtau/dfext, dqdd/dfext are each nv x (6*NB)
+            #if GRID_HAS_F_EXT_GRADIENT
             gpuErrchk(cudaMalloc((void**)&hd_data->d_dtau_dfext, NUM_VEL*6*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_dqdd_dfext, NUM_VEL*6*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
+            #endif
             hd_data->h_dtau_dfext = (T *)malloc(NUM_VEL*6*NUM_BODIES*NUM_TIMESTEPS*sizeof(T));
             hd_data->h_dqdd_dfext = (T *)malloc(NUM_VEL*6*NUM_BODIES*NUM_TIMESTEPS*sizeof(T));
-            // f_ext A.3: -dJ^T/dq = d(inverse_dynamics_gradient)/dfext, nv*6NB*nv (both base modes)
+            // f_ext A.3: -dJ^T/dq = d(inverse_dynamics_gradient)/dfext, nv*6NB*nv (fixed base only; the largest per-timestep buffer)
+            #if GRID_HAS_F_EXT_GRADIENT_DQ
             gpuErrchk(cudaMalloc((void**)&hd_data->d_f_ext_gradient_dq, NUM_VEL*6*NUM_BODIES*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_f_ext_gradient_dq = (T *)malloc(NUM_VEL*6*NUM_BODIES*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
+            #endif
             // R2: regressor Y and FD param-gradient dqdd/dpi (each nv x 10*NUM_BODIES)
+            #if GRID_HAS_INVERSE_DYNAMICS_REGRESSOR
             gpuErrchk(cudaMalloc((void**)&hd_data->d_Y, NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
-            gpuErrchk(cudaMalloc((void**)&hd_data->d_dqdd_dpi, NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_Y = (T *)malloc(NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_FORWARD_DYNAMICS_PARAMETER_GRADIENT
+            gpuErrchk(cudaMalloc((void**)&hd_data->d_dqdd_dpi, NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_dqdd_dpi = (T *)malloc(NUM_VEL*10*NUM_BODIES*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_IDSVA_SO
             gpuErrchk(cudaMalloc((void**)&hd_data->d_idsva_so, SECOND_ORDER_TENSOR_SIZE*NUM_TIMESTEPS*sizeof(T)));
+            #endif
+            #if GRID_HAS_FDSVA_SO
             gpuErrchk(cudaMalloc((void**)&hd_data->d_df2, SECOND_ORDER_TENSOR_SIZE*NUM_TIMESTEPS*sizeof(T)));
+            #endif
             gpuErrchk(cudaMalloc((void**)&hd_data->d_workspace, GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>()*GRID_WORKSPACE_SLOTS*NUM_TIMESTEPS));
             // Phase 3a/b/c/e: L2-pin d_workspace for its lifetime. Spilled buffers
             // (Minv-F, FD's Minv-F, ABA's inner scratch, FDSVA_SO's df_du/Minv) are
@@ -5548,14 +10543,26 @@ namespace grid {
             hd_data->h_Minv = (T *)malloc(NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
             hd_data->h_M = (T *)malloc(NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
             hd_data->h_qdd = (T *)malloc(NUM_JOINTS*NUM_TIMESTEPS*sizeof(T));
+            #if GRID_HAS_INVERSE_DYNAMICS_GRADIENT
             hd_data->h_dc_du = (T *)malloc(2*NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_FORWARD_DYNAMICS_GRADIENT
             hd_data->h_df_du = (T *)malloc(2*NUM_VEL*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_IDSVA_SO
             hd_data->h_idsva_so = (T *)malloc(SECOND_ORDER_TENSOR_SIZE*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_FDSVA_SO
             hd_data->h_df2 = (T *)malloc(SECOND_ORDER_TENSOR_SIZE*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_INTEGRATOR
             gpuErrchk(cudaMalloc((void**)&hd_data->d_x_kp1, 2*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T)));
-            gpuErrchk(cudaMalloc((void**)&hd_data->d_dAB, 2*NUM_JOINTS*3*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_x_kp1 = (T *)malloc(2*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T));
+            #endif
+            #if GRID_HAS_INTEGRATOR_GRADIENT
+            gpuErrchk(cudaMalloc((void**)&hd_data->d_dAB, 2*NUM_JOINTS*3*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T)));
             hd_data->h_dAB = (T *)malloc(2*NUM_JOINTS*3*NUM_JOINTS*NUM_TIMESTEPS*sizeof(T));
+            #endif
         }
         // kinematics outputs
         if (needs_kinematics) {
@@ -5574,8 +10581,9 @@ namespace grid {
             hd_data->h_osc_inertia = (T *)malloc(36*NUM_TIMESTEPS*sizeof(T));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_eePose, 6*NUM_TIMESTEPS*sizeof(T)));
             gpuErrchk(cudaMalloc((void**)&hd_data->d_eePoseGrad, 6*NUM_VEL*NUM_TIMESTEPS*sizeof(T)));
-            gpuErrchk(cudaMalloc((void**)&hd_data->d_eepose_runtime_offset, 3*sizeof(T)));
-            gpuErrchk(cudaMemset(hd_data->d_eepose_runtime_offset, 0, 3*sizeof(T)));
+            gpuErrchk(cudaMalloc((void**)&hd_data->d_eepose_runtime_offset, 16*sizeof(T)));
+            { T h_Xtool_identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+              gpuErrchk(cudaMemcpy(hd_data->d_eepose_runtime_offset, h_Xtool_identity, 16*sizeof(T), cudaMemcpyHostToDevice)); }
             hd_data->h_eePose = (T *)malloc(6*NUM_TIMESTEPS*sizeof(T));
             hd_data->h_eePoseGrad = (T *)malloc(6*NUM_VEL*NUM_TIMESTEPS*sizeof(T));
         }
@@ -6540,18 +11548,15 @@ namespace grid {
         //
         // Step 2: zero the J_v and J_w scratch (out-of-chain columns stay zero)
         //
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 42; ind += blockDim.x*blockDim.y){
-            s_Jv[ind] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 42>(static_cast<T>(0), s_Jv);
         //
         // Step 3: per-chain-joint columns of J_v, J_w (one block-parallel work-item per (ee, S-column))
         //
-        static const int eeg_job_j[]    = { 0, 1, 2, 3, 4, 5, 6 };
-        static const int eeg_job_anc[]  = { 6, 6, 6, 6, 6, 6, 6 };
-        static const int eeg_job_rev[]  = { 1, 1, 1, 1, 1, 1, 1 };
+        static const int eeg_job_j[] = { 0, 1, 2, 3, 4, 5, 6 };
+        static const int eeg_job_anc[] = { 6, 6, 6, 6, 6, 6, 6 };
+        static const int eeg_job_rev[] = { 1, 1, 1, 1, 1, 1, 1 };
         static const int eeg_job_base[] = { 0, 3, 6, 9, 12, 15, 18 };
-        const T eeg_job_ax[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1) };
+        static const T eeg_job_ax[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1) };
         for(int job_idx = threadIdx.x + threadIdx.y*blockDim.x; job_idx < 7; job_idx += blockDim.x*blockDim.y){
             int j   = eeg_job_j[job_idx];
             int ee_anchor = eeg_job_anc[job_idx];
@@ -7252,10 +12257,7 @@ namespace grid {
         //
         // Step 2: build per-DOF world-frame 4x4 generator S_i_world
         //
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 112; ind += blockDim.x*blockDim.y){
-            s_Sworld[ind] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 112>(static_cast<T>(0), s_Sworld);
         for(int sworld_slot = threadIdx.x + threadIdx.y*blockDim.x; sworld_slot < 7; sworld_slot += blockDim.x*blockDim.y){
             if (sworld_slot == 0) {
                 // ee=0 vi=0 jid=0 rev ax_local=[0.0, 0.0, 1.0]
@@ -7474,10 +12476,7 @@ namespace grid {
         //
         // Step 5a: zero the full end_effector_pose_hessian output (out-of-chain pairs stay zero)
         //
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-            s_end_effector_pose_hessian[ind] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 294>(static_cast<T>(0), s_end_effector_pose_hessian);
         //
         // Step 5b: per (ee, i, j) pair: d2M = S_i_world * S_j_world * X_ee (for a < b)
         //   or B_world * X_ee (intra-joint). Writes H_xyz to rows 0..2 and (temporarily)
@@ -7580,65 +12579,84 @@ namespace grid {
                 s_end_effector_pose_hessian[out_base + 4 * 49] = HW_y;
                 s_end_effector_pose_hessian[out_base + 5 * 49] = HW_z;
             }
-            // ee=0 pair (vi=0, vj=0, a=0, b=0)
-            if (d2m_cell == 42) {
-                T pex = s_Xworld[108];
-                T pey = s_Xworld[109];
-                T pez = s_Xworld[110];
-                // same-joint pair (intra-joint), joint_jid=0 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[8] * static_cast<T>(1);
-                T aw_1 = s_Xworld[9] * static_cast<T>(1);
-                T aw_2 = s_Xworld[10] * static_cast<T>(1);
-                T bw_0 = s_Xworld[8] * static_cast<T>(1);
-                T bw_1 = s_Xworld[9] * static_cast<T>(1);
-                T bw_2 = s_Xworld[10] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[12];
-                T pay = s_Xworld[13];
-                T paz = s_Xworld[14];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
+            // Same-joint (intra-joint) cells: one shared shape-switched body
+            // driven by baked per-cell shape/offset + world-axis tables.
+            static const int s_d2ee_same_tab[] = { 0, 0, 0, 0, 96, 0, 0, 16, 16, 16, 96, 8, 0, 32, 32, 32, 96, 16, 0, 48, 48, 48, 96, 24, 0, 64, 64, 64, 96, 32, 0, 80, 80, 80, 96, 40, 0, 96, 96, 96, 96, 48 };
+            static const T s_d2ee_same_axis[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1) };
+            if (d2m_cell >= 42 && d2m_cell < 49) {
+                int same_cell = d2m_cell - 42;
+                const int *srow = &s_d2ee_same_tab[6 * same_cell];
+                int sshape = srow[0]; int pa_base = srow[1];
+                int si_base = srow[2]; int sj_base = srow[3];
+                int pee_base = srow[4]; int out_base = srow[5];
+                const T *ax = &s_d2ee_same_axis[6 * same_cell];
+                T pex = s_Xworld[pee_base + 12];
+                T pey = s_Xworld[pee_base + 13];
+                T pez = s_Xworld[pee_base + 14];
+                // world axes u_w = R_a @ ax0, v_w = R_a @ ax1
+                T uw_0 = s_Xworld[pa_base + 0] * ax[0] + s_Xworld[pa_base + 4] * ax[1] + s_Xworld[pa_base + 8] * ax[2];
+                T uw_1 = s_Xworld[pa_base + 1] * ax[0] + s_Xworld[pa_base + 5] * ax[1] + s_Xworld[pa_base + 9] * ax[2];
+                T uw_2 = s_Xworld[pa_base + 2] * ax[0] + s_Xworld[pa_base + 6] * ax[1] + s_Xworld[pa_base + 10] * ax[2];
+                T vw_0 = s_Xworld[pa_base + 0] * ax[3] + s_Xworld[pa_base + 4] * ax[4] + s_Xworld[pa_base + 8] * ax[5];
+                T vw_1 = s_Xworld[pa_base + 1] * ax[3] + s_Xworld[pa_base + 5] * ax[4] + s_Xworld[pa_base + 9] * ax[5];
+                T vw_2 = s_Xworld[pa_base + 2] * ax[3] + s_Xworld[pa_base + 6] * ax[4] + s_Xworld[pa_base + 10] * ax[5];
+                T pax = s_Xworld[pa_base + 12];
+                T pay = s_Xworld[pa_base + 13];
+                T paz = s_Xworld[pa_base + 14];
+                T Br_00 = static_cast<T>(0);
+                T Br_01 = static_cast<T>(0);
+                T Br_02 = static_cast<T>(0);
+                T Br_10 = static_cast<T>(0);
+                T Br_11 = static_cast<T>(0);
+                T Br_12 = static_cast<T>(0);
+                T Br_20 = static_cast<T>(0);
+                T Br_21 = static_cast<T>(0);
+                T Br_22 = static_cast<T>(0);
+                T Bt_0 = static_cast<T>(0);
+                T Bt_1 = static_cast<T>(0);
+                T Bt_2 = static_cast<T>(0);
+                if (sshape == 0) {
+                    T adotb = uw_0*vw_0 + uw_1*vw_1 + uw_2*vw_2;
+                    Br_00 = static_cast<T>(0.5) * (uw_0*vw_0 + vw_0*uw_0) - adotb;
+                    Br_01 = static_cast<T>(0.5) * (uw_0*vw_1 + vw_0*uw_1);
+                    Br_02 = static_cast<T>(0.5) * (uw_0*vw_2 + vw_0*uw_2);
+                    Br_10 = static_cast<T>(0.5) * (uw_1*vw_0 + vw_1*uw_0);
+                    Br_11 = static_cast<T>(0.5) * (uw_1*vw_1 + vw_1*uw_1) - adotb;
+                    Br_12 = static_cast<T>(0.5) * (uw_1*vw_2 + vw_1*uw_2);
+                    Br_20 = static_cast<T>(0.5) * (uw_2*vw_0 + vw_2*uw_0);
+                    Br_21 = static_cast<T>(0.5) * (uw_2*vw_1 + vw_2*uw_1);
+                    Br_22 = static_cast<T>(0.5) * (uw_2*vw_2 + vw_2*uw_2) - adotb;
+                    Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
+                    Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
+                    Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
+                }
+                else if (sshape == 1) {
+                    Bt_0 = static_cast<T>(0.5) * (uw_1*vw_2 - uw_2*vw_1);
+                    Bt_1 = static_cast<T>(0.5) * (uw_2*vw_0 - uw_0*vw_2);
+                    Bt_2 = static_cast<T>(0.5) * (uw_0*vw_1 - uw_1*vw_0);
+                }
                 T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
                 T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
                 T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
                 // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[0];
-                T Si10 = s_Sworld[1];
-                T Si20 = s_Sworld[2];
-                T Si01 = s_Sworld[4];
-                T Si11 = s_Sworld[5];
-                T Si21 = s_Sworld[6];
-                T Si02 = s_Sworld[8];
-                T Si12 = s_Sworld[9];
-                T Si22 = s_Sworld[10];
-                T Sj00 = s_Sworld[0];
-                T Sj10 = s_Sworld[1];
-                T Sj20 = s_Sworld[2];
-                T Sj01 = s_Sworld[4];
-                T Sj11 = s_Sworld[5];
-                T Sj21 = s_Sworld[6];
-                T Sj02 = s_Sworld[8];
-                T Sj12 = s_Sworld[9];
-                T Sj22 = s_Sworld[10];
+                T Si00 = s_Sworld[si_base + 0];
+                T Si10 = s_Sworld[si_base + 1];
+                T Si20 = s_Sworld[si_base + 2];
+                T Si01 = s_Sworld[si_base + 4];
+                T Si11 = s_Sworld[si_base + 5];
+                T Si21 = s_Sworld[si_base + 6];
+                T Si02 = s_Sworld[si_base + 8];
+                T Si12 = s_Sworld[si_base + 9];
+                T Si22 = s_Sworld[si_base + 10];
+                T Sj00 = s_Sworld[sj_base + 0];
+                T Sj10 = s_Sworld[sj_base + 1];
+                T Sj20 = s_Sworld[sj_base + 2];
+                T Sj01 = s_Sworld[sj_base + 4];
+                T Sj11 = s_Sworld[sj_base + 5];
+                T Sj21 = s_Sworld[sj_base + 6];
+                T Sj02 = s_Sworld[sj_base + 8];
+                T Sj12 = s_Sworld[sj_base + 9];
+                T Sj22 = s_Sworld[sj_base + 10];
                 T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
                 T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
                 T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
@@ -7651,480 +12669,12 @@ namespace grid {
                 T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
                 T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
                 T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 0) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 0) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 0) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 0) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 0) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 0) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=1, vj=1, a=1, b=1)
-            if (d2m_cell == 43) {
-                T pex = s_Xworld[108];
-                T pey = s_Xworld[109];
-                T pez = s_Xworld[110];
-                // same-joint pair (intra-joint), joint_jid=1 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[24] * static_cast<T>(1);
-                T aw_1 = s_Xworld[25] * static_cast<T>(1);
-                T aw_2 = s_Xworld[26] * static_cast<T>(1);
-                T bw_0 = s_Xworld[24] * static_cast<T>(1);
-                T bw_1 = s_Xworld[25] * static_cast<T>(1);
-                T bw_2 = s_Xworld[26] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[28];
-                T pay = s_Xworld[29];
-                T paz = s_Xworld[30];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[16];
-                T Si10 = s_Sworld[17];
-                T Si20 = s_Sworld[18];
-                T Si01 = s_Sworld[20];
-                T Si11 = s_Sworld[21];
-                T Si21 = s_Sworld[22];
-                T Si02 = s_Sworld[24];
-                T Si12 = s_Sworld[25];
-                T Si22 = s_Sworld[26];
-                T Sj00 = s_Sworld[16];
-                T Sj10 = s_Sworld[17];
-                T Sj20 = s_Sworld[18];
-                T Sj01 = s_Sworld[20];
-                T Sj11 = s_Sworld[21];
-                T Sj21 = s_Sworld[22];
-                T Sj02 = s_Sworld[24];
-                T Sj12 = s_Sworld[25];
-                T Sj22 = s_Sworld[26];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 8) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 8) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 8) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 8) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 8) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 8) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=2, vj=2, a=2, b=2)
-            if (d2m_cell == 44) {
-                T pex = s_Xworld[108];
-                T pey = s_Xworld[109];
-                T pez = s_Xworld[110];
-                // same-joint pair (intra-joint), joint_jid=2 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[40] * static_cast<T>(1);
-                T aw_1 = s_Xworld[41] * static_cast<T>(1);
-                T aw_2 = s_Xworld[42] * static_cast<T>(1);
-                T bw_0 = s_Xworld[40] * static_cast<T>(1);
-                T bw_1 = s_Xworld[41] * static_cast<T>(1);
-                T bw_2 = s_Xworld[42] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[44];
-                T pay = s_Xworld[45];
-                T paz = s_Xworld[46];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[32];
-                T Si10 = s_Sworld[33];
-                T Si20 = s_Sworld[34];
-                T Si01 = s_Sworld[36];
-                T Si11 = s_Sworld[37];
-                T Si21 = s_Sworld[38];
-                T Si02 = s_Sworld[40];
-                T Si12 = s_Sworld[41];
-                T Si22 = s_Sworld[42];
-                T Sj00 = s_Sworld[32];
-                T Sj10 = s_Sworld[33];
-                T Sj20 = s_Sworld[34];
-                T Sj01 = s_Sworld[36];
-                T Sj11 = s_Sworld[37];
-                T Sj21 = s_Sworld[38];
-                T Sj02 = s_Sworld[40];
-                T Sj12 = s_Sworld[41];
-                T Sj22 = s_Sworld[42];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 16) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 16) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 16) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 16) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 16) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 16) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=3, vj=3, a=3, b=3)
-            if (d2m_cell == 45) {
-                T pex = s_Xworld[108];
-                T pey = s_Xworld[109];
-                T pez = s_Xworld[110];
-                // same-joint pair (intra-joint), joint_jid=3 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[56] * static_cast<T>(1);
-                T aw_1 = s_Xworld[57] * static_cast<T>(1);
-                T aw_2 = s_Xworld[58] * static_cast<T>(1);
-                T bw_0 = s_Xworld[56] * static_cast<T>(1);
-                T bw_1 = s_Xworld[57] * static_cast<T>(1);
-                T bw_2 = s_Xworld[58] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[60];
-                T pay = s_Xworld[61];
-                T paz = s_Xworld[62];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[48];
-                T Si10 = s_Sworld[49];
-                T Si20 = s_Sworld[50];
-                T Si01 = s_Sworld[52];
-                T Si11 = s_Sworld[53];
-                T Si21 = s_Sworld[54];
-                T Si02 = s_Sworld[56];
-                T Si12 = s_Sworld[57];
-                T Si22 = s_Sworld[58];
-                T Sj00 = s_Sworld[48];
-                T Sj10 = s_Sworld[49];
-                T Sj20 = s_Sworld[50];
-                T Sj01 = s_Sworld[52];
-                T Sj11 = s_Sworld[53];
-                T Sj21 = s_Sworld[54];
-                T Sj02 = s_Sworld[56];
-                T Sj12 = s_Sworld[57];
-                T Sj22 = s_Sworld[58];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 24) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 24) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 24) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 24) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 24) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 24) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=4, vj=4, a=4, b=4)
-            if (d2m_cell == 46) {
-                T pex = s_Xworld[108];
-                T pey = s_Xworld[109];
-                T pez = s_Xworld[110];
-                // same-joint pair (intra-joint), joint_jid=4 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[72] * static_cast<T>(1);
-                T aw_1 = s_Xworld[73] * static_cast<T>(1);
-                T aw_2 = s_Xworld[74] * static_cast<T>(1);
-                T bw_0 = s_Xworld[72] * static_cast<T>(1);
-                T bw_1 = s_Xworld[73] * static_cast<T>(1);
-                T bw_2 = s_Xworld[74] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[76];
-                T pay = s_Xworld[77];
-                T paz = s_Xworld[78];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[64];
-                T Si10 = s_Sworld[65];
-                T Si20 = s_Sworld[66];
-                T Si01 = s_Sworld[68];
-                T Si11 = s_Sworld[69];
-                T Si21 = s_Sworld[70];
-                T Si02 = s_Sworld[72];
-                T Si12 = s_Sworld[73];
-                T Si22 = s_Sworld[74];
-                T Sj00 = s_Sworld[64];
-                T Sj10 = s_Sworld[65];
-                T Sj20 = s_Sworld[66];
-                T Sj01 = s_Sworld[68];
-                T Sj11 = s_Sworld[69];
-                T Sj21 = s_Sworld[70];
-                T Sj02 = s_Sworld[72];
-                T Sj12 = s_Sworld[73];
-                T Sj22 = s_Sworld[74];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 32) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 32) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 32) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 32) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 32) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 32) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=5, vj=5, a=5, b=5)
-            if (d2m_cell == 47) {
-                T pex = s_Xworld[108];
-                T pey = s_Xworld[109];
-                T pez = s_Xworld[110];
-                // same-joint pair (intra-joint), joint_jid=5 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[88] * static_cast<T>(1);
-                T aw_1 = s_Xworld[89] * static_cast<T>(1);
-                T aw_2 = s_Xworld[90] * static_cast<T>(1);
-                T bw_0 = s_Xworld[88] * static_cast<T>(1);
-                T bw_1 = s_Xworld[89] * static_cast<T>(1);
-                T bw_2 = s_Xworld[90] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[92];
-                T pay = s_Xworld[93];
-                T paz = s_Xworld[94];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[80];
-                T Si10 = s_Sworld[81];
-                T Si20 = s_Sworld[82];
-                T Si01 = s_Sworld[84];
-                T Si11 = s_Sworld[85];
-                T Si21 = s_Sworld[86];
-                T Si02 = s_Sworld[88];
-                T Si12 = s_Sworld[89];
-                T Si22 = s_Sworld[90];
-                T Sj00 = s_Sworld[80];
-                T Sj10 = s_Sworld[81];
-                T Sj20 = s_Sworld[82];
-                T Sj01 = s_Sworld[84];
-                T Sj11 = s_Sworld[85];
-                T Sj21 = s_Sworld[86];
-                T Sj02 = s_Sworld[88];
-                T Sj12 = s_Sworld[89];
-                T Sj22 = s_Sworld[90];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 40) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 40) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 40) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 40) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 40) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 40) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=6, vj=6, a=6, b=6)
-            if (d2m_cell == 48) {
-                T pex = s_Xworld[108];
-                T pey = s_Xworld[109];
-                T pez = s_Xworld[110];
-                // same-joint pair (intra-joint), joint_jid=6 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[104] * static_cast<T>(1);
-                T aw_1 = s_Xworld[105] * static_cast<T>(1);
-                T aw_2 = s_Xworld[106] * static_cast<T>(1);
-                T bw_0 = s_Xworld[104] * static_cast<T>(1);
-                T bw_1 = s_Xworld[105] * static_cast<T>(1);
-                T bw_2 = s_Xworld[106] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[108];
-                T pay = s_Xworld[109];
-                T paz = s_Xworld[110];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[96];
-                T Si10 = s_Sworld[97];
-                T Si20 = s_Sworld[98];
-                T Si01 = s_Sworld[100];
-                T Si11 = s_Sworld[101];
-                T Si21 = s_Sworld[102];
-                T Si02 = s_Sworld[104];
-                T Si12 = s_Sworld[105];
-                T Si22 = s_Sworld[106];
-                T Sj00 = s_Sworld[96];
-                T Sj10 = s_Sworld[97];
-                T Sj20 = s_Sworld[98];
-                T Sj01 = s_Sworld[100];
-                T Sj11 = s_Sworld[101];
-                T Sj21 = s_Sworld[102];
-                T Sj02 = s_Sworld[104];
-                T Sj12 = s_Sworld[105];
-                T Sj22 = s_Sworld[106];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 48) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 48) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 48) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 48) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 48) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 48) + 5 * 49] = HW_z;
+                s_end_effector_pose_hessian[out_base + 0 * 49] = Hxyz_x;
+                s_end_effector_pose_hessian[out_base + 1 * 49] = Hxyz_y;
+                s_end_effector_pose_hessian[out_base + 2 * 49] = Hxyz_z;
+                s_end_effector_pose_hessian[out_base + 3 * 49] = HW_x;
+                s_end_effector_pose_hessian[out_base + 4 * 49] = HW_y;
+                s_end_effector_pose_hessian[out_base + 5 * 49] = HW_z;
             }
         }
         __syncthreads();
@@ -9275,18 +13825,15 @@ namespace grid {
         //
         // Step 2: zero the J_v and J_w scratch (out-of-chain columns stay zero)
         //
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 42; ind += blockDim.x*blockDim.y){
-            s_Jv[ind] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 42>(static_cast<T>(0), s_Jv);
         //
         // Step 3: per-chain-joint columns of J_v, J_w (one block-parallel work-item per (ee, S-column))
         //
-        static const int eeg_job_j[]    = { 0, 1, 2, 3, 4, 5, 6 };
-        static const int eeg_job_anc[]  = { 7, 7, 7, 7, 7, 7, 7 };
-        static const int eeg_job_rev[]  = { 1, 1, 1, 1, 1, 1, 1 };
+        static const int eeg_job_j[] = { 0, 1, 2, 3, 4, 5, 6 };
+        static const int eeg_job_anc[] = { 7, 7, 7, 7, 7, 7, 7 };
+        static const int eeg_job_rev[] = { 1, 1, 1, 1, 1, 1, 1 };
         static const int eeg_job_base[] = { 0, 3, 6, 9, 12, 15, 18 };
-        const T eeg_job_ax[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1) };
+        static const T eeg_job_ax[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1) };
         for(int job_idx = threadIdx.x + threadIdx.y*blockDim.x; job_idx < 7; job_idx += blockDim.x*blockDim.y){
             int j   = eeg_job_j[job_idx];
             int ee_anchor = eeg_job_anc[job_idx];
@@ -9999,10 +14546,7 @@ namespace grid {
         //
         // Step 2: build per-DOF world-frame 4x4 generator S_i_world
         //
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 112; ind += blockDim.x*blockDim.y){
-            s_Sworld[ind] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 112>(static_cast<T>(0), s_Sworld);
         for(int sworld_slot = threadIdx.x + threadIdx.y*blockDim.x; sworld_slot < 7; sworld_slot += blockDim.x*blockDim.y){
             if (sworld_slot == 0) {
                 // ee=0 vi=0 jid=0 rev ax_local=[0.0, 0.0, 1.0]
@@ -10221,10 +14765,7 @@ namespace grid {
         //
         // Step 5a: zero the full end_effector_pose_hessian output (out-of-chain pairs stay zero)
         //
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-            s_end_effector_pose_hessian[ind] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 294>(static_cast<T>(0), s_end_effector_pose_hessian);
         //
         // Step 5b: per (ee, i, j) pair: d2M = S_i_world * S_j_world * X_ee (for a < b)
         //   or B_world * X_ee (intra-joint). Writes H_xyz to rows 0..2 and (temporarily)
@@ -10327,65 +14868,84 @@ namespace grid {
                 s_end_effector_pose_hessian[out_base + 4 * 49] = HW_y;
                 s_end_effector_pose_hessian[out_base + 5 * 49] = HW_z;
             }
-            // ee=0 pair (vi=0, vj=0, a=0, b=0)
-            if (d2m_cell == 42) {
-                T pex = s_Xworld[124];
-                T pey = s_Xworld[125];
-                T pez = s_Xworld[126];
-                // same-joint pair (intra-joint), joint_jid=0 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[8] * static_cast<T>(1);
-                T aw_1 = s_Xworld[9] * static_cast<T>(1);
-                T aw_2 = s_Xworld[10] * static_cast<T>(1);
-                T bw_0 = s_Xworld[8] * static_cast<T>(1);
-                T bw_1 = s_Xworld[9] * static_cast<T>(1);
-                T bw_2 = s_Xworld[10] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[12];
-                T pay = s_Xworld[13];
-                T paz = s_Xworld[14];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
+            // Same-joint (intra-joint) cells: one shared shape-switched body
+            // driven by baked per-cell shape/offset + world-axis tables.
+            static const int s_d2ee_same_tab[] = { 0, 0, 0, 0, 112, 0, 0, 16, 16, 16, 112, 8, 0, 32, 32, 32, 112, 16, 0, 48, 48, 48, 112, 24, 0, 64, 64, 64, 112, 32, 0, 80, 80, 80, 112, 40, 0, 96, 96, 96, 112, 48 };
+            static const T s_d2ee_same_axis[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1) };
+            if (d2m_cell >= 42 && d2m_cell < 49) {
+                int same_cell = d2m_cell - 42;
+                const int *srow = &s_d2ee_same_tab[6 * same_cell];
+                int sshape = srow[0]; int pa_base = srow[1];
+                int si_base = srow[2]; int sj_base = srow[3];
+                int pee_base = srow[4]; int out_base = srow[5];
+                const T *ax = &s_d2ee_same_axis[6 * same_cell];
+                T pex = s_Xworld[pee_base + 12];
+                T pey = s_Xworld[pee_base + 13];
+                T pez = s_Xworld[pee_base + 14];
+                // world axes u_w = R_a @ ax0, v_w = R_a @ ax1
+                T uw_0 = s_Xworld[pa_base + 0] * ax[0] + s_Xworld[pa_base + 4] * ax[1] + s_Xworld[pa_base + 8] * ax[2];
+                T uw_1 = s_Xworld[pa_base + 1] * ax[0] + s_Xworld[pa_base + 5] * ax[1] + s_Xworld[pa_base + 9] * ax[2];
+                T uw_2 = s_Xworld[pa_base + 2] * ax[0] + s_Xworld[pa_base + 6] * ax[1] + s_Xworld[pa_base + 10] * ax[2];
+                T vw_0 = s_Xworld[pa_base + 0] * ax[3] + s_Xworld[pa_base + 4] * ax[4] + s_Xworld[pa_base + 8] * ax[5];
+                T vw_1 = s_Xworld[pa_base + 1] * ax[3] + s_Xworld[pa_base + 5] * ax[4] + s_Xworld[pa_base + 9] * ax[5];
+                T vw_2 = s_Xworld[pa_base + 2] * ax[3] + s_Xworld[pa_base + 6] * ax[4] + s_Xworld[pa_base + 10] * ax[5];
+                T pax = s_Xworld[pa_base + 12];
+                T pay = s_Xworld[pa_base + 13];
+                T paz = s_Xworld[pa_base + 14];
+                T Br_00 = static_cast<T>(0);
+                T Br_01 = static_cast<T>(0);
+                T Br_02 = static_cast<T>(0);
+                T Br_10 = static_cast<T>(0);
+                T Br_11 = static_cast<T>(0);
+                T Br_12 = static_cast<T>(0);
+                T Br_20 = static_cast<T>(0);
+                T Br_21 = static_cast<T>(0);
+                T Br_22 = static_cast<T>(0);
+                T Bt_0 = static_cast<T>(0);
+                T Bt_1 = static_cast<T>(0);
+                T Bt_2 = static_cast<T>(0);
+                if (sshape == 0) {
+                    T adotb = uw_0*vw_0 + uw_1*vw_1 + uw_2*vw_2;
+                    Br_00 = static_cast<T>(0.5) * (uw_0*vw_0 + vw_0*uw_0) - adotb;
+                    Br_01 = static_cast<T>(0.5) * (uw_0*vw_1 + vw_0*uw_1);
+                    Br_02 = static_cast<T>(0.5) * (uw_0*vw_2 + vw_0*uw_2);
+                    Br_10 = static_cast<T>(0.5) * (uw_1*vw_0 + vw_1*uw_0);
+                    Br_11 = static_cast<T>(0.5) * (uw_1*vw_1 + vw_1*uw_1) - adotb;
+                    Br_12 = static_cast<T>(0.5) * (uw_1*vw_2 + vw_1*uw_2);
+                    Br_20 = static_cast<T>(0.5) * (uw_2*vw_0 + vw_2*uw_0);
+                    Br_21 = static_cast<T>(0.5) * (uw_2*vw_1 + vw_2*uw_1);
+                    Br_22 = static_cast<T>(0.5) * (uw_2*vw_2 + vw_2*uw_2) - adotb;
+                    Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
+                    Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
+                    Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
+                }
+                else if (sshape == 1) {
+                    Bt_0 = static_cast<T>(0.5) * (uw_1*vw_2 - uw_2*vw_1);
+                    Bt_1 = static_cast<T>(0.5) * (uw_2*vw_0 - uw_0*vw_2);
+                    Bt_2 = static_cast<T>(0.5) * (uw_0*vw_1 - uw_1*vw_0);
+                }
                 T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
                 T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
                 T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
                 // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[0];
-                T Si10 = s_Sworld[1];
-                T Si20 = s_Sworld[2];
-                T Si01 = s_Sworld[4];
-                T Si11 = s_Sworld[5];
-                T Si21 = s_Sworld[6];
-                T Si02 = s_Sworld[8];
-                T Si12 = s_Sworld[9];
-                T Si22 = s_Sworld[10];
-                T Sj00 = s_Sworld[0];
-                T Sj10 = s_Sworld[1];
-                T Sj20 = s_Sworld[2];
-                T Sj01 = s_Sworld[4];
-                T Sj11 = s_Sworld[5];
-                T Sj21 = s_Sworld[6];
-                T Sj02 = s_Sworld[8];
-                T Sj12 = s_Sworld[9];
-                T Sj22 = s_Sworld[10];
+                T Si00 = s_Sworld[si_base + 0];
+                T Si10 = s_Sworld[si_base + 1];
+                T Si20 = s_Sworld[si_base + 2];
+                T Si01 = s_Sworld[si_base + 4];
+                T Si11 = s_Sworld[si_base + 5];
+                T Si21 = s_Sworld[si_base + 6];
+                T Si02 = s_Sworld[si_base + 8];
+                T Si12 = s_Sworld[si_base + 9];
+                T Si22 = s_Sworld[si_base + 10];
+                T Sj00 = s_Sworld[sj_base + 0];
+                T Sj10 = s_Sworld[sj_base + 1];
+                T Sj20 = s_Sworld[sj_base + 2];
+                T Sj01 = s_Sworld[sj_base + 4];
+                T Sj11 = s_Sworld[sj_base + 5];
+                T Sj21 = s_Sworld[sj_base + 6];
+                T Sj02 = s_Sworld[sj_base + 8];
+                T Sj12 = s_Sworld[sj_base + 9];
+                T Sj22 = s_Sworld[sj_base + 10];
                 T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
                 T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
                 T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
@@ -10398,480 +14958,12 @@ namespace grid {
                 T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
                 T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
                 T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 0) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 0) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 0) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 0) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 0) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 0) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=1, vj=1, a=1, b=1)
-            if (d2m_cell == 43) {
-                T pex = s_Xworld[124];
-                T pey = s_Xworld[125];
-                T pez = s_Xworld[126];
-                // same-joint pair (intra-joint), joint_jid=1 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[24] * static_cast<T>(1);
-                T aw_1 = s_Xworld[25] * static_cast<T>(1);
-                T aw_2 = s_Xworld[26] * static_cast<T>(1);
-                T bw_0 = s_Xworld[24] * static_cast<T>(1);
-                T bw_1 = s_Xworld[25] * static_cast<T>(1);
-                T bw_2 = s_Xworld[26] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[28];
-                T pay = s_Xworld[29];
-                T paz = s_Xworld[30];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[16];
-                T Si10 = s_Sworld[17];
-                T Si20 = s_Sworld[18];
-                T Si01 = s_Sworld[20];
-                T Si11 = s_Sworld[21];
-                T Si21 = s_Sworld[22];
-                T Si02 = s_Sworld[24];
-                T Si12 = s_Sworld[25];
-                T Si22 = s_Sworld[26];
-                T Sj00 = s_Sworld[16];
-                T Sj10 = s_Sworld[17];
-                T Sj20 = s_Sworld[18];
-                T Sj01 = s_Sworld[20];
-                T Sj11 = s_Sworld[21];
-                T Sj21 = s_Sworld[22];
-                T Sj02 = s_Sworld[24];
-                T Sj12 = s_Sworld[25];
-                T Sj22 = s_Sworld[26];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 8) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 8) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 8) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 8) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 8) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 8) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=2, vj=2, a=2, b=2)
-            if (d2m_cell == 44) {
-                T pex = s_Xworld[124];
-                T pey = s_Xworld[125];
-                T pez = s_Xworld[126];
-                // same-joint pair (intra-joint), joint_jid=2 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[40] * static_cast<T>(1);
-                T aw_1 = s_Xworld[41] * static_cast<T>(1);
-                T aw_2 = s_Xworld[42] * static_cast<T>(1);
-                T bw_0 = s_Xworld[40] * static_cast<T>(1);
-                T bw_1 = s_Xworld[41] * static_cast<T>(1);
-                T bw_2 = s_Xworld[42] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[44];
-                T pay = s_Xworld[45];
-                T paz = s_Xworld[46];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[32];
-                T Si10 = s_Sworld[33];
-                T Si20 = s_Sworld[34];
-                T Si01 = s_Sworld[36];
-                T Si11 = s_Sworld[37];
-                T Si21 = s_Sworld[38];
-                T Si02 = s_Sworld[40];
-                T Si12 = s_Sworld[41];
-                T Si22 = s_Sworld[42];
-                T Sj00 = s_Sworld[32];
-                T Sj10 = s_Sworld[33];
-                T Sj20 = s_Sworld[34];
-                T Sj01 = s_Sworld[36];
-                T Sj11 = s_Sworld[37];
-                T Sj21 = s_Sworld[38];
-                T Sj02 = s_Sworld[40];
-                T Sj12 = s_Sworld[41];
-                T Sj22 = s_Sworld[42];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 16) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 16) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 16) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 16) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 16) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 16) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=3, vj=3, a=3, b=3)
-            if (d2m_cell == 45) {
-                T pex = s_Xworld[124];
-                T pey = s_Xworld[125];
-                T pez = s_Xworld[126];
-                // same-joint pair (intra-joint), joint_jid=3 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[56] * static_cast<T>(1);
-                T aw_1 = s_Xworld[57] * static_cast<T>(1);
-                T aw_2 = s_Xworld[58] * static_cast<T>(1);
-                T bw_0 = s_Xworld[56] * static_cast<T>(1);
-                T bw_1 = s_Xworld[57] * static_cast<T>(1);
-                T bw_2 = s_Xworld[58] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[60];
-                T pay = s_Xworld[61];
-                T paz = s_Xworld[62];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[48];
-                T Si10 = s_Sworld[49];
-                T Si20 = s_Sworld[50];
-                T Si01 = s_Sworld[52];
-                T Si11 = s_Sworld[53];
-                T Si21 = s_Sworld[54];
-                T Si02 = s_Sworld[56];
-                T Si12 = s_Sworld[57];
-                T Si22 = s_Sworld[58];
-                T Sj00 = s_Sworld[48];
-                T Sj10 = s_Sworld[49];
-                T Sj20 = s_Sworld[50];
-                T Sj01 = s_Sworld[52];
-                T Sj11 = s_Sworld[53];
-                T Sj21 = s_Sworld[54];
-                T Sj02 = s_Sworld[56];
-                T Sj12 = s_Sworld[57];
-                T Sj22 = s_Sworld[58];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 24) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 24) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 24) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 24) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 24) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 24) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=4, vj=4, a=4, b=4)
-            if (d2m_cell == 46) {
-                T pex = s_Xworld[124];
-                T pey = s_Xworld[125];
-                T pez = s_Xworld[126];
-                // same-joint pair (intra-joint), joint_jid=4 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[72] * static_cast<T>(1);
-                T aw_1 = s_Xworld[73] * static_cast<T>(1);
-                T aw_2 = s_Xworld[74] * static_cast<T>(1);
-                T bw_0 = s_Xworld[72] * static_cast<T>(1);
-                T bw_1 = s_Xworld[73] * static_cast<T>(1);
-                T bw_2 = s_Xworld[74] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[76];
-                T pay = s_Xworld[77];
-                T paz = s_Xworld[78];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[64];
-                T Si10 = s_Sworld[65];
-                T Si20 = s_Sworld[66];
-                T Si01 = s_Sworld[68];
-                T Si11 = s_Sworld[69];
-                T Si21 = s_Sworld[70];
-                T Si02 = s_Sworld[72];
-                T Si12 = s_Sworld[73];
-                T Si22 = s_Sworld[74];
-                T Sj00 = s_Sworld[64];
-                T Sj10 = s_Sworld[65];
-                T Sj20 = s_Sworld[66];
-                T Sj01 = s_Sworld[68];
-                T Sj11 = s_Sworld[69];
-                T Sj21 = s_Sworld[70];
-                T Sj02 = s_Sworld[72];
-                T Sj12 = s_Sworld[73];
-                T Sj22 = s_Sworld[74];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 32) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 32) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 32) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 32) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 32) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 32) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=5, vj=5, a=5, b=5)
-            if (d2m_cell == 47) {
-                T pex = s_Xworld[124];
-                T pey = s_Xworld[125];
-                T pez = s_Xworld[126];
-                // same-joint pair (intra-joint), joint_jid=5 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[88] * static_cast<T>(1);
-                T aw_1 = s_Xworld[89] * static_cast<T>(1);
-                T aw_2 = s_Xworld[90] * static_cast<T>(1);
-                T bw_0 = s_Xworld[88] * static_cast<T>(1);
-                T bw_1 = s_Xworld[89] * static_cast<T>(1);
-                T bw_2 = s_Xworld[90] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[92];
-                T pay = s_Xworld[93];
-                T paz = s_Xworld[94];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[80];
-                T Si10 = s_Sworld[81];
-                T Si20 = s_Sworld[82];
-                T Si01 = s_Sworld[84];
-                T Si11 = s_Sworld[85];
-                T Si21 = s_Sworld[86];
-                T Si02 = s_Sworld[88];
-                T Si12 = s_Sworld[89];
-                T Si22 = s_Sworld[90];
-                T Sj00 = s_Sworld[80];
-                T Sj10 = s_Sworld[81];
-                T Sj20 = s_Sworld[82];
-                T Sj01 = s_Sworld[84];
-                T Sj11 = s_Sworld[85];
-                T Sj21 = s_Sworld[86];
-                T Sj02 = s_Sworld[88];
-                T Sj12 = s_Sworld[89];
-                T Sj22 = s_Sworld[90];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 40) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 40) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 40) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 40) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 40) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 40) + 5 * 49] = HW_z;
-            }
-            // ee=0 pair (vi=6, vj=6, a=6, b=6)
-            if (d2m_cell == 48) {
-                T pex = s_Xworld[124];
-                T pey = s_Xworld[125];
-                T pez = s_Xworld[126];
-                // same-joint pair (intra-joint), joint_jid=6 c_a=0 c_b=0
-                // Compute joint-a world frame axes of c_a and c_b body axes
-                T aw_0 = s_Xworld[104] * static_cast<T>(1);
-                T aw_1 = s_Xworld[105] * static_cast<T>(1);
-                T aw_2 = s_Xworld[106] * static_cast<T>(1);
-                T bw_0 = s_Xworld[104] * static_cast<T>(1);
-                T bw_1 = s_Xworld[105] * static_cast<T>(1);
-                T bw_2 = s_Xworld[106] * static_cast<T>(1);
-                T alw_0 = static_cast<T>(0);
-                T alw_1 = static_cast<T>(0);
-                T alw_2 = static_cast<T>(0);
-                T blw_0 = static_cast<T>(0);
-                T blw_1 = static_cast<T>(0);
-                T blw_2 = static_cast<T>(0);
-                T pax = s_Xworld[108];
-                T pay = s_Xworld[109];
-                T paz = s_Xworld[110];
-                // Br_world = 0.5 * ([aw]_x [bw]_x + [bw]_x [aw]_x)
-                //   = 0.5 * (aw bw^T + bw aw^T) - (aw . bw) I
-                T adotb = aw_0*bw_0 + aw_1*bw_1 + aw_2*bw_2;
-                T Br_00 = static_cast<T>(0.5) * (aw_0*bw_0 + bw_0*aw_0) - adotb;
-                T Br_01 = static_cast<T>(0.5) * (aw_0*bw_1 + bw_0*aw_1);
-                T Br_02 = static_cast<T>(0.5) * (aw_0*bw_2 + bw_0*aw_2);
-                T Br_10 = static_cast<T>(0.5) * (aw_1*bw_0 + bw_1*aw_0);
-                T Br_11 = static_cast<T>(0.5) * (aw_1*bw_1 + bw_1*aw_1) - adotb;
-                T Br_12 = static_cast<T>(0.5) * (aw_1*bw_2 + bw_1*aw_2);
-                T Br_20 = static_cast<T>(0.5) * (aw_2*bw_0 + bw_2*aw_0);
-                T Br_21 = static_cast<T>(0.5) * (aw_2*bw_1 + bw_2*aw_1);
-                T Br_22 = static_cast<T>(0.5) * (aw_2*bw_2 + bw_2*aw_2) - adotb;
-                T Bt_0 = -(Br_00*pax + Br_01*pay + Br_02*paz);
-                T Bt_1 = -(Br_10*pax + Br_11*pay + Br_12*paz);
-                T Bt_2 = -(Br_20*pax + Br_21*pay + Br_22*paz);
-                T Hxyz_x = Br_00*pex + Br_01*pey + Br_02*pez + Bt_0;
-                T Hxyz_y = Br_10*pex + Br_11*pey + Br_12*pez + Bt_1;
-                T Hxyz_z = Br_20*pex + Br_21*pey + Br_22*pez + Bt_2;
-                // Read [Jw_i]_x and [Jw_j]_x for the H_w correction
-                T Si00 = s_Sworld[96];
-                T Si10 = s_Sworld[97];
-                T Si20 = s_Sworld[98];
-                T Si01 = s_Sworld[100];
-                T Si11 = s_Sworld[101];
-                T Si21 = s_Sworld[102];
-                T Si02 = s_Sworld[104];
-                T Si12 = s_Sworld[105];
-                T Si22 = s_Sworld[106];
-                T Sj00 = s_Sworld[96];
-                T Sj10 = s_Sworld[97];
-                T Sj20 = s_Sworld[98];
-                T Sj01 = s_Sworld[100];
-                T Sj11 = s_Sworld[101];
-                T Sj21 = s_Sworld[102];
-                T Sj02 = s_Sworld[104];
-                T Sj12 = s_Sworld[105];
-                T Sj22 = s_Sworld[106];
-                T SiSj00 = Si00*Sj00 + Si01*Sj10 + Si02*Sj20;
-                T SiSj01 = Si00*Sj01 + Si01*Sj11 + Si02*Sj21;
-                T SiSj02 = Si00*Sj02 + Si01*Sj12 + Si02*Sj22;
-                T SiSj10 = Si10*Sj00 + Si11*Sj10 + Si12*Sj20;
-                T SiSj11 = Si10*Sj01 + Si11*Sj11 + Si12*Sj21;
-                T SiSj12 = Si10*Sj02 + Si11*Sj12 + Si12*Sj22;
-                T SiSj20 = Si20*Sj00 + Si21*Sj10 + Si22*Sj20;
-                T SiSj21 = Si20*Sj01 + Si21*Sj11 + Si22*Sj21;
-                T SiSj22 = Si20*Sj02 + Si21*Sj12 + Si22*Sj22;
-                T HW_x = static_cast<T>(0.5) * ((Br_21 - SiSj21) - (Br_12 - SiSj12));
-                T HW_y = static_cast<T>(0.5) * ((Br_02 - SiSj02) - (Br_20 - SiSj20));
-                T HW_z = static_cast<T>(0.5) * ((Br_10 - SiSj10) - (Br_01 - SiSj01));
-                s_end_effector_pose_hessian[(0 + 48) + 0 * 49] = Hxyz_x;
-                s_end_effector_pose_hessian[(0 + 48) + 1 * 49] = Hxyz_y;
-                s_end_effector_pose_hessian[(0 + 48) + 2 * 49] = Hxyz_z;
-                s_end_effector_pose_hessian[(0 + 48) + 3 * 49] = HW_x;
-                s_end_effector_pose_hessian[(0 + 48) + 4 * 49] = HW_y;
-                s_end_effector_pose_hessian[(0 + 48) + 5 * 49] = HW_z;
+                s_end_effector_pose_hessian[out_base + 0 * 49] = Hxyz_x;
+                s_end_effector_pose_hessian[out_base + 1 * 49] = Hxyz_y;
+                s_end_effector_pose_hessian[out_base + 2 * 49] = Hxyz_z;
+                s_end_effector_pose_hessian[out_base + 3 * 49] = HW_x;
+                s_end_effector_pose_hessian[out_base + 4 * 49] = HW_y;
+                s_end_effector_pose_hessian[out_base + 5 * 49] = HW_z;
             }
         }
         __syncthreads();
@@ -11905,6 +15997,38 @@ namespace grid {
     }
 
     #define GRID_HAS_FK_BATCHED 1
+    // ---- GATO Ask-4: stable end-effector TARGET aliases -------------------------
+    // Resolve to the named fixed kinematic target when one was generated, else to the
+    // generic (last-moving-joint) family. ALWAYS defined, so a consumer never has to
+    // name a robot-specific joint (indy7 '_EE' vs panda '_panda_hand') or feature-test.
+    // NAMED target_EE -> TRUE ee_frame (== pinocchio oMf[target]); NUM_EE = 1.
+    // 
+    const int NUM_TARGET_EES = 1;
+    
+    template <typename T, bool TEMP_IN_SMEM = true, typename... Args>
+    __device__ __forceinline__
+    void end_effector_pose_target_inner(Args... args) { end_effector_pose_inner_EE<T, TEMP_IN_SMEM>(args...); }
+    
+    template <typename T, typename... Args>
+    __device__ __forceinline__
+    void end_effector_pose_target_device(Args... args) { end_effector_pose_device_EE<T>(args...); }
+    
+    template <typename T, bool TEMP_IN_SMEM = true, typename... Args>
+    __device__ __forceinline__
+    void end_effector_pose_gradient_target_inner(Args... args) { end_effector_pose_gradient_inner_EE<T, TEMP_IN_SMEM>(args...); }
+    
+    template <typename T, typename... Args>
+    __device__ __forceinline__
+    void end_effector_pose_gradient_target_device(Args... args) { end_effector_pose_gradient_device_EE<T>(args...); }
+    
+    template <typename T, bool OUT_IN_SMEM = true, typename... Args>
+    __device__ __forceinline__
+    void end_effector_pose_hessian_target_inner(Args... args) { end_effector_pose_hessian_inner_EE<T, OUT_IN_SMEM>(args...); }
+    
+    template <typename T, int RESOURCE_TIER = TIER_SHARED, typename... Args>
+    __device__ __forceinline__
+    void end_effector_pose_hessian_target_device(Args... args) { end_effector_pose_hessian_device_EE<T, RESOURCE_TIER>(args...); }
+    
     // ---- grid_rbd EE binding entry-point aliases (single named target routes here) ----
     #define GRID_RBD_NUM_EES 1
     #define GRID_RBD_EE_POSE_FN end_effector_pose_EE
@@ -13548,10 +17672,7 @@ namespace grid {
         inverse_dynamics_inner_vaf<T>(s_vaf, s_q, s_qd, s_qdd, s_XImats, s_topology_helpers, s_temp, nullptr, gravity);
         __syncthreads();
         // zero the regressor
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 490; ind += blockDim.x*blockDim.y){
-            s_Y[ind] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 490>(static_cast<T>(0), s_Y);
         // build Y: per (link, param) propagate the 6x10 body regressor up the tree
         for(int col = threadIdx.x + threadIdx.y*blockDim.x; col < 70; col += blockDim.x*blockDim.y){
             int link_i = col / 10; int param_k = col % 10;
@@ -16998,10 +21119,7 @@ namespace grid {
         }
         __syncthreads();
         // Init df/du to 0
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 588; ind += blockDim.x*blockDim.y){
-            (*grid_id_du_temp_ptr<T, USE_DA_DF_SPILL>(s_temp, d_temp_spill, 672 + ind)) = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 588>(static_cast<T>(0), grid_id_du_temp_ptr<T, USE_DA_DF_SPILL>(s_temp, d_temp_spill, 672));
         // Start the df/du by setting = fx(dv/du)*Iv and also compute the temp = Fx(v)*I 
         //    aka do all of the Fx comps in parallel
         // note that while df has more cols than dva the dva cols are the first few df cols
@@ -19312,19 +23430,16 @@ namespace grid {
     void f_ext_gradient_jacobianT_inner(T *s_dtau_dfext, const T *s_q, T *s_XImats, int *s_topology_helpers, T *s_temp) {
         (void)s_q;
         // zero the full nv x 6*NB output (out-of-chain cols stay zero)
-        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-            s_dtau_dfext[ind] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 294>(static_cast<T>(0), s_dtau_dfext);
         //
         // Per chain job: col(v_j, body i) = -(X[i]..X[j+1] S_j) (motion-transform pushdown)
         //
-        static const int feg_chain[]   = { 1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6 };
-        static const int feg_job_off[]  = { 0, 0, 1, 1, 3, 4, 4, 7, 9, 10, 10, 14, 17, 19, 20, 20, 25, 29, 32, 34, 35, 35, 41, 46, 50, 53, 55, 56 };
-        static const int feg_job_len[]  = { 0, 1, 0, 2, 1, 0, 3, 2, 1, 0, 4, 3, 2, 1, 0, 5, 4, 3, 2, 1, 0, 6, 5, 4, 3, 2, 1, 0 };
-        static const int feg_job_i[]    = { 0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6 };
+        static const int feg_chain[] = { 1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6 };
+        static const int feg_job_off[] = { 0, 0, 1, 1, 3, 4, 4, 7, 9, 10, 10, 14, 17, 19, 20, 20, 25, 29, 32, 34, 35, 35, 41, 46, 50, 53, 55, 56 };
+        static const int feg_job_len[] = { 0, 1, 0, 2, 1, 0, 3, 2, 1, 0, 4, 3, 2, 1, 0, 5, 4, 3, 2, 1, 0, 6, 5, 4, 3, 2, 1, 0 };
+        static const int feg_job_i[] = { 0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6 };
         static const int feg_job_vrow[] = { 0, 0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6 };
-        const T feg_job_S[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+        static const T feg_job_S[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
         // per-job contribution slab in s_temp (njobs*6)
         T *s_feg_slab = s_temp;   // size 168
         for(int jb = threadIdx.x + threadIdx.y*blockDim.x; jb < 28; jb += blockDim.x*blockDim.y){
@@ -20077,7 +24192,7 @@ namespace grid {
     }
 
     /**
-     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (section A.3, fixed base, batched kernel)
+     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (section A.3, analytic, batched kernel)
      *
      * @param d_f_ext_gradient_dq is the output -dJ^T/dq, size NV*(6*NB)*NV = 2058 per timestep
      * @param d_q is the joint positions, stride_q the per-timestep stride
@@ -20092,7 +24207,7 @@ namespace grid {
             // GRID shared arena layout
             //   T s_q[7]
             //   T s_XImats[504]
-            //   T s_temp[1113]
+            //   T s_temp[14]
             //   bytes s_linalg_smem[GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()]
             extern __shared__ __align__(16) unsigned char s_arena[];
             size_t s_arena_offset = 0;
@@ -20104,7 +24219,7 @@ namespace grid {
             s_arena_offset += sizeof(T) * static_cast<size_t>(504);
             s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
             T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
-            s_arena_offset += sizeof(T) * static_cast<size_t>(1113);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(14);
             int *s_topology_helpers = nullptr;
             unsigned char *s_linalg_smem = nullptr;
             if (static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()) > 0) {
@@ -20113,10 +24228,9 @@ namespace grid {
                 s_arena_offset += static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>());
             }
             #ifdef GRID_CUDA_DEBUG_LAYOUT
-            assert(s_arena_offset == grid_shared_arena_bytes<T>(1624, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(525, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
             #endif
             (void)s_arena_offset;
-            (void)d_workspace;
             for(int k = blockIdx.x + blockIdx.y*gridDim.x; k < NUM_TIMESTEPS; k += gridDim.x*gridDim.y){
                 // load to shared mem
                 const T *d_q_k = &d_q[k*stride_q];
@@ -20126,44 +24240,58 @@ namespace grid {
                 __syncthreads();
                 // compute
                 T *s_f_ext_gradient_dq = &d_f_ext_gradient_dq[k*2058];
-                const T fd_h = static_cast<T>(1e-3);
-                T *s_qpert = s_temp;
-                T *s_jt_temp = &s_temp[595];
-                T *s_xi_scratch = &s_temp[1099];
-                T *s_JTp = &s_temp[7];
-                T *s_JTm = &s_temp[301];
                 (void)d_workspace;
-                for (int qi = 0; qi < 7; ++qi) {
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] += fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTp, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] -= fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTm, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-                        s_f_ext_gradient_dq[ind + 294*qi] = (s_JTp[ind] - s_JTm[ind]) / (static_cast<T>(2)*fd_h);
-                    }
-                    __syncthreads();
-                }
+                T *s_xi_scratch = &s_temp[0];
                 load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_xi_scratch);
+                __syncthreads();
+                for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 2058; ind += blockDim.x*blockDim.y){
+                    s_f_ext_gradient_dq[ind] = static_cast<T>(0);
+                }
+                __syncthreads();
+                // analytic -dJ^T/dq sub-jobs (source col, perturbed col); s_XImats holds X[m] for the current q
+                static const int fegdq_pre[] = { 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 2, 2, 3, 2, 3, 4, 3, 3, 4, 4, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 3, 3, 4, 3, 4, 5, 4, 4, 5, 5, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 2, 3, 4, 5, 6, 3, 3, 4, 3, 4, 5, 3, 4, 5, 6, 4, 4, 5, 4, 5, 6, 5, 5, 6, 6 };
+                static const int fegdq_pre_off[] = { 0, 1, 2, 4, 5, 6, 8, 11, 12, 14, 15, 16, 18, 21, 25, 26, 28, 31, 32, 34, 35, 36, 38, 41, 45, 50, 51, 53, 56, 60, 61, 63, 66, 67, 69, 70, 71, 73, 76, 80, 85, 91, 92, 94, 97, 101, 106, 107, 109, 112, 116, 117, 119, 122, 123, 125 };
+                static const int fegdq_pre_len[] = { 1, 1, 2, 1, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1 };
+                static const int fegdq_post[] = { 2, 2, 3, 3, 3, 2, 3, 4, 3, 4, 4, 3, 4, 4, 4, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 3, 4, 5, 4, 5, 5, 4, 5, 5, 5, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 4, 5, 6, 5, 6, 6, 5, 6, 6, 6 };
+                static const int fegdq_post_off[] = { 0, 0, 1, 1, 1, 3, 4, 4, 5, 5, 5, 8, 10, 11, 11, 13, 14, 14, 15, 15, 15, 19, 22, 24, 25, 25, 28, 30, 31, 31, 33, 34, 34, 35, 35, 35, 40, 44, 47, 49, 50, 50, 54, 57, 59, 60, 60, 63, 65, 66, 66, 68, 69, 69, 70, 70 };
+                static const int fegdq_post_len[] = { 0, 1, 0, 0, 2, 1, 0, 1, 0, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 5, 4, 3, 2, 1, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0 };
+                static const int fegdq_vj[] = { 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5 };
+                static const int fegdq_i[] = { 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6 };
+                static const int fegdq_vm[] = { 1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6 };
+                static const T fegdq_Sj[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                static const T fegdq_Sm[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                for(int sb = threadIdx.x + threadIdx.y*blockDim.x; sb < 56; sb += blockDim.x*blockDim.y){
+                    int po = fegdq_pre_off[sb]; int pl = fegdq_pre_len[sb];
+                    int qo = fegdq_post_off[sb]; int ql = fegdq_post_len[sb];
+                    T col[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { col[r] = fegdq_Sj[6*sb + r]; }
+                    for (int s = 0; s < pl; ++s) {
+                        const T *X = &s_XImats[36*fegdq_pre[po + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], col); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { col[r] = tmp[r]; }
+                    }
+                    T Sm[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { Sm[r] = fegdq_Sm[6*sb + r]; }
+                    T term[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { term[r] = crm_mul<T>(r, Sm, col); }
+                    for (int s = 0; s < ql; ++s) {
+                        const T *X = &s_XImats[36*fegdq_post[qo + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], term); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { term[r] = tmp[r]; }
+                    }
+                    int vj = fegdq_vj[sb]; int i = fegdq_i[sb]; int vm = fegdq_vm[sb];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { s_f_ext_gradient_dq[vj + 7*(6*i + r) + 294*vm] = term[r]; }
+                }
                 __syncthreads();
             }
         }
@@ -20171,7 +24299,7 @@ namespace grid {
             // GRID shared arena layout
             //   T s_q[7]
             //   T s_XImats[504]
-            //   T s_temp[1113]
+            //   T s_temp[14]
             //   bytes s_linalg_smem[GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()]
             extern __shared__ __align__(16) unsigned char s_arena[];
             size_t s_arena_offset = 0;
@@ -20183,7 +24311,7 @@ namespace grid {
             s_arena_offset += sizeof(T) * static_cast<size_t>(504);
             s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
             T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
-            s_arena_offset += sizeof(T) * static_cast<size_t>(1113);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(14);
             int *s_topology_helpers = nullptr;
             unsigned char *s_linalg_smem = nullptr;
             if (static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()) > 0) {
@@ -20192,10 +24320,9 @@ namespace grid {
                 s_arena_offset += static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>());
             }
             #ifdef GRID_CUDA_DEBUG_LAYOUT
-            assert(s_arena_offset == grid_shared_arena_bytes<T>(1624, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(525, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
             #endif
             (void)s_arena_offset;
-            (void)d_workspace;
             for(int k = blockIdx.x + blockIdx.y*gridDim.x; k < NUM_TIMESTEPS; k += gridDim.x*gridDim.y){
                 // load to shared mem
                 const T *d_q_k = &d_q[k*stride_q];
@@ -20205,44 +24332,58 @@ namespace grid {
                 __syncthreads();
                 // compute
                 T *s_f_ext_gradient_dq = &d_f_ext_gradient_dq[k*2058];
-                const T fd_h = static_cast<T>(1e-3);
-                T *s_qpert = s_temp;
-                T *s_jt_temp = &s_temp[595];
-                T *s_xi_scratch = &s_temp[1099];
-                T *s_JTp = &s_temp[7];
-                T *s_JTm = &s_temp[301];
                 (void)d_workspace;
-                for (int qi = 0; qi < 7; ++qi) {
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] += fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTp, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] -= fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTm, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-                        s_f_ext_gradient_dq[ind + 294*qi] = (s_JTp[ind] - s_JTm[ind]) / (static_cast<T>(2)*fd_h);
-                    }
-                    __syncthreads();
-                }
+                T *s_xi_scratch = &s_temp[0];
                 load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_xi_scratch);
+                __syncthreads();
+                for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 2058; ind += blockDim.x*blockDim.y){
+                    s_f_ext_gradient_dq[ind] = static_cast<T>(0);
+                }
+                __syncthreads();
+                // analytic -dJ^T/dq sub-jobs (source col, perturbed col); s_XImats holds X[m] for the current q
+                static const int fegdq_pre[] = { 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 2, 2, 3, 2, 3, 4, 3, 3, 4, 4, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 3, 3, 4, 3, 4, 5, 4, 4, 5, 5, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 2, 3, 4, 5, 6, 3, 3, 4, 3, 4, 5, 3, 4, 5, 6, 4, 4, 5, 4, 5, 6, 5, 5, 6, 6 };
+                static const int fegdq_pre_off[] = { 0, 1, 2, 4, 5, 6, 8, 11, 12, 14, 15, 16, 18, 21, 25, 26, 28, 31, 32, 34, 35, 36, 38, 41, 45, 50, 51, 53, 56, 60, 61, 63, 66, 67, 69, 70, 71, 73, 76, 80, 85, 91, 92, 94, 97, 101, 106, 107, 109, 112, 116, 117, 119, 122, 123, 125 };
+                static const int fegdq_pre_len[] = { 1, 1, 2, 1, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1 };
+                static const int fegdq_post[] = { 2, 2, 3, 3, 3, 2, 3, 4, 3, 4, 4, 3, 4, 4, 4, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 3, 4, 5, 4, 5, 5, 4, 5, 5, 5, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 4, 5, 6, 5, 6, 6, 5, 6, 6, 6 };
+                static const int fegdq_post_off[] = { 0, 0, 1, 1, 1, 3, 4, 4, 5, 5, 5, 8, 10, 11, 11, 13, 14, 14, 15, 15, 15, 19, 22, 24, 25, 25, 28, 30, 31, 31, 33, 34, 34, 35, 35, 35, 40, 44, 47, 49, 50, 50, 54, 57, 59, 60, 60, 63, 65, 66, 66, 68, 69, 69, 70, 70 };
+                static const int fegdq_post_len[] = { 0, 1, 0, 0, 2, 1, 0, 1, 0, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 5, 4, 3, 2, 1, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0 };
+                static const int fegdq_vj[] = { 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5 };
+                static const int fegdq_i[] = { 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6 };
+                static const int fegdq_vm[] = { 1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6 };
+                static const T fegdq_Sj[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                static const T fegdq_Sm[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                for(int sb = threadIdx.x + threadIdx.y*blockDim.x; sb < 56; sb += blockDim.x*blockDim.y){
+                    int po = fegdq_pre_off[sb]; int pl = fegdq_pre_len[sb];
+                    int qo = fegdq_post_off[sb]; int ql = fegdq_post_len[sb];
+                    T col[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { col[r] = fegdq_Sj[6*sb + r]; }
+                    for (int s = 0; s < pl; ++s) {
+                        const T *X = &s_XImats[36*fegdq_pre[po + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], col); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { col[r] = tmp[r]; }
+                    }
+                    T Sm[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { Sm[r] = fegdq_Sm[6*sb + r]; }
+                    T term[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { term[r] = crm_mul<T>(r, Sm, col); }
+                    for (int s = 0; s < ql; ++s) {
+                        const T *X = &s_XImats[36*fegdq_post[qo + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], term); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { term[r] = tmp[r]; }
+                    }
+                    int vj = fegdq_vj[sb]; int i = fegdq_i[sb]; int vm = fegdq_vm[sb];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { s_f_ext_gradient_dq[vj + 7*(6*i + r) + 294*vm] = term[r]; }
+                }
                 __syncthreads();
             }
         }
@@ -20250,7 +24391,7 @@ namespace grid {
             // GRID shared arena layout
             //   T s_q[7]
             //   T s_XImats[504]
-            //   T s_temp[525]
+            //   T s_temp[14]
             //   bytes s_linalg_smem[GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()]
             extern __shared__ __align__(16) unsigned char s_arena[];
             size_t s_arena_offset = 0;
@@ -20262,7 +24403,7 @@ namespace grid {
             s_arena_offset += sizeof(T) * static_cast<size_t>(504);
             s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
             T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
-            s_arena_offset += sizeof(T) * static_cast<size_t>(525);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(14);
             int *s_topology_helpers = nullptr;
             unsigned char *s_linalg_smem = nullptr;
             if (static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()) > 0) {
@@ -20271,7 +24412,7 @@ namespace grid {
                 s_arena_offset += static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>());
             }
             #ifdef GRID_CUDA_DEBUG_LAYOUT
-            assert(s_arena_offset == grid_shared_arena_bytes<T>(1036, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(525, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
             #endif
             (void)s_arena_offset;
             for(int k = blockIdx.x + blockIdx.y*gridDim.x; k < NUM_TIMESTEPS; k += gridDim.x*gridDim.y){
@@ -20283,50 +24424,65 @@ namespace grid {
                 __syncthreads();
                 // compute
                 T *s_f_ext_gradient_dq = &d_f_ext_gradient_dq[k*2058];
-                const T fd_h = static_cast<T>(1e-3);
-                T *s_qpert = s_temp;
-                T *s_jt_temp = &s_temp[7];
-                T *s_xi_scratch = &s_temp[511];
-                T *s_JTp = reinterpret_cast<T *>(&d_workspace[k*GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>() + GRID_SO_WORKSPACE_TEMP_OFFSET_BYTES<T>()]);
-                T *s_JTm = reinterpret_cast<T *>(&d_workspace[k*GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>() + GRID_SO_WORKSPACE_TEMP_OFFSET_BYTES<T>() + 294*sizeof(T)]);
-                for (int qi = 0; qi < 7; ++qi) {
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] += fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTp, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] -= fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTm, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-                        s_f_ext_gradient_dq[ind + 294*qi] = (s_JTp[ind] - s_JTm[ind]) / (static_cast<T>(2)*fd_h);
-                    }
-                    __syncthreads();
-                }
+                (void)d_workspace;
+                T *s_xi_scratch = &s_temp[0];
                 load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_xi_scratch);
+                __syncthreads();
+                for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 2058; ind += blockDim.x*blockDim.y){
+                    s_f_ext_gradient_dq[ind] = static_cast<T>(0);
+                }
+                __syncthreads();
+                // analytic -dJ^T/dq sub-jobs (source col, perturbed col); s_XImats holds X[m] for the current q
+                static const int fegdq_pre[] = { 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 2, 2, 3, 2, 3, 4, 3, 3, 4, 4, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 3, 3, 4, 3, 4, 5, 4, 4, 5, 5, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 2, 3, 4, 5, 6, 3, 3, 4, 3, 4, 5, 3, 4, 5, 6, 4, 4, 5, 4, 5, 6, 5, 5, 6, 6 };
+                static const int fegdq_pre_off[] = { 0, 1, 2, 4, 5, 6, 8, 11, 12, 14, 15, 16, 18, 21, 25, 26, 28, 31, 32, 34, 35, 36, 38, 41, 45, 50, 51, 53, 56, 60, 61, 63, 66, 67, 69, 70, 71, 73, 76, 80, 85, 91, 92, 94, 97, 101, 106, 107, 109, 112, 116, 117, 119, 122, 123, 125 };
+                static const int fegdq_pre_len[] = { 1, 1, 2, 1, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1 };
+                static const int fegdq_post[] = { 2, 2, 3, 3, 3, 2, 3, 4, 3, 4, 4, 3, 4, 4, 4, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 3, 4, 5, 4, 5, 5, 4, 5, 5, 5, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 4, 5, 6, 5, 6, 6, 5, 6, 6, 6 };
+                static const int fegdq_post_off[] = { 0, 0, 1, 1, 1, 3, 4, 4, 5, 5, 5, 8, 10, 11, 11, 13, 14, 14, 15, 15, 15, 19, 22, 24, 25, 25, 28, 30, 31, 31, 33, 34, 34, 35, 35, 35, 40, 44, 47, 49, 50, 50, 54, 57, 59, 60, 60, 63, 65, 66, 66, 68, 69, 69, 70, 70 };
+                static const int fegdq_post_len[] = { 0, 1, 0, 0, 2, 1, 0, 1, 0, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 5, 4, 3, 2, 1, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0 };
+                static const int fegdq_vj[] = { 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5 };
+                static const int fegdq_i[] = { 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6 };
+                static const int fegdq_vm[] = { 1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6 };
+                static const T fegdq_Sj[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                static const T fegdq_Sm[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                for(int sb = threadIdx.x + threadIdx.y*blockDim.x; sb < 56; sb += blockDim.x*blockDim.y){
+                    int po = fegdq_pre_off[sb]; int pl = fegdq_pre_len[sb];
+                    int qo = fegdq_post_off[sb]; int ql = fegdq_post_len[sb];
+                    T col[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { col[r] = fegdq_Sj[6*sb + r]; }
+                    for (int s = 0; s < pl; ++s) {
+                        const T *X = &s_XImats[36*fegdq_pre[po + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], col); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { col[r] = tmp[r]; }
+                    }
+                    T Sm[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { Sm[r] = fegdq_Sm[6*sb + r]; }
+                    T term[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { term[r] = crm_mul<T>(r, Sm, col); }
+                    for (int s = 0; s < ql; ++s) {
+                        const T *X = &s_XImats[36*fegdq_post[qo + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], term); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { term[r] = tmp[r]; }
+                    }
+                    int vj = fegdq_vj[sb]; int i = fegdq_i[sb]; int vm = fegdq_vm[sb];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { s_f_ext_gradient_dq[vj + 7*(6*i + r) + 294*vm] = term[r]; }
+                }
                 __syncthreads();
             }
         }
     }
 
     /**
-     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (section A.3, fixed base, batched kernel)
+     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (section A.3, analytic, batched kernel)
      *
      * @param d_f_ext_gradient_dq is the output -dJ^T/dq, size NV*(6*NB)*NV = 2058 per timestep
      * @param d_q is the joint positions, stride_q the per-timestep stride
@@ -20341,7 +24497,7 @@ namespace grid {
             // GRID shared arena layout
             //   T s_q[7]
             //   T s_XImats[504]
-            //   T s_temp[1113]
+            //   T s_temp[14]
             //   bytes s_linalg_smem[GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()]
             extern __shared__ __align__(16) unsigned char s_arena[];
             size_t s_arena_offset = 0;
@@ -20353,7 +24509,7 @@ namespace grid {
             s_arena_offset += sizeof(T) * static_cast<size_t>(504);
             s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
             T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
-            s_arena_offset += sizeof(T) * static_cast<size_t>(1113);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(14);
             int *s_topology_helpers = nullptr;
             unsigned char *s_linalg_smem = nullptr;
             if (static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()) > 0) {
@@ -20362,10 +24518,9 @@ namespace grid {
                 s_arena_offset += static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>());
             }
             #ifdef GRID_CUDA_DEBUG_LAYOUT
-            assert(s_arena_offset == grid_shared_arena_bytes<T>(1624, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(525, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
             #endif
             (void)s_arena_offset;
-            (void)d_workspace;
             // load to shared mem
             for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
                 s_q[ind] = d_q[ind];
@@ -20393,44 +24548,58 @@ namespace grid {
                 }
                 __syncthreads();
                 T *s_f_ext_gradient_dq = d_f_ext_gradient_dq;
-                const T fd_h = static_cast<T>(1e-3);
-                T *s_qpert = s_temp;
-                T *s_jt_temp = &s_temp[595];
-                T *s_xi_scratch = &s_temp[1099];
-                T *s_JTp = &s_temp[7];
-                T *s_JTm = &s_temp[301];
                 (void)d_workspace;
-                for (int qi = 0; qi < 7; ++qi) {
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] += fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTp, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] -= fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTm, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-                        s_f_ext_gradient_dq[ind + 294*qi] = (s_JTp[ind] - s_JTm[ind]) / (static_cast<T>(2)*fd_h);
-                    }
-                    __syncthreads();
-                }
+                T *s_xi_scratch = &s_temp[0];
                 load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_xi_scratch);
+                __syncthreads();
+                for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 2058; ind += blockDim.x*blockDim.y){
+                    s_f_ext_gradient_dq[ind] = static_cast<T>(0);
+                }
+                __syncthreads();
+                // analytic -dJ^T/dq sub-jobs (source col, perturbed col); s_XImats holds X[m] for the current q
+                static const int fegdq_pre[] = { 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 2, 2, 3, 2, 3, 4, 3, 3, 4, 4, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 3, 3, 4, 3, 4, 5, 4, 4, 5, 5, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 2, 3, 4, 5, 6, 3, 3, 4, 3, 4, 5, 3, 4, 5, 6, 4, 4, 5, 4, 5, 6, 5, 5, 6, 6 };
+                static const int fegdq_pre_off[] = { 0, 1, 2, 4, 5, 6, 8, 11, 12, 14, 15, 16, 18, 21, 25, 26, 28, 31, 32, 34, 35, 36, 38, 41, 45, 50, 51, 53, 56, 60, 61, 63, 66, 67, 69, 70, 71, 73, 76, 80, 85, 91, 92, 94, 97, 101, 106, 107, 109, 112, 116, 117, 119, 122, 123, 125 };
+                static const int fegdq_pre_len[] = { 1, 1, 2, 1, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1 };
+                static const int fegdq_post[] = { 2, 2, 3, 3, 3, 2, 3, 4, 3, 4, 4, 3, 4, 4, 4, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 3, 4, 5, 4, 5, 5, 4, 5, 5, 5, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 4, 5, 6, 5, 6, 6, 5, 6, 6, 6 };
+                static const int fegdq_post_off[] = { 0, 0, 1, 1, 1, 3, 4, 4, 5, 5, 5, 8, 10, 11, 11, 13, 14, 14, 15, 15, 15, 19, 22, 24, 25, 25, 28, 30, 31, 31, 33, 34, 34, 35, 35, 35, 40, 44, 47, 49, 50, 50, 54, 57, 59, 60, 60, 63, 65, 66, 66, 68, 69, 69, 70, 70 };
+                static const int fegdq_post_len[] = { 0, 1, 0, 0, 2, 1, 0, 1, 0, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 5, 4, 3, 2, 1, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0 };
+                static const int fegdq_vj[] = { 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5 };
+                static const int fegdq_i[] = { 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6 };
+                static const int fegdq_vm[] = { 1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6 };
+                static const T fegdq_Sj[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                static const T fegdq_Sm[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                for(int sb = threadIdx.x + threadIdx.y*blockDim.x; sb < 56; sb += blockDim.x*blockDim.y){
+                    int po = fegdq_pre_off[sb]; int pl = fegdq_pre_len[sb];
+                    int qo = fegdq_post_off[sb]; int ql = fegdq_post_len[sb];
+                    T col[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { col[r] = fegdq_Sj[6*sb + r]; }
+                    for (int s = 0; s < pl; ++s) {
+                        const T *X = &s_XImats[36*fegdq_pre[po + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], col); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { col[r] = tmp[r]; }
+                    }
+                    T Sm[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { Sm[r] = fegdq_Sm[6*sb + r]; }
+                    T term[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { term[r] = crm_mul<T>(r, Sm, col); }
+                    for (int s = 0; s < ql; ++s) {
+                        const T *X = &s_XImats[36*fegdq_post[qo + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], term); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { term[r] = tmp[r]; }
+                    }
+                    int vj = fegdq_vj[sb]; int i = fegdq_i[sb]; int vm = fegdq_vm[sb];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { s_f_ext_gradient_dq[vj + 7*(6*i + r) + 294*vm] = term[r]; }
+                }
                 __syncthreads();
             }
         }
@@ -20438,7 +24607,7 @@ namespace grid {
             // GRID shared arena layout
             //   T s_q[7]
             //   T s_XImats[504]
-            //   T s_temp[1113]
+            //   T s_temp[14]
             //   bytes s_linalg_smem[GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()]
             extern __shared__ __align__(16) unsigned char s_arena[];
             size_t s_arena_offset = 0;
@@ -20450,7 +24619,7 @@ namespace grid {
             s_arena_offset += sizeof(T) * static_cast<size_t>(504);
             s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
             T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
-            s_arena_offset += sizeof(T) * static_cast<size_t>(1113);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(14);
             int *s_topology_helpers = nullptr;
             unsigned char *s_linalg_smem = nullptr;
             if (static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()) > 0) {
@@ -20459,10 +24628,9 @@ namespace grid {
                 s_arena_offset += static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>());
             }
             #ifdef GRID_CUDA_DEBUG_LAYOUT
-            assert(s_arena_offset == grid_shared_arena_bytes<T>(1624, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(525, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
             #endif
             (void)s_arena_offset;
-            (void)d_workspace;
             // load to shared mem
             for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
                 s_q[ind] = d_q[ind];
@@ -20490,44 +24658,58 @@ namespace grid {
                 }
                 __syncthreads();
                 T *s_f_ext_gradient_dq = d_f_ext_gradient_dq;
-                const T fd_h = static_cast<T>(1e-3);
-                T *s_qpert = s_temp;
-                T *s_jt_temp = &s_temp[595];
-                T *s_xi_scratch = &s_temp[1099];
-                T *s_JTp = &s_temp[7];
-                T *s_JTm = &s_temp[301];
                 (void)d_workspace;
-                for (int qi = 0; qi < 7; ++qi) {
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] += fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTp, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] -= fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTm, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-                        s_f_ext_gradient_dq[ind + 294*qi] = (s_JTp[ind] - s_JTm[ind]) / (static_cast<T>(2)*fd_h);
-                    }
-                    __syncthreads();
-                }
+                T *s_xi_scratch = &s_temp[0];
                 load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_xi_scratch);
+                __syncthreads();
+                for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 2058; ind += blockDim.x*blockDim.y){
+                    s_f_ext_gradient_dq[ind] = static_cast<T>(0);
+                }
+                __syncthreads();
+                // analytic -dJ^T/dq sub-jobs (source col, perturbed col); s_XImats holds X[m] for the current q
+                static const int fegdq_pre[] = { 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 2, 2, 3, 2, 3, 4, 3, 3, 4, 4, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 3, 3, 4, 3, 4, 5, 4, 4, 5, 5, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 2, 3, 4, 5, 6, 3, 3, 4, 3, 4, 5, 3, 4, 5, 6, 4, 4, 5, 4, 5, 6, 5, 5, 6, 6 };
+                static const int fegdq_pre_off[] = { 0, 1, 2, 4, 5, 6, 8, 11, 12, 14, 15, 16, 18, 21, 25, 26, 28, 31, 32, 34, 35, 36, 38, 41, 45, 50, 51, 53, 56, 60, 61, 63, 66, 67, 69, 70, 71, 73, 76, 80, 85, 91, 92, 94, 97, 101, 106, 107, 109, 112, 116, 117, 119, 122, 123, 125 };
+                static const int fegdq_pre_len[] = { 1, 1, 2, 1, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1 };
+                static const int fegdq_post[] = { 2, 2, 3, 3, 3, 2, 3, 4, 3, 4, 4, 3, 4, 4, 4, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 3, 4, 5, 4, 5, 5, 4, 5, 5, 5, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 4, 5, 6, 5, 6, 6, 5, 6, 6, 6 };
+                static const int fegdq_post_off[] = { 0, 0, 1, 1, 1, 3, 4, 4, 5, 5, 5, 8, 10, 11, 11, 13, 14, 14, 15, 15, 15, 19, 22, 24, 25, 25, 28, 30, 31, 31, 33, 34, 34, 35, 35, 35, 40, 44, 47, 49, 50, 50, 54, 57, 59, 60, 60, 63, 65, 66, 66, 68, 69, 69, 70, 70 };
+                static const int fegdq_post_len[] = { 0, 1, 0, 0, 2, 1, 0, 1, 0, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 5, 4, 3, 2, 1, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0 };
+                static const int fegdq_vj[] = { 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5 };
+                static const int fegdq_i[] = { 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6 };
+                static const int fegdq_vm[] = { 1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6 };
+                static const T fegdq_Sj[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                static const T fegdq_Sm[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                for(int sb = threadIdx.x + threadIdx.y*blockDim.x; sb < 56; sb += blockDim.x*blockDim.y){
+                    int po = fegdq_pre_off[sb]; int pl = fegdq_pre_len[sb];
+                    int qo = fegdq_post_off[sb]; int ql = fegdq_post_len[sb];
+                    T col[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { col[r] = fegdq_Sj[6*sb + r]; }
+                    for (int s = 0; s < pl; ++s) {
+                        const T *X = &s_XImats[36*fegdq_pre[po + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], col); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { col[r] = tmp[r]; }
+                    }
+                    T Sm[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { Sm[r] = fegdq_Sm[6*sb + r]; }
+                    T term[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { term[r] = crm_mul<T>(r, Sm, col); }
+                    for (int s = 0; s < ql; ++s) {
+                        const T *X = &s_XImats[36*fegdq_post[qo + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], term); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { term[r] = tmp[r]; }
+                    }
+                    int vj = fegdq_vj[sb]; int i = fegdq_i[sb]; int vm = fegdq_vm[sb];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { s_f_ext_gradient_dq[vj + 7*(6*i + r) + 294*vm] = term[r]; }
+                }
                 __syncthreads();
             }
         }
@@ -20535,7 +24717,7 @@ namespace grid {
             // GRID shared arena layout
             //   T s_q[7]
             //   T s_XImats[504]
-            //   T s_temp[525]
+            //   T s_temp[14]
             //   bytes s_linalg_smem[GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()]
             extern __shared__ __align__(16) unsigned char s_arena[];
             size_t s_arena_offset = 0;
@@ -20547,7 +24729,7 @@ namespace grid {
             s_arena_offset += sizeof(T) * static_cast<size_t>(504);
             s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
             T *s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
-            s_arena_offset += sizeof(T) * static_cast<size_t>(525);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(14);
             int *s_topology_helpers = nullptr;
             unsigned char *s_linalg_smem = nullptr;
             if (static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()) > 0) {
@@ -20556,7 +24738,7 @@ namespace grid {
                 s_arena_offset += static_cast<size_t>(GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>());
             }
             #ifdef GRID_CUDA_DEBUG_LAYOUT
-            assert(s_arena_offset == grid_shared_arena_bytes<T>(1036, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(525, 0, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>()));
             #endif
             (void)s_arena_offset;
             // load to shared mem
@@ -20586,50 +24768,65 @@ namespace grid {
                 }
                 __syncthreads();
                 T *s_f_ext_gradient_dq = d_f_ext_gradient_dq;
-                const T fd_h = static_cast<T>(1e-3);
-                T *s_qpert = s_temp;
-                T *s_jt_temp = &s_temp[7];
-                T *s_xi_scratch = &s_temp[511];
-                T *s_JTp = reinterpret_cast<T *>(&d_workspace[GRID_SO_WORKSPACE_TEMP_OFFSET_BYTES<T>()]);
-                T *s_JTm = reinterpret_cast<T *>(&d_workspace[GRID_SO_WORKSPACE_TEMP_OFFSET_BYTES<T>() + 294*sizeof(T)]);
-                for (int qi = 0; qi < 7; ++qi) {
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] += fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTp, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 7; ind += blockDim.x*blockDim.y){
-                        s_qpert[ind] = s_q[ind];
-                    }
-                    __syncthreads();
-                    if(threadIdx.x == 0 && threadIdx.y == 0){
-                        s_qpert[qi] -= fd_h;
-                    }
-                    __syncthreads();
-                    load_update_XImats_helpers<T>(s_XImats, s_qpert, s_topology_helpers, d_robotModel, s_xi_scratch);
-                    __syncthreads();
-                    f_ext_gradient_jacobianT_inner<T>(s_JTm, s_qpert, s_XImats, s_topology_helpers, s_jt_temp);
-                    __syncthreads();
-                    for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-                        s_f_ext_gradient_dq[ind + 294*qi] = (s_JTp[ind] - s_JTm[ind]) / (static_cast<T>(2)*fd_h);
-                    }
-                    __syncthreads();
-                }
+                (void)d_workspace;
+                T *s_xi_scratch = &s_temp[0];
                 load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_xi_scratch);
+                __syncthreads();
+                for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 2058; ind += blockDim.x*blockDim.y){
+                    s_f_ext_gradient_dq[ind] = static_cast<T>(0);
+                }
+                __syncthreads();
+                // analytic -dJ^T/dq sub-jobs (source col, perturbed col); s_XImats holds X[m] for the current q
+                static const int fegdq_pre[] = { 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 2, 2, 3, 2, 3, 4, 3, 3, 4, 4, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 3, 3, 4, 3, 4, 5, 4, 4, 5, 5, 1, 1, 2, 1, 2, 3, 1, 2, 3, 4, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6, 2, 2, 3, 2, 3, 4, 2, 3, 4, 5, 2, 3, 4, 5, 6, 3, 3, 4, 3, 4, 5, 3, 4, 5, 6, 4, 4, 5, 4, 5, 6, 5, 5, 6, 6 };
+                static const int fegdq_pre_off[] = { 0, 1, 2, 4, 5, 6, 8, 11, 12, 14, 15, 16, 18, 21, 25, 26, 28, 31, 32, 34, 35, 36, 38, 41, 45, 50, 51, 53, 56, 60, 61, 63, 66, 67, 69, 70, 71, 73, 76, 80, 85, 91, 92, 94, 97, 101, 106, 107, 109, 112, 116, 117, 119, 122, 123, 125 };
+                static const int fegdq_pre_len[] = { 1, 1, 2, 1, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1 };
+                static const int fegdq_post[] = { 2, 2, 3, 3, 3, 2, 3, 4, 3, 4, 4, 3, 4, 4, 4, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 3, 4, 5, 4, 5, 5, 4, 5, 5, 5, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6, 4, 5, 6, 5, 6, 6, 5, 6, 6, 6 };
+                static const int fegdq_post_off[] = { 0, 0, 1, 1, 1, 3, 4, 4, 5, 5, 5, 8, 10, 11, 11, 13, 14, 14, 15, 15, 15, 19, 22, 24, 25, 25, 28, 30, 31, 31, 33, 34, 34, 35, 35, 35, 40, 44, 47, 49, 50, 50, 54, 57, 59, 60, 60, 63, 65, 66, 66, 68, 69, 69, 70, 70 };
+                static const int fegdq_post_len[] = { 0, 1, 0, 0, 2, 1, 0, 1, 0, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0, 5, 4, 3, 2, 1, 0, 4, 3, 2, 1, 0, 3, 2, 1, 0, 2, 1, 0, 1, 0, 0 };
+                static const int fegdq_vj[] = { 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5 };
+                static const int fegdq_i[] = { 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6 };
+                static const int fegdq_vm[] = { 1, 1, 2, 2, 1, 2, 3, 2, 3, 3, 1, 2, 3, 4, 2, 3, 4, 3, 4, 4, 1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5, 1, 2, 3, 4, 5, 6, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6 };
+                static const T fegdq_Sj[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                static const T fegdq_Sm[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
+                for(int sb = threadIdx.x + threadIdx.y*blockDim.x; sb < 56; sb += blockDim.x*blockDim.y){
+                    int po = fegdq_pre_off[sb]; int pl = fegdq_pre_len[sb];
+                    int qo = fegdq_post_off[sb]; int ql = fegdq_post_len[sb];
+                    T col[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { col[r] = fegdq_Sj[6*sb + r]; }
+                    for (int s = 0; s < pl; ++s) {
+                        const T *X = &s_XImats[36*fegdq_pre[po + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], col); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { col[r] = tmp[r]; }
+                    }
+                    T Sm[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { Sm[r] = fegdq_Sm[6*sb + r]; }
+                    T term[6];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { term[r] = crm_mul<T>(r, Sm, col); }
+                    for (int s = 0; s < ql; ++s) {
+                        const T *X = &s_XImats[36*fegdq_post[qo + s]];
+                        T tmp[6];
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { tmp[r] = dot_prod<T,6,6,1>(&X[r], term); }
+                        #pragma unroll
+                        for (int r = 0; r < 6; ++r) { term[r] = tmp[r]; }
+                    }
+                    int vj = fegdq_vj[sb]; int i = fegdq_i[sb]; int vm = fegdq_vm[sb];
+                    #pragma unroll
+                    for (int r = 0; r < 6; ++r) { s_f_ext_gradient_dq[vj + 7*(6*i + r) + 294*vm] = term[r]; }
+                }
                 __syncthreads();
             }
         }
     }
 
     /**
-     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (host wrapper, fixed base)
+     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (host wrapper, analytic)
      *
      * @param hd_data is the packaged input and output pointers
      * @param d_robotModel is the initialized model helpers on the GPU
@@ -20648,7 +24845,7 @@ namespace grid {
         gpuErrchkKernel();
         // then call the kernel
         gpuErrchk(grid_check_dynamic_shared_memory_bytes("f_ext_gradient_dq", F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()));
-        if (!F_EXT_GRADIENT_DQ_JT_IN_SMEM<RESOURCE_TIER>() && hd_data->d_workspace != nullptr) {gpuErrchk(grid_begin_l2_persisting(0, hd_data->d_workspace, GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>()*static_cast<size_t>(num_timesteps)));}
+        if (!F_EXT_GRADIENT_DQ_SLAB_IN_SMEM<RESOURCE_TIER>() && hd_data->d_workspace != nullptr) {gpuErrchk(grid_begin_l2_persisting(0, hd_data->d_workspace, GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>()*static_cast<size_t>(num_timesteps)));}
         if (USE_COMPRESSED_MEM) {f_ext_gradient_dq_kernel<T, RESOURCE_TIER><<<block_dimms,thread_dimms,F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()>>>(hd_data->d_f_ext_gradient_dq,hd_data->d_workspace,hd_data->d_q,stride_q,d_robotModel,num_timesteps);}
         else                    {f_ext_gradient_dq_kernel<T, RESOURCE_TIER><<<block_dimms,thread_dimms,F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()>>>(hd_data->d_f_ext_gradient_dq,hd_data->d_workspace,hd_data->d_q_qd_u,stride_q,d_robotModel,num_timesteps);}
         gpuErrchkKernel();
@@ -20658,7 +24855,7 @@ namespace grid {
     }
 
     /**
-     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (host wrapper, fixed base)
+     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (host wrapper, analytic)
      *
      * @param hd_data is the packaged input and output pointers
      * @param d_robotModel is the initialized model helpers on the GPU
@@ -20677,7 +24874,7 @@ namespace grid {
         gpuErrchkKernel();
         // then call the kernel
         gpuErrchk(grid_check_dynamic_shared_memory_bytes("f_ext_gradient_dq", F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()));
-        if (!F_EXT_GRADIENT_DQ_JT_IN_SMEM<RESOURCE_TIER>() && hd_data->d_workspace != nullptr) {gpuErrchk(grid_begin_l2_persisting(0, hd_data->d_workspace, GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>()));}
+        if (!F_EXT_GRADIENT_DQ_SLAB_IN_SMEM<RESOURCE_TIER>() && hd_data->d_workspace != nullptr) {gpuErrchk(grid_begin_l2_persisting(0, hd_data->d_workspace, GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>()));}
         struct timespec start, end; clock_gettime(CLOCK_MONOTONIC,&start);
         if (USE_COMPRESSED_MEM) {f_ext_gradient_dq_kernel_single_timing<T, RESOURCE_TIER><<<block_dimms,thread_dimms,F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()>>>(hd_data->d_f_ext_gradient_dq,hd_data->d_workspace,hd_data->d_q,stride_q,d_robotModel,num_timesteps);}
         else                    {f_ext_gradient_dq_kernel_single_timing<T, RESOURCE_TIER><<<block_dimms,thread_dimms,F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()>>>(hd_data->d_f_ext_gradient_dq,hd_data->d_workspace,hd_data->d_q_qd_u,stride_q,d_robotModel,num_timesteps);}
@@ -20690,7 +24887,7 @@ namespace grid {
     }
 
     /**
-     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (host wrapper, fixed base)
+     * Compute -dJ^T/dq = d(inverse_dynamics_gradient)/dfext (host wrapper, analytic)
      *
      * @param hd_data is the packaged input and output pointers
      * @param d_robotModel is the initialized model helpers on the GPU
@@ -20705,7 +24902,7 @@ namespace grid {
         int stride_q = USE_COMPRESSED_MEM ? NUM_JOINTS: 3*NUM_JOINTS;
         // then call the kernel
         gpuErrchk(grid_check_dynamic_shared_memory_bytes("f_ext_gradient_dq", F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()));
-        if (!F_EXT_GRADIENT_DQ_JT_IN_SMEM<RESOURCE_TIER>() && hd_data->d_workspace != nullptr) {gpuErrchk(grid_begin_l2_persisting(0, hd_data->d_workspace, GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>()*static_cast<size_t>(num_timesteps)));}
+        if (!F_EXT_GRADIENT_DQ_SLAB_IN_SMEM<RESOURCE_TIER>() && hd_data->d_workspace != nullptr) {gpuErrchk(grid_begin_l2_persisting(0, hd_data->d_workspace, GRID_WORKSPACE_BYTES_PER_TIMESTEP<T>()*static_cast<size_t>(num_timesteps)));}
         if (USE_COMPRESSED_MEM) {f_ext_gradient_dq_kernel<T, RESOURCE_TIER><<<block_dimms,thread_dimms,F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()>>>(hd_data->d_f_ext_gradient_dq,hd_data->d_workspace,hd_data->d_q,stride_q,d_robotModel,num_timesteps);}
         else                    {f_ext_gradient_dq_kernel<T, RESOURCE_TIER><<<block_dimms,thread_dimms,F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T, RESOURCE_TIER>()>>>(hd_data->d_f_ext_gradient_dq,hd_data->d_workspace,hd_data->d_q_qd_u,stride_q,d_robotModel,num_timesteps);}
         gpuErrchkKernel();
@@ -21892,10 +26089,7 @@ namespace grid {
     void crba_inner(T *s_M, const T *s_q, const T *s_qd, T *s_XImats, int *s_topology_helpers, T *s_temp, T *d_workspace, const T gravity) {
         if constexpr (!TEMP_IN_SMEM) { s_temp = d_workspace; } else { (void)d_workspace; }
         unsigned char *s_linalg_smem = nullptr;
-        for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 49; i += blockDim.x*blockDim.y){
-            s_M[i] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 49>(static_cast<T>(0), s_M);
         T *alpha = &s_temp[0];
         T *s_fh = &s_temp[252];
         //
@@ -21948,8 +26142,8 @@ namespace grid {
         }
         __syncthreads();
         for(int jid = threadIdx.x + threadIdx.y*blockDim.x; jid < 7; jid += blockDim.x*blockDim.y){
-            const int s_Sidx_by_jid[7] = {2, 2, 2, 2, 2, 2, 2};
-            const T s_Ssgn_by_jid[7] = {1, 1, 1, 1, 1, 1, 1};
+            static const int s_Sidx_by_jid[] = { 2, 2, 2, 2, 2, 2, 2 };
+            static const T s_Ssgn_by_jid[] = { static_cast<T>(1), static_cast<T>(1), static_cast<T>(1), static_cast<T>(1), static_cast<T>(1), static_cast<T>(1), static_cast<T>(1) };
             int jid_parents[] = {-1, -1, -1, -1, -1, -1};
             int num_parents = 0;
             switch (jid) {
@@ -25801,10 +29995,7 @@ namespace grid {
         T *dM_dq = d2tau_dvdq + SECOND_ORDER_COORDS*SECOND_ORDER_COORDS*SECOND_ORDER_COORDS;
         if constexpr (!BC_IN_SMEM) { BC = d_workspace; }
         // Initialize output tensor; optimized assembly paths only write structurally nonzero entries.
-        for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 4*SECOND_ORDER_COORDS*SECOND_ORDER_COORDS*SECOND_ORDER_COORDS; i += blockDim.x*blockDim.y){
-            s_idsva_so[i] = static_cast<T>(0);
-        }
-        __syncthreads();
+        glass::set_const<T, 4*SECOND_ORDER_COORDS*SECOND_ORDER_COORDS*SECOND_ORDER_COORDS>(static_cast<T>(0), s_idsva_so);
         
 
         // Compute Xup - parent to child transformation matrices
@@ -26094,7 +30285,7 @@ namespace grid {
             // t1[j][k] is stored at t[((j*(j+1)/2) + k)*36]
             static const int jids[] = { 0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6 }; // Joints with ancestor at equivalent index of ancestors_j
             static const int ancestors_j[] = { 0, 1, 0, 2, 1, 0, 3, 2, 1, 0, 4, 3, 2, 1, 0, 5, 4, 3, 2, 1, 0, 6, 5, 4, 3, 2, 1, 0 }; // Joint or ancestor of joint at equivalent index of jids_a
-            const int t_index_map[7][7] = {
+            static const int t_index_map[7][7] = {
                 {  0, -1, -1, -1, -1, -1, -1 },
                 {  2,  1, -1, -1, -1, -1, -1 },
                 {  5,  4,  3, -1, -1, -1, -1 },
@@ -27790,10 +31981,7 @@ namespace grid {
             #endif
             (void)s_arena_offset;
             load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_temp);
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 7; i += blockDim.x*blockDim.y){
-                s_qd0[i] = static_cast<T>(0);
-            }
-            __syncthreads();
+            glass::set_const<T, 7>(static_cast<T>(0), s_qd0);
             inverse_dynamics_inner<T>(s_out, s_vaf, s_q, s_qd0, s_XImats, s_topology_helpers, s_temp, nullptr, gravity);
         }
 
@@ -27873,10 +32061,7 @@ namespace grid {
                 }
                 __syncthreads();
                 load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_temp);
-                for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 7; i += blockDim.x*blockDim.y){
-                    s_qd0[i] = static_cast<T>(0);
-                }
-                __syncthreads();
+                glass::set_const<T, 7>(static_cast<T>(0), s_qd0);
                 inverse_dynamics_inner<T>(s_out, s_vaf, s_q, s_qd0, s_XImats, s_topology_helpers, s_temp, nullptr, gravity);
                 __syncthreads();
                 if ((threadIdx.x | threadIdx.y | threadIdx.z) == 0) { reinterpret_cast<volatile T *>(d_out)[rep & 1023] = reinterpret_cast<const volatile T *>(s_out)[rep & 7]; }
@@ -27947,10 +32132,7 @@ namespace grid {
                 __syncthreads();
                 // compute
                 load_update_XImats_helpers<T>(s_XImats, s_q, s_topology_helpers, d_robotModel, s_temp);
-                for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 7; i += blockDim.x*blockDim.y){
-                    s_qd0[i] = static_cast<T>(0);
-                }
-                __syncthreads();
+                glass::set_const<T, 7>(static_cast<T>(0), s_qd0);
                 inverse_dynamics_inner<T>(s_out, s_vaf, s_q, s_qd0, s_XImats, s_topology_helpers, s_temp, nullptr, gravity);
                 __syncthreads();
                 // save down to global
@@ -28412,15 +32594,12 @@ namespace grid {
             }
             __syncthreads();
             // Step 3: per-body world spatial Jacobian J (6 x NV, angular-first)
-            for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 294; ind += blockDim.x*blockDim.y){
-                s_J[ind] = static_cast<T>(0);
-            }
-            __syncthreads();
-            const int cj_jid[28] = {0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6};
-            const int cj_jj[28] = {0, 0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6};
-            const int cj_vi[28] = {0, 0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6};
-            const T cj_ang[84] = {static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1)};
-            const T cj_lin[84] = {static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0)};
+            glass::set_const<T, 294>(static_cast<T>(0), s_J);
+            static const int cj_jid[] = { 0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6 };
+            static const int cj_jj[] = { 0, 0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6 };
+            static const int cj_vi[] = { 0, 0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6 };
+            static const T cj_ang[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1) };
+            static const T cj_lin[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) };
             if(threadIdx.x == 0 && threadIdx.y == 0){
                 for (int t = 0; t < 28; ++t) {
                     int jid = cj_jid[t]; int jj = cj_jj[t]; int vi = cj_vi[t];
@@ -29507,137 +33686,132 @@ namespace grid {
             __syncthreads();
             T dc_cx = s_com[0], dc_cy = s_com[1], dc_cz = s_com[2];
             T dc_inv_m = static_cast<T>(1)/s_extra[0];
-            // zero Adot output
-            for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 42; ind += blockDim.x*blockDim.y){
-                s_adot[ind] = static_cast<T>(0);
-            }
-            __syncthreads();
-            // P2 fan: one thread per (m, k) output cell
-            for(int cell = threadIdx.x + threadIdx.y*blockDim.x; cell < 49; cell += blockDim.x*blockDim.y){
-                int m = cell / 7; int k = cell % 7;
-                T dA0col[6]; for (int r=0;r<6;++r) dA0col[r] = static_cast<T>(0);
-                bool m_is_root = dc_is_root_v[m] != 0;
-                for (int um = 0; um < 7; ++um) {
-                    if (dc_unit_vi[um] != m) continue;
-                    const T *phim = &s_phi[6*um]; int jm = dc_unit_body[um];
-                    T CrmM[36];
-                    CrmM[0 + 6*0] = static_cast<T>(0);
-                    CrmM[0 + 6*1] = -phim[2];
-                    CrmM[0 + 6*2] = phim[1];
-                    CrmM[0 + 6*3] = static_cast<T>(0);
-                    CrmM[0 + 6*4] = static_cast<T>(0);
-                    CrmM[0 + 6*5] = static_cast<T>(0);
-                    CrmM[1 + 6*0] = phim[2];
-                    CrmM[1 + 6*1] = static_cast<T>(0);
-                    CrmM[1 + 6*2] = -phim[0];
-                    CrmM[1 + 6*3] = static_cast<T>(0);
-                    CrmM[1 + 6*4] = static_cast<T>(0);
-                    CrmM[1 + 6*5] = static_cast<T>(0);
-                    CrmM[2 + 6*0] = -phim[1];
-                    CrmM[2 + 6*1] = phim[0];
-                    CrmM[2 + 6*2] = static_cast<T>(0);
-                    CrmM[2 + 6*3] = static_cast<T>(0);
-                    CrmM[2 + 6*4] = static_cast<T>(0);
-                    CrmM[2 + 6*5] = static_cast<T>(0);
-                    CrmM[3 + 6*0] = static_cast<T>(0);
-                    CrmM[3 + 6*1] = -phim[5];
-                    CrmM[3 + 6*2] = phim[4];
-                    CrmM[3 + 6*3] = static_cast<T>(0);
-                    CrmM[3 + 6*4] = -phim[2];
-                    CrmM[3 + 6*5] = phim[1];
-                    CrmM[4 + 6*0] = phim[5];
-                    CrmM[4 + 6*1] = static_cast<T>(0);
-                    CrmM[4 + 6*2] = -phim[3];
-                    CrmM[4 + 6*3] = phim[2];
-                    CrmM[4 + 6*4] = static_cast<T>(0);
-                    CrmM[4 + 6*5] = -phim[0];
-                    CrmM[5 + 6*0] = -phim[4];
-                    CrmM[5 + 6*1] = phim[3];
-                    CrmM[5 + 6*2] = static_cast<T>(0);
-                    CrmM[5 + 6*3] = -phim[1];
-                    CrmM[5 + 6*4] = phim[0];
-                    CrmM[5 + 6*5] = static_cast<T>(0);
-                    T CrfM[36];
-                    CrfM[0 + 6*0] = static_cast<T>(0);
-                    CrfM[0 + 6*1] = -phim[2];
-                    CrfM[0 + 6*2] = phim[1];
-                    CrfM[0 + 6*3] = static_cast<T>(0);
-                    CrfM[0 + 6*4] = -phim[5];
-                    CrfM[0 + 6*5] = phim[4];
-                    CrfM[1 + 6*0] = phim[2];
-                    CrfM[1 + 6*1] = static_cast<T>(0);
-                    CrfM[1 + 6*2] = -phim[0];
-                    CrfM[1 + 6*3] = phim[5];
-                    CrfM[1 + 6*4] = static_cast<T>(0);
-                    CrfM[1 + 6*5] = -phim[3];
-                    CrfM[2 + 6*0] = -phim[1];
-                    CrfM[2 + 6*1] = phim[0];
-                    CrfM[2 + 6*2] = static_cast<T>(0);
-                    CrfM[2 + 6*3] = -phim[4];
-                    CrfM[2 + 6*4] = phim[3];
-                    CrfM[2 + 6*5] = static_cast<T>(0);
-                    CrfM[3 + 6*0] = static_cast<T>(0);
-                    CrfM[3 + 6*1] = static_cast<T>(0);
-                    CrfM[3 + 6*2] = static_cast<T>(0);
-                    CrfM[3 + 6*3] = static_cast<T>(0);
-                    CrfM[3 + 6*4] = -phim[2];
-                    CrfM[3 + 6*5] = phim[1];
-                    CrfM[4 + 6*0] = static_cast<T>(0);
-                    CrfM[4 + 6*1] = static_cast<T>(0);
-                    CrfM[4 + 6*2] = static_cast<T>(0);
-                    CrfM[4 + 6*3] = phim[2];
-                    CrfM[4 + 6*4] = static_cast<T>(0);
-                    CrfM[4 + 6*5] = -phim[0];
-                    CrfM[5 + 6*0] = static_cast<T>(0);
-                    CrfM[5 + 6*1] = static_cast<T>(0);
-                    CrfM[5 + 6*2] = static_cast<T>(0);
-                    CrfM[5 + 6*3] = -phim[1];
-                    CrfM[5 + 6*4] = phim[0];
-                    CrfM[5 + 6*5] = static_cast<T>(0);
-                    if (m_is_root) {
-                        const T *A0k = &dc_A0[6*k];
-                        for (int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += CrfM[r+6*c]*A0k[c]; dA0col[r] += s; }
-                        continue;
-                    }
-                    for (int i = 0; i < 7; ++i) {
-                        const T *Iw_i = &dc_Iw[36*i];
-                        const T *Jw_i = &dc_J[42*i];
-                        if (dc_unit_anc_self[um*7 + i]) {
-                            const T *xk = &Jw_i[6*k];
-                            T Ix[6]; for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += Iw_i[r+6*c]*xk[c]; Ix[r]=s; }
-                            T cmx[6]; for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += CrmM[r+6*c]*xk[c]; cmx[r]=s; }
-                            T Icmx[6]; for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += Iw_i[r+6*c]*cmx[c]; Icmx[r]=s; }
-                            for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += CrfM[r+6*c]*Ix[c]; dA0col[r] += s - Icmx[r]; }
+            // P2 fan: one thread per column k; sum m in FIXED order (was atomicAdd over m)
+            for(int k = threadIdx.x + threadIdx.y*blockDim.x; k < 7; k += blockDim.x*blockDim.y){
+                T acc[6]; for (int r=0;r<6;++r) acc[r] = static_cast<T>(0);
+                for (int m = 0; m < 7; ++m) {
+                    T dA0col[6]; for (int r=0;r<6;++r) dA0col[r] = static_cast<T>(0);
+                    bool m_is_root = dc_is_root_v[m] != 0;
+                    for (int um = 0; um < 7; ++um) {
+                        if (dc_unit_vi[um] != m) continue;
+                        const T *phim = &s_phi[6*um]; int jm = dc_unit_body[um];
+                        T CrmM[36];
+                        CrmM[0 + 6*0] = static_cast<T>(0);
+                        CrmM[0 + 6*1] = -phim[2];
+                        CrmM[0 + 6*2] = phim[1];
+                        CrmM[0 + 6*3] = static_cast<T>(0);
+                        CrmM[0 + 6*4] = static_cast<T>(0);
+                        CrmM[0 + 6*5] = static_cast<T>(0);
+                        CrmM[1 + 6*0] = phim[2];
+                        CrmM[1 + 6*1] = static_cast<T>(0);
+                        CrmM[1 + 6*2] = -phim[0];
+                        CrmM[1 + 6*3] = static_cast<T>(0);
+                        CrmM[1 + 6*4] = static_cast<T>(0);
+                        CrmM[1 + 6*5] = static_cast<T>(0);
+                        CrmM[2 + 6*0] = -phim[1];
+                        CrmM[2 + 6*1] = phim[0];
+                        CrmM[2 + 6*2] = static_cast<T>(0);
+                        CrmM[2 + 6*3] = static_cast<T>(0);
+                        CrmM[2 + 6*4] = static_cast<T>(0);
+                        CrmM[2 + 6*5] = static_cast<T>(0);
+                        CrmM[3 + 6*0] = static_cast<T>(0);
+                        CrmM[3 + 6*1] = -phim[5];
+                        CrmM[3 + 6*2] = phim[4];
+                        CrmM[3 + 6*3] = static_cast<T>(0);
+                        CrmM[3 + 6*4] = -phim[2];
+                        CrmM[3 + 6*5] = phim[1];
+                        CrmM[4 + 6*0] = phim[5];
+                        CrmM[4 + 6*1] = static_cast<T>(0);
+                        CrmM[4 + 6*2] = -phim[3];
+                        CrmM[4 + 6*3] = phim[2];
+                        CrmM[4 + 6*4] = static_cast<T>(0);
+                        CrmM[4 + 6*5] = -phim[0];
+                        CrmM[5 + 6*0] = -phim[4];
+                        CrmM[5 + 6*1] = phim[3];
+                        CrmM[5 + 6*2] = static_cast<T>(0);
+                        CrmM[5 + 6*3] = -phim[1];
+                        CrmM[5 + 6*4] = phim[0];
+                        CrmM[5 + 6*5] = static_cast<T>(0);
+                        T CrfM[36];
+                        CrfM[0 + 6*0] = static_cast<T>(0);
+                        CrfM[0 + 6*1] = -phim[2];
+                        CrfM[0 + 6*2] = phim[1];
+                        CrfM[0 + 6*3] = static_cast<T>(0);
+                        CrfM[0 + 6*4] = -phim[5];
+                        CrfM[0 + 6*5] = phim[4];
+                        CrfM[1 + 6*0] = phim[2];
+                        CrfM[1 + 6*1] = static_cast<T>(0);
+                        CrfM[1 + 6*2] = -phim[0];
+                        CrfM[1 + 6*3] = phim[5];
+                        CrfM[1 + 6*4] = static_cast<T>(0);
+                        CrfM[1 + 6*5] = -phim[3];
+                        CrfM[2 + 6*0] = -phim[1];
+                        CrfM[2 + 6*1] = phim[0];
+                        CrfM[2 + 6*2] = static_cast<T>(0);
+                        CrfM[2 + 6*3] = -phim[4];
+                        CrfM[2 + 6*4] = phim[3];
+                        CrfM[2 + 6*5] = static_cast<T>(0);
+                        CrfM[3 + 6*0] = static_cast<T>(0);
+                        CrfM[3 + 6*1] = static_cast<T>(0);
+                        CrfM[3 + 6*2] = static_cast<T>(0);
+                        CrfM[3 + 6*3] = static_cast<T>(0);
+                        CrfM[3 + 6*4] = -phim[2];
+                        CrfM[3 + 6*5] = phim[1];
+                        CrfM[4 + 6*0] = static_cast<T>(0);
+                        CrfM[4 + 6*1] = static_cast<T>(0);
+                        CrfM[4 + 6*2] = static_cast<T>(0);
+                        CrfM[4 + 6*3] = phim[2];
+                        CrfM[4 + 6*4] = static_cast<T>(0);
+                        CrfM[4 + 6*5] = -phim[0];
+                        CrfM[5 + 6*0] = static_cast<T>(0);
+                        CrfM[5 + 6*1] = static_cast<T>(0);
+                        CrfM[5 + 6*2] = static_cast<T>(0);
+                        CrfM[5 + 6*3] = -phim[1];
+                        CrfM[5 + 6*4] = phim[0];
+                        CrfM[5 + 6*5] = static_cast<T>(0);
+                        if (m_is_root) {
+                            const T *A0k = &dc_A0[6*k];
+                            for (int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += CrfM[r+6*c]*A0k[c]; dA0col[r] += s; }
+                            continue;
                         }
-                        T dJk[6]; for(int r=0;r<6;++r) dJk[r] = static_cast<T>(0);
-                        for (int uc = 0; uc < 7; ++uc) {
-                            if (dc_unit_vi[uc] != k) continue;
-                            if (!dc_unit_anc_self[uc*7 + i]) continue;
-                            if (!dc_unit_anc_strict[um*7 + dc_unit_body[uc]]) continue;
-                            const T *phic = &s_phi[6*uc];
-                            for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += CrmM[r+6*c]*phic[c]; dJk[r] += s; }
+                        for (int i = 0; i < 7; ++i) {
+                            const T *Iw_i = &dc_Iw[36*i];
+                            const T *Jw_i = &dc_J[42*i];
+                            if (dc_unit_anc_self[um*7 + i]) {
+                                const T *xk = &Jw_i[6*k];
+                                T Ix[6]; for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += Iw_i[r+6*c]*xk[c]; Ix[r]=s; }
+                                T cmx[6]; for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += CrmM[r+6*c]*xk[c]; cmx[r]=s; }
+                                T Icmx[6]; for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += Iw_i[r+6*c]*cmx[c]; Icmx[r]=s; }
+                                for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += CrfM[r+6*c]*Ix[c]; dA0col[r] += s - Icmx[r]; }
+                            }
+                            T dJk[6]; for(int r=0;r<6;++r) dJk[r] = static_cast<T>(0);
+                            for (int uc = 0; uc < 7; ++uc) {
+                                if (dc_unit_vi[uc] != k) continue;
+                                if (!dc_unit_anc_self[uc*7 + i]) continue;
+                                if (!dc_unit_anc_strict[um*7 + dc_unit_body[uc]]) continue;
+                                const T *phic = &s_phi[6*uc];
+                                for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += CrmM[r+6*c]*phic[c]; dJk[r] += s; }
+                            }
+                            for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += Iw_i[r+6*c]*dJk[c]; dA0col[r] += s; }
                         }
-                        for(int r=0;r<6;++r){ T s=0; for(int c=0;c<6;++c) s += Iw_i[r+6*c]*dJk[c]; dA0col[r] += s; }
                     }
+                    // CoM-shift (Xstar) + CoM-motion (dXstar) + [ang;lin]->[lin;ang] reorder
+                    const T *A0k2 = &dc_A0[6*k];
+                    T jcx = dc_A0[3 + 6*m]*dc_inv_m, jcy = dc_A0[4 + 6*m]*dc_inv_m, jcz = dc_A0[5 + 6*m]*dc_inv_m;
+                    T fa0 = A0k2[3], fa1 = A0k2[4], fa2 = A0k2[5];
+                    T xa0 = dA0col[0] - (dc_cy*dA0col[5] - dc_cz*dA0col[4]);
+                    T xa1 = dA0col[1] - (dc_cz*dA0col[3] - dc_cx*dA0col[5]);
+                    T xa2 = dA0col[2] - (dc_cx*dA0col[4] - dc_cy*dA0col[3]);
+                    xa0 += -(jcy*fa2 - jcz*fa1);
+                    xa1 += -(jcz*fa0 - jcx*fa2);
+                    xa2 += -(jcx*fa1 - jcy*fa0);
+                    T xl0 = dA0col[3], xl1 = dA0col[4], xl2 = dA0col[5];
+                    T qm = s_qd[m];
+                    acc[0] += xl0*qm; acc[1] += xl1*qm; acc[2] += xl2*qm;
+                    acc[3] += xa0*qm; acc[4] += xa1*qm; acc[5] += xa2*qm;
                 }
-                // CoM-shift (Xstar) + CoM-motion (dXstar) + [ang;lin]->[lin;ang] reorder
-                const T *A0k2 = &dc_A0[6*k];
-                T jcx = dc_A0[3 + 6*m]*dc_inv_m, jcy = dc_A0[4 + 6*m]*dc_inv_m, jcz = dc_A0[5 + 6*m]*dc_inv_m;
-                T fa0 = A0k2[3], fa1 = A0k2[4], fa2 = A0k2[5];
-                T xa0 = dA0col[0] - (dc_cy*dA0col[5] - dc_cz*dA0col[4]);
-                T xa1 = dA0col[1] - (dc_cz*dA0col[3] - dc_cx*dA0col[5]);
-                T xa2 = dA0col[2] - (dc_cx*dA0col[4] - dc_cy*dA0col[3]);
-                xa0 += -(jcy*fa2 - jcz*fa1);
-                xa1 += -(jcz*fa0 - jcx*fa2);
-                xa2 += -(jcx*fa1 - jcy*fa0);
-                T xl0 = dA0col[3], xl1 = dA0col[4], xl2 = dA0col[5];
-                T qm = s_qd[m];
-                atomicAdd(&s_adot[0 + 6*k], xl0*qm);
-                atomicAdd(&s_adot[1 + 6*k], xl1*qm);
-                atomicAdd(&s_adot[2 + 6*k], xl2*qm);
-                atomicAdd(&s_adot[3 + 6*k], xa0*qm);
-                atomicAdd(&s_adot[4 + 6*k], xa1*qm);
-                atomicAdd(&s_adot[5 + 6*k], xa2*qm);
+                s_adot[0 + 6*k] = acc[0]; s_adot[1 + 6*k] = acc[1]; s_adot[2 + 6*k] = acc[2];
+                s_adot[3 + 6*k] = acc[3]; s_adot[4 + 6*k] = acc[4]; s_adot[5 + 6*k] = acc[5];
             }
             __syncthreads();
         }
@@ -30457,10 +34631,7 @@ namespace grid {
             T *s_dJ  = &s_temp[1596];
             T *s_dFdv= &s_temp[1638];
             // zero the output Coriolis matrix
-            for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 49; ind += blockDim.x*blockDim.y){
-                s_coriolis[ind] = static_cast<T>(0);
-            }
-            __syncthreads();
+            glass::set_const<T, 49>(static_cast<T>(0), s_coriolis);
             // forward: accumulated iX0[i] = X_i . iX0[parent] (column-major 6x6)
             if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0) {
                 for (int jid = 0; jid < 7; ++jid) {
@@ -31604,6 +35775,591 @@ namespace grid {
         }
 
         /**
+         * Set MaxDynamicSharedMemorySize for the inverse_dynamics kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_inverse_dynamics(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("inverse_dynamics", INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, const T *, const int, const T *, T *, const robotModel<T> *, const T, const int)>(&inverse_dynamics_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&inverse_dynamics_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_2 = static_cast<void (*)(T *, const T *, const int, const T *, T *, const robotModel<T> *, const T, const int)>(&inverse_dynamics_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_2, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_3 = static_cast<void (*)(T *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&inverse_dynamics_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_3, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the minv kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_minv(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (MINV_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("minv", MINV_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&minv_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, MINV_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&minv_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, MINV_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the forward_dynamics kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_forward_dynamics(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (FORWARD_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("forward_dynamics", FORWARD_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&forward_dynamics_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, FORWARD_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&forward_dynamics_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, FORWARD_DYNAMICS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the aba kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_aba(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (ABA_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("aba", ABA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&aba_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, ABA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&aba_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, ABA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the crba kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_crba(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (CRBA_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("crba", CRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&crba_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, CRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&crba_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, CRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the end_effector_pose kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_end_effector_pose(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("end_effector_pose", END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, const T *, const int, const robotModel<T> *, const int)>(&end_effector_pose_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, const T *, const int, const robotModel<T> *, const int)>(&end_effector_pose_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the end_effector_pose_gradient kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_end_effector_pose_gradient(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("end_effector_pose_gradient", END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&end_effector_pose_gradient_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&end_effector_pose_gradient_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the inverse_dynamics_gradient kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_inverse_dynamics_gradient(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (INVERSE_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("inverse_dynamics_gradient", INVERSE_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const T *, T *, const robotModel<T> *, const T, const int)>(&inverse_dynamics_gradient_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&inverse_dynamics_gradient_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_2 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const T *, T *, const robotModel<T> *, const T, const int)>(&inverse_dynamics_gradient_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_2, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_3 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&inverse_dynamics_gradient_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_3, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the forward_dynamics_gradient kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_forward_dynamics_gradient(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (FORWARD_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("forward_dynamics_gradient", FORWARD_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const T *, const T *, T *, const robotModel<T> *, const T, const int)>(&forward_dynamics_gradient_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, FORWARD_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&forward_dynamics_gradient_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, FORWARD_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_2 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const T *, const T *, T *, const robotModel<T> *, const T, const int)>(&forward_dynamics_gradient_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_2, cudaFuncAttributeMaxDynamicSharedMemorySize, FORWARD_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_3 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&forward_dynamics_gradient_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_3, cudaFuncAttributeMaxDynamicSharedMemorySize, FORWARD_DYNAMICS_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the f_ext_gradient kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_f_ext_gradient(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (F_EXT_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("f_ext_gradient", F_EXT_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&f_ext_gradient_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, F_EXT_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&f_ext_gradient_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, F_EXT_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the f_ext_gradient_dq kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_f_ext_gradient_dq(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("f_ext_gradient_dq", F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&f_ext_gradient_dq_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&f_ext_gradient_dq_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, F_EXT_GRADIENT_DQ_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the inverse_dynamics_regressor kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_inverse_dynamics_regressor(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (INVERSE_DYNAMICS_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("inverse_dynamics_regressor", INVERSE_DYNAMICS_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&inverse_dynamics_regressor_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&inverse_dynamics_regressor_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the kinetic_energy_regressor kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_kinetic_energy_regressor(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (KINETIC_ENERGY_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("kinetic_energy_regressor", KINETIC_ENERGY_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, const T *, const int, const robotModel<T> *, const T, const int)>(&kinetic_energy_regressor_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, KINETIC_ENERGY_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, const T *, const int, const robotModel<T> *, const T, const int)>(&kinetic_energy_regressor_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, KINETIC_ENERGY_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the potential_energy_regressor kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_potential_energy_regressor(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (POTENTIAL_ENERGY_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("potential_energy_regressor", POTENTIAL_ENERGY_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, const T *, const int, const robotModel<T> *, const T, const int)>(&potential_energy_regressor_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, POTENTIAL_ENERGY_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, const T *, const int, const robotModel<T> *, const T, const int)>(&potential_energy_regressor_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, POTENTIAL_ENERGY_REGRESSOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the forward_dynamics_parameter_gradient kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_forward_dynamics_parameter_gradient(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (FORWARD_DYNAMICS_PARAMETER_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("forward_dynamics_parameter_gradient", FORWARD_DYNAMICS_PARAMETER_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&forward_dynamics_parameter_gradient_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, FORWARD_DYNAMICS_PARAMETER_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&forward_dynamics_parameter_gradient_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, FORWARD_DYNAMICS_PARAMETER_GRADIENT_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the idsva_so_body_frame kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_idsva_so_body_frame(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (IDSVA_SO_BODY_FRAME_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("idsva_so_body_frame", IDSVA_SO_BODY_FRAME_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&idsva_so_body_frame_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, IDSVA_SO_BODY_FRAME_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&idsva_so_body_frame_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, IDSVA_SO_BODY_FRAME_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the fdsva_so kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_fdsva_so(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (FDSVA_SO_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("fdsva_so", FDSVA_SO_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&fdsva_so_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, FDSVA_SO_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, T *, const robotModel<T> *, const T, const int)>(&fdsva_so_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, FDSVA_SO_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the integrator kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_integrator(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("integrator", INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel<T, IntegratorType::EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel<T, IntegratorType::SEMI_IMPLICIT_EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_2 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel<T, IntegratorType::MIDPOINT>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_2, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_3 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel<T, IntegratorType::RK3>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_3, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_4 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel<T, IntegratorType::RK4>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_4, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_5 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel<T, IntegratorType::TRAPEZOIDAL>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_5, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_6 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel_single_timing<T, IntegratorType::EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_6, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_7 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel_single_timing<T, IntegratorType::SEMI_IMPLICIT_EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_7, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_8 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel_single_timing<T, IntegratorType::MIDPOINT>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_8, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_9 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel_single_timing<T, IntegratorType::RK3>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_9, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_10 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel_single_timing<T, IntegratorType::RK4>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_10, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_11 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_kernel_single_timing<T, IntegratorType::TRAPEZOIDAL>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_11, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the integrator_gradient kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_integrator_gradient(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("integrator_gradient", INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel<T, IntegratorType::EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel<T, IntegratorType::SEMI_IMPLICIT_EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_2 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel<T, IntegratorType::MIDPOINT>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_2, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_3 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel<T, IntegratorType::RK3>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_3, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_4 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel<T, IntegratorType::RK4>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_4, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_5 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel<T, IntegratorType::TRAPEZOIDAL>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_5, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_6 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel_single_timing<T, IntegratorType::EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_6, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_7 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel_single_timing<T, IntegratorType::SEMI_IMPLICIT_EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_7, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_8 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel_single_timing<T, IntegratorType::MIDPOINT>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_8, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_9 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel_single_timing<T, IntegratorType::RK3>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_9, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_10 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel_single_timing<T, IntegratorType::RK4>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_10, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_11 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_gradient_kernel_single_timing<T, IntegratorType::TRAPEZOIDAL>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_11, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the integrator_with_gradient kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_integrator_with_gradient(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("integrator_with_gradient", INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel<T, IntegratorType::EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel<T, IntegratorType::SEMI_IMPLICIT_EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_2 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel<T, IntegratorType::MIDPOINT>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_2, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_3 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel<T, IntegratorType::RK3>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_3, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_4 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel<T, IntegratorType::RK4>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_4, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_5 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel<T, IntegratorType::TRAPEZOIDAL>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_5, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_6 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel_single_timing<T, IntegratorType::EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_6, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_7 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel_single_timing<T, IntegratorType::SEMI_IMPLICIT_EULER>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_7, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_8 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel_single_timing<T, IntegratorType::MIDPOINT>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_8, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_9 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel_single_timing<T, IntegratorType::RK3>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_9, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_10 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel_single_timing<T, IntegratorType::RK4>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_10, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_11 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, T *, const T, const T, const int)>(&integrator_with_gradient_kernel_single_timing<T, IntegratorType::TRAPEZOIDAL>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_11, cudaFuncAttributeMaxDynamicSharedMemorySize, INTEGRATOR_DU_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the end_effector_pose_hessian kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_end_effector_pose_hessian(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (END_EFFECTOR_POSE_HESSIAN_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("end_effector_pose_hessian", END_EFFECTOR_POSE_HESSIAN_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&end_effector_pose_hessian_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, END_EFFECTOR_POSE_HESSIAN_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&end_effector_pose_hessian_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, END_EFFECTOR_POSE_HESSIAN_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the generalized_gravity kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_generalized_gravity(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (INVERSE_DYNAMICS_BIAS_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("generalized_gravity", INVERSE_DYNAMICS_BIAS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&generalized_gravity_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_BIAS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&generalized_gravity_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_BIAS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the nonlinear_effects kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_nonlinear_effects(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (INVERSE_DYNAMICS_BIAS_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("nonlinear_effects", INVERSE_DYNAMICS_BIAS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&nonlinear_effects_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_BIAS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&nonlinear_effects_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, INVERSE_DYNAMICS_BIAS_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the coriolis_matrix kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_coriolis_matrix(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (CORIOLIS_MATRIX_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("coriolis_matrix", CORIOLIS_MATRIX_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&coriolis_matrix_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, CORIOLIS_MATRIX_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&coriolis_matrix_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, CORIOLIS_MATRIX_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the cmm_time_variation kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_cmm_time_variation(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (CMM_TIME_VARIATION_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("cmm_time_variation", CMM_TIME_VARIATION_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&cmm_time_variation_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, CMM_TIME_VARIATION_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&cmm_time_variation_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, CMM_TIME_VARIATION_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the dccrba kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_dccrba(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (DCCRBA_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("dccrba", DCCRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&dccrba_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, DCCRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&dccrba_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, DCCRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the com kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_com(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (COM_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("com", COM_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&com_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, COM_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&com_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, COM_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the ccrba kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_ccrba(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (CCRBA_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("ccrba", CCRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&ccrba_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, CCRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const int)>(&ccrba_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, CCRBA_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Set MaxDynamicSharedMemorySize for the energy kernel(s) only (callable from any TU; idempotent). Split-compile entry point: registers just this algo so a solo TU instantiates only its kernel.
+         *
+         */
+        template <typename T>
+        __host__ __forceinline__
+        void init_grid_kernel_attr_energy(){
+            size_t _grid_smem_max = 0; gpuErrchk(grid_get_max_dynamic_shared_memory_bytes(&_grid_smem_max));
+            if (ENERGY_DYNAMIC_SHARED_MEM_BYTES<T>() <= _grid_smem_max) {
+                gpuErrchk(grid_check_dynamic_shared_memory_bytes("energy", ENERGY_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_0 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&energy_kernel<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_0, cudaFuncAttributeMaxDynamicSharedMemorySize, ENERGY_DYNAMIC_SHARED_MEM_BYTES<T>()));
+                auto _grid_kern_alias_1 = static_cast<void (*)(T *, unsigned char *, const T *, const int, const robotModel<T> *, const T, const int)>(&energy_kernel_single_timing<T>);
+                gpuErrchk(cudaFuncSetAttribute(_grid_kern_alias_1, cudaFuncAttributeMaxDynamicSharedMemorySize, ENERGY_DYNAMIC_SHARED_MEM_BYTES<T>()));
+            }
+        }
+
+        /**
+         * Allocates streams for host functions WITHOUT registering any kernel attributes (pair with an init_grid_kernel_attr_<algo> for split compiles).
+         *
+         * @return A pointer to the array of streams
+         */
+        template <typename T>
+        __host__
+        cudaStream_t *init_grid_streams(){
+            gpuErrchk(cudaDeviceSynchronize());
+            // allocate streams
+            cudaStream_t *streams = (cudaStream_t *)malloc(3*sizeof(cudaStream_t));
+            int priority, minPriority, maxPriority;
+            gpuErrchk(cudaDeviceGetStreamPriorityRange(&minPriority, &maxPriority));
+            for(int i=0; i<3; i++){
+                int adjusted_max = maxPriority - i; priority = adjusted_max > minPriority ? adjusted_max : minPriority;
+                gpuErrchk(cudaStreamCreateWithPriority(&(streams[i]),cudaStreamNonBlocking,priority));
+            }
+            return streams;
+        }
+
+        /**
          * Sets MaxDynamicSharedMemorySize for every algorithm kernel and initializes streams for host functions
          *
          * @return A pointer to the array of streams
@@ -32082,13 +36838,14 @@ namespace grid {
          * @param d_robotModel is the GPU model helpers (XImats, topology, ...)
          * @param gravity is the gravity constant
          * @param dt is the integration timestep
+         * @param d_f_ext is the (optional) external forces, body-major 6*NUM_BODIES joint-LOCAL Featherstone [angular;linear], or nullptr for the force-free step. grid_plant::f_ext_body builds this from contact-frame forces.
          */
         template <typename T, grid::IntegratorType IT = grid::IntegratorType::EULER, bool MUJOCO_OUTPUT = false>
         __device__
-        void plant_step(T *s_x_kp1, const T *s_x, const T *s_u, const grid::robotModel<T> *d_robotModel, const T gravity, const T dt) {
+        void plant_step(T *s_x_kp1, const T *s_x, const T *s_u, const grid::robotModel<T> *d_robotModel, const T gravity, const T dt, T *d_f_ext = nullptr) {
             const T *s_q  = s_x;
             const T *s_qd = &s_x[7];
-            grid::integrator_device<T, IT>(s_x_kp1, s_q, s_qd, s_u, d_robotModel, nullptr, gravity, dt);
+            grid::integrator_device<T, IT>(s_x_kp1, s_q, s_qd, s_u, d_robotModel, d_f_ext, gravity, dt);
         }
 
         /**
@@ -32102,13 +36859,14 @@ namespace grid {
          * @param s_dInt_q_6x6 / s_dInt_v_6x6 are floating-base SE(3) dIntegrate blocks (unused fixed-base)
          * @param s_temp / d_workspace / d_temp_spill are the integrator-gradient scratch arenas (caller-placed)
          * @param d_robotModel / gravity / dt as for plant_step
+         * @param d_f_ext is the (optional) external forces, body-major 6*NUM_BODIES joint-LOCAL Featherstone [angular;linear], or nullptr. NOTE this returns d(x_kp1)/d(x,u) AT the given f_ext; the sensitivity to f_ext itself is grid::f_ext_gradient_device (dqdd/dfext = M^-1 J^T).
          */
         template <typename T, grid::IntegratorType IT = grid::IntegratorType::EULER, bool SCRATCH_IN_SMEM = true, bool USE_DA_DF_SPILL = false>
         __device__
-        void plant_step_gradient(T *s_dAB, T *s_x, const T *s_u, T *s_df_du, T *s_dc_du, T *s_vaf, T *s_Minv, T *s_qdd, T *s_q_orig, T *s_qd_orig, T *s_stage_grad_qdd, T *s_D_qdd_stage, T *s_dInt_q_6x6, T *s_dInt_v_6x6, T *s_XImats, int *s_topology_helpers, T *s_temp, T *d_workspace, T *d_temp_spill, const grid::robotModel<T> *d_robotModel, const T gravity, const T dt) {
+        void plant_step_gradient(T *s_dAB, T *s_x, const T *s_u, T *s_df_du, T *s_dc_du, T *s_vaf, T *s_Minv, T *s_qdd, T *s_q_orig, T *s_qd_orig, T *s_stage_grad_qdd, T *s_D_qdd_stage, T *s_dInt_q_6x6, T *s_dInt_v_6x6, T *s_XImats, int *s_topology_helpers, T *s_temp, T *d_workspace, T *d_temp_spill, const grid::robotModel<T> *d_robotModel, const T gravity, const T dt, T *d_f_ext = nullptr) {
             T *s_q  = s_x;
             T *s_qd = &s_x[7];
-            grid::integrator_gradient_device<T, IT, SCRATCH_IN_SMEM, USE_DA_DF_SPILL>(s_dAB, s_q, s_qd, s_u, s_df_du, s_dc_du, s_vaf, s_Minv, s_qdd, s_q_orig, s_qd_orig, s_stage_grad_qdd, s_D_qdd_stage, s_dInt_q_6x6, s_dInt_v_6x6, s_XImats, s_topology_helpers, s_temp, d_workspace, d_temp_spill, d_robotModel, nullptr, gravity, dt);
+            grid::integrator_gradient_device<T, IT, SCRATCH_IN_SMEM, USE_DA_DF_SPILL>(s_dAB, s_q, s_qd, s_u, s_df_du, s_dc_du, s_vaf, s_Minv, s_qdd, s_q_orig, s_qd_orig, s_stage_grad_qdd, s_D_qdd_stage, s_dInt_q_6x6, s_dInt_v_6x6, s_XImats, s_topology_helpers, s_temp, d_workspace, d_temp_spill, d_robotModel, d_f_ext, gravity, dt);
         }
 
         /**
@@ -32123,13 +36881,14 @@ namespace grid {
          * @param s_dInt_q_6x6 / s_dInt_v_6x6 are floating-base SE(3) dIntegrate blocks (unused fixed-base)
          * @param s_temp / d_workspace / d_temp_spill are the integrator-gradient scratch arenas (caller-placed)
          * @param d_robotModel / gravity / dt as for plant_step
+         * @param d_f_ext is the (optional) external forces, body-major 6*NUM_BODIES joint-LOCAL Featherstone [angular;linear], or nullptr. NOTE this returns d(x_kp1)/d(x,u) AT the given f_ext; the sensitivity to f_ext itself is grid::f_ext_gradient_device (dqdd/dfext = M^-1 J^T).
          */
         template <typename T, grid::IntegratorType IT = grid::IntegratorType::EULER, bool SCRATCH_IN_SMEM = true, bool USE_DA_DF_SPILL = false>
         __device__
-        void plant_step_gradient_and_value(T *s_dAB, T *s_x_kp1, T *s_x, const T *s_u, T *s_df_du, T *s_dc_du, T *s_vaf, T *s_Minv, T *s_qdd, T *s_q_orig, T *s_qd_orig, T *s_stage_grad_qdd, T *s_D_qdd_stage, T *s_dInt_q_6x6, T *s_dInt_v_6x6, T *s_XImats, int *s_topology_helpers, T *s_temp, T *d_workspace, T *d_temp_spill, const grid::robotModel<T> *d_robotModel, const T gravity, const T dt) {
+        void plant_step_gradient_and_value(T *s_dAB, T *s_x_kp1, T *s_x, const T *s_u, T *s_df_du, T *s_dc_du, T *s_vaf, T *s_Minv, T *s_qdd, T *s_q_orig, T *s_qd_orig, T *s_stage_grad_qdd, T *s_D_qdd_stage, T *s_dInt_q_6x6, T *s_dInt_v_6x6, T *s_XImats, int *s_topology_helpers, T *s_temp, T *d_workspace, T *d_temp_spill, const grid::robotModel<T> *d_robotModel, const T gravity, const T dt, T *d_f_ext = nullptr) {
             T *s_q  = s_x;
             T *s_qd = &s_x[7];
-            grid::integrator_with_gradient_device<T, IT, SCRATCH_IN_SMEM, USE_DA_DF_SPILL>(s_dAB, s_x_kp1, s_q, s_qd, s_u, s_df_du, s_dc_du, s_vaf, s_Minv, s_qdd, s_q_orig, s_qd_orig, s_stage_grad_qdd, s_D_qdd_stage, s_dInt_q_6x6, s_dInt_v_6x6, s_XImats, s_topology_helpers, s_temp, d_workspace, d_temp_spill, d_robotModel, nullptr, gravity, dt);
+            grid::integrator_with_gradient_device<T, IT, SCRATCH_IN_SMEM, USE_DA_DF_SPILL>(s_dAB, s_x_kp1, s_q, s_qd, s_u, s_df_du, s_dc_du, s_vaf, s_Minv, s_qdd, s_q_orig, s_qd_orig, s_stage_grad_qdd, s_D_qdd_stage, s_dInt_q_6x6, s_dInt_v_6x6, s_XImats, s_topology_helpers, s_temp, d_workspace, d_temp_spill, d_robotModel, d_f_ext, gravity, dt);
         }
 
         /**
@@ -32194,7 +36953,7 @@ namespace grid {
             #endif
             (void)s_arena_offset;
             load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
-            end_effector_pose_inner<T, true>(s_end_effector_pose, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+            end_effector_pose_inner_EE<T, true>(s_end_effector_pose, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
             __syncthreads();
             if(threadIdx.x == 0 && threadIdx.y == 0){
                 T acc = static_cast<T>(0);
@@ -32246,9 +37005,9 @@ namespace grid {
             #endif
             (void)s_arena_offset;
             load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
-            end_effector_pose_inner<T, true>(s_end_effector_pose, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+            end_effector_pose_inner_EE<T, true>(s_end_effector_pose, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
             __syncthreads();
-            end_effector_pose_gradient_inner<T, true>(s_end_effector_pose_gradient, s_q, s_XmatsHom, nullptr, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+            end_effector_pose_gradient_inner_EE<T, true>(s_end_effector_pose_gradient, s_q, s_XmatsHom, nullptr, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
             __syncthreads();
             for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 7; i += blockDim.x*blockDim.y){
                 T g = static_cast<T>(0);
@@ -32273,6 +37032,7 @@ namespace grid {
          * Notes:
          *   DEFAULT (GAUSS_NEWTON=false) folds the exact residual-weighted EE-curvature term via the analytic d2ee (grid::end_effector_pose_hessian_inner). Not necessarily PSD away from the solution -- callers must regularize (e.g. the solver's rho schedule).
          *   GAUSS_NEWTON=true keeps the ratified PSD choice H = J_p^T diag(W) J_p (curvature dropped); s_p_des, s_end_effector_pose and s_end_effector_pose_hessian may be nullptr in that case.
+         *   PSD_CLAMP=true (opt-in, default false) eigen-clamps the NV x NV q-block to >= psd_reg_eps (glass::eig_clamp) so the returned hessian is SPD and directly factorable even when the Newton curvature is indefinite -- a guaranteed-PSD alternative to a caller-side rho schedule. Costs one block-cooperative Jacobi eigensolve; s_scratch must hold NV*NV + eig_clamp_scratch when set.
          *   Caller-scratch INNER: ONE XmatsHom load feeds the needed inners (GN: gradient_inner only, s_dXhom = nullptr; Newton: pose_inner for the residual + hessian_inner, which also fills the gradient buffer), so it is callable from another kernel's block without aliasing that kernel's dynamic-smem arena.
          *   d2p layout: s_end_effector_pose_hessian[6*NV*NV*ee + r*NV*NV + vi*NV + vj] (pose row r, joint pair (vi, vj); tangent d/dv convention, position rows 0..2 symmetric in (vi, vj)).
          *   Dense column-major NX x NX (NX = NUM_POS + NUM_VEL = 14); only the top-left NUM_VEL x NUM_VEL q-block is non-zero.
@@ -32283,9 +37043,9 @@ namespace grid {
          * @param s_end_effector_pose is 6*NUM_EE pose scratch (Newton only); s_end_effector_pose_gradient is 6*NUM_VEL*NUM_EE Jacobian scratch; s_end_effector_pose_hessian is 6*NUM_VEL*NUM_VEL*NUM_EE d2ee scratch (Newton only)
          * @param s_scratch is caller shared scratch for the EE helpers (GN: >= END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_COUNT; Newton: >= END_EFFECTOR_POSE_HESSIAN_DYNAMIC_SHARED_MEM_COUNT covers it; 16B aligned)
          */
-        template <typename T, int EE = 0, bool ACCUMULATE = false, bool GAUSS_NEWTON = false, bool MUJOCO_OUTPUT = false>
+        template <typename T, int EE = 0, bool ACCUMULATE = false, bool GAUSS_NEWTON = false, bool MUJOCO_OUTPUT = false, bool PSD_CLAMP = false>
         __device__
-        void ee_pos_cost_hessian(T *s_hess, const T *s_q, const T *s_p_des, const T *s_W, T *s_end_effector_pose, T *s_end_effector_pose_gradient, T *s_end_effector_pose_hessian, T *s_scratch, const grid::robotModel<T> *d_robotModel) {
+        void ee_pos_cost_hessian(T *s_hess, const T *s_q, const T *s_p_des, const T *s_W, T *s_end_effector_pose, T *s_end_effector_pose_gradient, T *s_end_effector_pose_hessian, T *s_scratch, const grid::robotModel<T> *d_robotModel, T psd_reg_eps = static_cast<T>(1e-6)) {
             using namespace grid;
             if constexpr (!GAUSS_NEWTON) {
                 // GRID shared arena layout
@@ -32312,9 +37072,9 @@ namespace grid {
                 #endif
                 (void)s_arena_offset;
                 load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
-                end_effector_pose_inner<T, true>(s_end_effector_pose, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+                end_effector_pose_inner_EE<T, true>(s_end_effector_pose, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
                 __syncthreads();
-                end_effector_pose_hessian_inner<T, true>(s_end_effector_pose_hessian, s_end_effector_pose_gradient, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, d_robotModel, s_linalg_smem);
+                end_effector_pose_hessian_inner_EE<T, true>(s_end_effector_pose_hessian, s_end_effector_pose_gradient, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, d_robotModel, s_linalg_smem);
                 __syncthreads();
             }
             else {
@@ -32342,7 +37102,7 @@ namespace grid {
                 #endif
                 (void)s_arena_offset;
                 load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
-                end_effector_pose_gradient_inner<T, true>(s_end_effector_pose_gradient, s_q, s_XmatsHom, nullptr, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+                end_effector_pose_gradient_inner_EE<T, true>(s_end_effector_pose_gradient, s_q, s_XmatsHom, nullptr, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
                 __syncthreads();
             }
             for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 196; ind += blockDim.x*blockDim.y){
@@ -32363,6 +37123,22 @@ namespace grid {
                     }
                 }
                 if (ACCUMULATE) { s_hess[ind] += h; } else { s_hess[ind] = h; }
+            }
+            if constexpr (PSD_CLAMP) {
+                __syncthreads();
+                T *s_psd_qb = s_scratch; T *s_psd_eig = &s_scratch[49];
+                for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 49; ind += blockDim.x*blockDim.y){
+                    int r = ind % 7; int c = ind / 7;
+                    s_psd_qb[r + 7*c] = s_hess[r + 14*c];
+                }
+                __syncthreads();
+                glass::eig_clamp<T, 7>(s_psd_qb, psd_reg_eps, s_psd_eig);
+                __syncthreads();
+                for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 49; ind += blockDim.x*blockDim.y){
+                    int r = ind % 7; int c = ind / 7;
+                    s_hess[r + 14*c] = s_psd_qb[r + 7*c];
+                }
+                __syncthreads();
             }
         }
 
