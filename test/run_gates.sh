@@ -25,6 +25,7 @@ set -uo pipefail
 ARCH=${ARCH:-sm_120}
 CF="--compiler-options -Wall -O3 -Iinclude -IGLASS -arch=$ARCH"
 [[ -f include/pcg.cuh ]] || { echo "run from the GBD-PCG repo root"; exit 1; }
+PY=${PYTHON:-python3}   # must have numpy (synthetic-strip gate); set PYTHON=/path/to/venv/python
 
 npass=0; nfail=0; nskip=0
 gate(){ if [[ "$2" == "0" ]]; then echo "PASS  $1  $3"; npass=$((npass+1));
@@ -46,22 +47,23 @@ done
 SS=14
 if [[ -f /tmp/mpc_S.bin ]]; then
   SFILE=/tmp/mpc_S.bin
-  KP=$(python3 -c "import os; print(os.path.getsize('$SFILE')//4//(3*$SS*$SS))")
+  KP=$("$PY" -c "import os; print(os.path.getsize('$SFILE')//4//(3*$SS*$SS))")
   echo "[gate 2] using dumped $SFILE (KNOT_POINTS=$KP)"
 else
   KP=32; SFILE=/tmp/gates_bdmv_S.bin
   echo "[gate 2] no /tmp/mpc_S.bin; synthesizing random strips ($SFILE, ${SS}x${KP})"
-  python3 -c "
+  "$PY" -c "
 import numpy as np
 np.random.seed(0)
-np.random.uniform(-1, 1, 3*$SS*$SS*$KP).astype(np.float32).tofile('$SFILE')"
+np.random.uniform(-1, 1, 3*$SS*$SS*$KP).astype(np.float32).tofile('$SFILE')" || { gate "test_bdmv          " 1 "strip synthesis failed ($PY needs numpy)"; SFILE=; }
 fi
 echo "[gate 2] build test_bdmv STATE_SIZE=$SS KNOT_POINTS=$KP"
-if nvcc $CF -DSTATE_SIZE=$SS -DKNOT_POINTS=$KP examples/test_bdmv.cu -o examples/gates_bdmv.exe; then
+if [[ -z "$SFILE" ]]; then :  # synthesis already reported the FAIL
+elif nvcc $CF -DSTATE_SIZE=$SS -DKNOT_POINTS=$KP examples/test_bdmv.cu -o examples/gates_bdmv.exe; then
   out=$(./examples/gates_bdmv.exe "$SFILE" 2>&1)
   grep -E "matrix=|max\|diff\|" <<<"$out" | head -3 | sed 's/^/    /'
   rel=$(grep -oE "rel [0-9.eE+-]+" <<<"$out" | head -1 | awk '{print $2}' || echo nan)
-  ok=$(python3 -c "r=float('$rel'); print(0 if r < 1e-4 else 1)" 2>/dev/null || echo 1)
+  ok=$("$PY" -c "r=float('$rel'); print(0 if r < 1e-4 else 1)" 2>/dev/null || echo 1)
   gate "test_bdmv          " "$ok" "GPU vs host matvec rel=$rel (bar 1e-4; float32 noise ~1e-7)"
 else
   gate "test_bdmv          " 1 "build failed"
@@ -69,12 +71,12 @@ fi
 
 # ---------------- gate 3: test_pcg_dumped (real Schur system, smoke) --------------------
 if [[ -f /tmp/mpc_S.bin && -f /tmp/mpc_Pinv.bin && -f /tmp/mpc_gamma.bin ]]; then
-  KP=$(python3 -c "import os; print(os.path.getsize('/tmp/mpc_S.bin')//4//(3*$SS*$SS))")
+  KP=$("$PY" -c "import os; print(os.path.getsize('/tmp/mpc_S.bin')//4//(3*$SS*$SS))")
   echo "[gate 3] build test_pcg_dumped STATE_SIZE=$SS KNOT_POINTS=$KP"
   if nvcc $CF -DSTATE_SIZE=$SS -DKNOT_POINTS=$KP examples/test_pcg_dumped.cu -o examples/gates_dumped.exe; then
     out=$(./examples/gates_dumped.exe 1e-4 500 2>&1); echo "$out" | sed 's/^/    /'
     rel=$(grep -oE "\|\|gamma\|\| = [0-9.eE+-]+" <<<"$out" | grep -oE "[0-9.eE+-]+$" || echo nan)
-    ok=$(python3 -c "r=float('$rel'); print(0 if r < 1e-1 else 1)" 2>/dev/null || echo 1)
+    ok=$("$PY" -c "r=float('$rel'); print(0 if r < 1e-1 else 1)" 2>/dev/null || echo 1)
     gate "test_pcg_dumped   " "$ok" "true rel residual=$rel (smoke bar 1e-1; see header note)"
   else
     gate "test_pcg_dumped   " 1 "build failed"
