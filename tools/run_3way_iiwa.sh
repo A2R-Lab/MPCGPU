@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # FAIR 3-way iiwa14 fig8 tracking check (GATO / MPCGPU / BatchThneed) on the IDENTICAL problem:
-#   robot iiwa14 (URDF eeb7d4ff), q0=readyC, EE=grid-L7, fig8 A=0.15 T=6 centered at L7(q0),
-#   warm-start = zero controls, config = SQP=1 / PCG cap 200 / rho=0.01 / cost EE2 qd1e-2
-#   u2e-6 N50 mu10. Tracking measured (L2) at the L7 frame for all three. NOT a timing run.
+#   robot iiwa14 (URDF eeb7d4ff), q0=readyC, EE = grid end_effector_pose = the URDF "EE" fixed
+#   joint (post 2026-07-30 named-target regen; +0.04m beyond L7 — old L7-frame numbers are NOT
+#   comparable), fig8 A=0.15 T=6 centered at EE(q0), warm-start = zero controls, config = SQP=1 /
+#   PCG cap 200 / rho=0.01 / cost EE2 qd1e-2 u2e-6 N50 mu10. Tracking measured (L2) at the EE
+#   frame for all three. NOT a timing run.
 # MPCGPU PCG uses GATO_REG_PATTERN (rho on the position half of Q only, R unregularized —
 #   GATO's convention). Under MPCGPU's historic full-Q+R rho the SAME stair preconditioner
 #   sees cond(Pinv*S)~3e4 (eta-exit lies ~500x -> tracking 0.19 at native exit, or uniform
@@ -43,4 +45,4 @@ PYTHONPATH="$SQPCPU/build:$GATO/python:${PYTHONPATH:-}" \
   | grep -viE "warn|deprecat" | grep -E "RESULT_BT|trace|iiwa14 BatchThneed" | sed 's/^/  /'
 
 echo "==============================================="
-echo "Compare L7_mean/max/final across the three (all track the identical fig8 at the L7 frame)."
+echo "Compare EE_mean/max/final across the three (all track the identical fig8 at the EE frame)."
