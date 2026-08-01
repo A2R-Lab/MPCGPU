@@ -1,0 +1,105 @@
+{
+  "environment": {
+    "gpu_info": {
+      "driver_version": "610.43.02",
+      "memory": "32607 MiB",
+      "name": "NVIDIA GeForce RTX 5090"
+    },
+    "platform": "linux",
+    "plugin_version": "0.1.0",
+    "pytest_version": "9.1.1",
+    "python_version": "3.12.3"
+  },
+  "fingerprint": {
+    "algorithm": "sha256",
+    "digest": "2e454b0784e9e6a663cbf0d1c43c0dab150dbc54b66530e440d96148bf7e9da6",
+    "file_count": 61,
+    "included_paths": [
+      "Makefile",
+      "examples",
+      "include",
+      "test",
+      "tools"
+    ]
+  },
+  "mode": "local",
+  "repo": {
+    "branch": "modernize-grid-glass",
+    "commit_sha": "b4c8c59c91574b3759b746d6fd9916c9eda48e85",
+    "dirty": false,
+    "github_username": "plancherb1",
+    "remote_url": "git@github.com:A2R-Lab/MPCGPU.git"
+  },
+  "schema_version": "1",
+  "session": {
+    "ended_at": "2026-08-01T23:08:47Z",
+    "node_ids": [
+      "test/test_gates.py::test_gate[single_cost_test]",
+      "test/test_gates.py::test_gate[test_terminal_cost]",
+      "test/test_gates.py::test_gate[validate_track_pcg]",
+      "test/test_gates.py::test_gate[validate_track_qdldl]",
+      "test/test_gates.py::test_gate_runner_exit",
+      "test/test_gates.py::test_fd_parity",
+      "test/test_gates.py::test_grid_cuh_matches_gato",
+      "test/test_gates.py::test_gbdpcg_gates"
+    ],
+    "started_at": "2026-08-01T23:05:55Z"
+  },
+  "signature": {
+    "algorithm": "ed25519",
+    "backend": "ssh-local",
+    "key_fingerprint": "SHA256:hfyUcDJTDLry3j7nJ9V2X8iEIgNFmFJQKGQirOdyWtY",
+    "signer": "plancherb1",
+    "value": "nMCo0Qsdq3hc29xvAU9jsCK3X8p1RctyIGO3GsAVUdvJqvBnCuF3L5Z0Rmz8cA3FjGtqMk+RvFe0rpCLhdKkDg=="
+  },
+  "tests": [
+    {
+      "checks": [],
+      "duration_s": 0.0002,
+      "node_id": "test/test_gates.py::test_gate[single_cost_test]",
+      "outcome": "passed"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0001,
+      "node_id": "test/test_gates.py::test_gate[test_terminal_cost]",
+      "outcome": "passed"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0001,
+      "node_id": "test/test_gates.py::test_gate[validate_track_pcg]",
+      "outcome": "passed"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0001,
+      "node_id": "test/test_gates.py::test_gate[validate_track_qdldl]",
+      "outcome": "passed"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0,
+      "node_id": "test/test_gates.py::test_gate_runner_exit",
+      "outcome": "passed"
+    },
+    {
+      "checks": [],
+      "duration_s": 3.7458,
+      "node_id": "test/test_gates.py::test_fd_parity",
+      "outcome": "passed"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0037,
+      "node_id": "test/test_gates.py::test_grid_cuh_matches_gato",
+      "outcome": "passed"
+    },
+    {
+      "checks": [],
+      "duration_s": 9.6534,
+      "node_id": "test/test_gates.py::test_gbdpcg_gates",
+      "outcome": "passed"
+    }
+  ]
+}
