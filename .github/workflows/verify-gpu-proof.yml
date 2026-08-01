@@ -1,0 +1,55 @@
+# CPU-only CI: validates the committed gpu-proof.json (signature via
+# github.com/{signer}.keys, source fingerprint, commit SHA, freshness,
+# allow_dirty policy). The GPU gate suite itself runs on the lab box via
+# test/run_gpu_proof.sh — this job is what lets GPU correctness gate pushes
+# without cloud GPUs. If no receipt is committed yet, the job SKIPS gracefully
+# (push-before-receipt is allowed; the receipt lands in a follow-up commit and
+# activates enforcement).
+#
+# Trust model: the receipt is a signed attestation by a keyholder, not
+# cryptographic proof of GPU execution — see pytest-gpu-proof's security docs.
+name: verify-gpu-proof
+
+on:
+  push:
+    branches: [main, modernizing-tests, modernize-grid-glass]
+  pull_request:
+
+jobs:
+  verify-receipt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # commit-SHA ancestry check needs history
+          # NOT submodules: true — submodules use SSH URLs; the verifier
+          # installs pytest-gpu-proof from PyPI, no submodules needed.
+
+      - name: Check for a receipt
+        id: receipt
+        run: |
+          if [ -f gpu-proof.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no gpu-proof.json yet — run test/run_gpu_proof.sh on the GPU box and commit the receipt"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.receipt.outputs.present == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest-gpu-proof (PyPI)
+        if: steps.receipt.outputs.present == 'true'
+        run: pip install "pytest-gpu-proof>=0.1" pyyaml
+
+      - name: Verify receipt
+        if: steps.receipt.outputs.present == 'true'
+        run: |
+          gpu-proof verify \
+            --receipt gpu-proof.json \
+            --repo . \
+            --policy test/gpu-proof-policy.yaml \
+            --expected-skips test/expected_skips.txt \
+            --require-gpu

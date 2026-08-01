@@ -31,7 +31,7 @@
 set -uo pipefail
 ARCH=${ARCH:-sm_120}
 LD=qdldl/build/out
-CF="--compiler-options -Wall -O3 -DNDEBUG -arch=$ARCH -Iinclude -Iinclude/common -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas"
+CF="--compiler-options -Wall -O3 -DNDEBUG -arch=$ARCH -Iinclude -Iinclude/common -IGRiD/grid_codegen/collision -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas"
 FAIR="-DKNOT_POINTS=64 -DPCG_MAX_ITER=200 -DPCG_RES_TOL=1e-4 -DGATO_REG_PATTERN -DRHO_INIT=0.01 -DSQP_MAX_ITER=1 -DSQP_MAX_TIME_US=100000000"
 
 [[ -f include/common/settings.cuh ]] || { echo "run from the MPCGPU repo root"; exit 1; }
@@ -77,7 +77,7 @@ if [[ "${GATES_REDUMP:-0}" == "1" ]]; then
     && LD_LIBRARY_PATH=$LD ./tools/gates_vt_dump.exe examples/trajfiles/0_0 > /dev/null 2>&1
 fi
 echo "[gate 2] build test_terminal_cost (build line from its header; KNOT_POINTS baked at N=64 in main)"
-if nvcc --compiler-options -Wall -O3 -DNDEBUG -arch=$ARCH -Iinclude -Iinclude/common -IGLASS \
+if nvcc --compiler-options -Wall -O3 -DNDEBUG -arch=$ARCH -Iinclude -Iinclude/common -IGRiD/grid_codegen/collision -IGLASS \
         -IGBD-PCG/include -Iqdldl/include tools/test_terminal_cost.cu -o tools/gates_tct.exe -lcublas; then
   out=$(./tools/gates_tct.exe 2>&1); echo "$out" | sed 's/^/    /'
   ok=$(TCT_OUT="$out" python3 - <<'EOF'

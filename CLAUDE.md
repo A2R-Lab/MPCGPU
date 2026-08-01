@@ -43,6 +43,22 @@ Parameters in `include/common/settings.cuh` are all `#ifndef`-guarded → overri
 
 ## Validation gates (correctness-only)
 
+**GPU CI = pytest-gpu-proof (mirrors GATO, added 2026-08-01):** `test/test_gates.py` wraps every
+gate below as a pytest suite; `./test/run_gpu_proof.sh` runs it on the GPU box (bootstraps
+`.venv`, builds qdldl if needed, requires a clean tree + the sibling `../GATO` checkout) and
+signs `gpu-proof.json`; commit the receipt and the CPU-only `verify-gpu-proof` workflow checks
+it on every push. Config in `pyproject.toml [tool.gpu_proof]` + `test/gpu-proof-policy.yaml`.
+Changes under `include/`, `tools/`, `examples/`, `test/`, or `Makefile` change the fingerprint —
+regenerate the receipt with such a push. The suite also runs GBD-PCG's own gate runner, so the
+receipt attests the cooperative solver too (GBD-PCG carries no separate receipt).
+
+⚠ `tools/regen_grid.py` regenerates against the **sibling GATO checkout's URDF** (same bytes as
+`tools/iiwa14.urdf` but sitting next to the link STLs): the collision spherization resolves
+meshes relative to the URDF file, and the lone vendored copy silently degrades the sphere set,
+breaking the byte-diff gate. Since the CL-2b era grid.cuh bakes `grid_collision` + the EE
+contact-frame map (unused by MPCGPU, carried for byte-identity) — build lines need
+`-IGRiD/grid_codegen/collision` (already in the Makefile + tools scripts).
+
 `tools/run_gates.sh` is the one-command gate runner (build + run + PASS/FAIL): single_cost_test
 (one-solve EE-cost response at the fair config: ‖d_xu step‖ ≈ 339.6, post-solve window tracking
 ≈ 0.0107), test_terminal_cost (terminal q-gradient vs pinocchio truth on the committed

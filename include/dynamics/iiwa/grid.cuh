@@ -16038,6 +16038,1138 @@ namespace grid {
     #define GRID_RBD_EE_POSE_GRADIENT_KERNEL end_effector_pose_gradient_kernel_EE
     #define GRID_RBD_EE_POSE_HESSIAN_KERNEL end_effector_pose_hessian_kernel_EE
     
+    
+    // ---- contact frames (GATO ask 1 C.2): world-aligned contact wrench -> joint-local f_ext
+    //   'EE' -> body 6 @ local offset (0, 0, 0.04)
+    #define GRID_HAS_CONTACT_FRAMES 1
+    const int NUM_CONTACT_FRAMES = 1;
+    /**
+     * Contact-frame wrenches -> joint-local f_ext
+     *
+     * Notes:
+     *   f_ext[b] += [ R^T n_w + r_c x (R^T f_w) ; R^T f_w ] -- rotate into the body frame, then TRANSPORT the moment from the contact origin to the joint origin.
+     *   Output is fully zeroed first, so bodies with no contact stay 0 and the array can be handed straight to grid_plant::plant_step(..., d_f_ext).
+     *   A pure point force is n_w = 0; the 6D form subsumes the 3D case.
+     *
+     * @param s_f_ext is the output, size 6*NUM_BODIES (joint-local Featherstone [angular;linear]); ZEROED then scattered
+     * @param s_f_c is the contact wrench input, size 6*NUM_CONTACT_FRAMES = 6 ([n_w; f_w] per frame, WORLD-ALIGNED axes, moment about the contact origin)
+     * @param s_q is the vector of joint positions
+     * @param s_Xhom is the per-joint local homogeneous transforms (already updated for q)
+     * @param s_temp is helper shared memory (holds s_Xworld = 16*NUM_JOINTS)
+     * @param s_topology_helpers is the (shared) memory location for the topology_helpers (nullptr/unused for serial chains with identical Ss)
+     * @param d_workspace is the global-memory scratch used when !TEMP_IN_SMEM
+     */
+    template <typename T, bool TEMP_IN_SMEM = true>
+    __device__
+    void f_ext_body_inner(T *s_f_ext, const T *s_f_c, const T *s_q, const T *s_Xhom, int *s_topology_helpers, T *s_temp, T *d_workspace, unsigned char *s_linalg_smem) {
+        if constexpr (!TEMP_IN_SMEM) { s_temp = d_workspace; } else { (void)d_workspace; }
+        (void)s_q; (void)s_linalg_smem;
+        T *s_Xworld = s_temp;   // 16 * 7
+        //
+        // Build world transforms for every joint via BFS-level chain-up
+        //
+        // BFS level 0 -> joints [0]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 0; par = -1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 1 -> joints [1]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 1; par = 0; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 2 -> joints [2]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 2; par = 1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 3 -> joints [3]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 3; par = 2; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 4 -> joints [4]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 4; par = 3; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 5 -> joints [5]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 5; par = 4; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 6 -> joints [6]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 6; par = 5; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // baked contact set: body id + LOCAL frame origin offset per contact
+        static const int fc_body[] = { 6 };
+        static const T fc_offset[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.040000000000000001) };
+        // body-grouped: one writer per output slot, fixed-order sums, NO atomics (determinism)
+        static const int fc_uniq[] = { 6 };
+        static const int fc_start[] = { 0 };
+        static const int fc_count[] = { 1 };
+        static const int fc_ids[] = { 0 };
+        // zero every slot: bodies with no contact contribute nothing
+        glass::set_const<T, 42>(static_cast<T>(0), s_f_ext);
+        // one thread per (contacted body, component): single writer, fixed-order sum
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 6; ind += blockDim.x*blockDim.y){
+            int k = ind % 6; int u = ind / 6;
+            const int b = fc_uniq[u];
+            T acc = static_cast<T>(0);
+            for (int t = 0; t < fc_count[u]; ++t) {
+                const int c = fc_ids[fc_start[u] + t];
+                const T *nw = &s_f_c[6*c];       // world angular (moment about the CONTACT origin)
+                const T *fw = &s_f_c[6*c + 3];   // world linear
+                T g[3], h[3];
+                for (int a = 0; a < 3; ++a) {
+                    const T *Ra = &s_Xworld[16*b + 4*a];   // column a of R  ->  row a of R^T
+                    g[a] = Ra[0]*nw[0] + Ra[1]*nw[1] + Ra[2]*nw[2];
+                    h[a] = Ra[0]*fw[0] + Ra[1]*fw[1] + Ra[2]*fw[2];
+                }
+                const T r0 = fc_offset[3*c+0], r1 = fc_offset[3*c+1], r2 = fc_offset[3*c+2];
+                if (k >= 3) { acc += h[k-3]; }
+                else {
+                    // angular = g + r_c x h
+                    const T rxh0 = r1*h[2] - r2*h[1];
+                    const T rxh1 = r2*h[0] - r0*h[2];
+                    const T rxh2 = r0*h[1] - r1*h[0];
+                    acc += g[k] + ((k == 0) ? rxh0 : ((k == 1) ? rxh1 : rxh2));
+                }
+            }
+            s_f_ext[6*b + k] = acc;
+        }
+        __syncthreads();
+    }
+
+    /**
+     * d(f_ext)/d(contact wrench) -- f_c-independent
+     *
+     * Notes:
+     *   f_c-INDEPENDENT by construction (the map is linear in f_c) -- takes no f_c argument.
+     *   Compose with grid::f_ext_gradient_device's dqdd/dfext to get dqdd/df_c.
+     *
+     * @param s_dfext_dfc is the output, size 252 (column-major [row + 42*col], col = 6*c + j)
+     * @param s_q is the vector of joint positions
+     * @param s_Xhom is the per-joint local homogeneous transforms (already updated for q)
+     * @param s_temp is helper shared memory (holds s_Xworld = 16*NUM_JOINTS)
+     * @param s_topology_helpers is the (shared) memory location for the topology_helpers (nullptr/unused for serial chains with identical Ss)
+     * @param d_workspace is the global-memory scratch used when !TEMP_IN_SMEM
+     */
+    template <typename T, bool TEMP_IN_SMEM = true>
+    __device__
+    void f_ext_body_jacobian_dfc_inner(T *s_dfext_dfc, const T *s_q, const T *s_Xhom, int *s_topology_helpers, T *s_temp, T *d_workspace, unsigned char *s_linalg_smem) {
+        if constexpr (!TEMP_IN_SMEM) { s_temp = d_workspace; } else { (void)d_workspace; }
+        (void)s_q; (void)s_linalg_smem;
+        T *s_Xworld = s_temp;   // 16 * 7
+        //
+        // Build world transforms for every joint via BFS-level chain-up
+        //
+        // BFS level 0 -> joints [0]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 0; par = -1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 1 -> joints [1]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 1; par = 0; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 2 -> joints [2]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 2; par = 1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 3 -> joints [3]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 3; par = 2; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 4 -> joints [4]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 4; par = 3; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 5 -> joints [5]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 5; par = 4; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 6 -> joints [6]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 6; par = 5; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // baked contact set: body id + LOCAL frame origin offset per contact
+        static const int fc_body[] = { 6 };
+        static const T fc_offset[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.040000000000000001) };
+        // body-grouped: one writer per output slot, fixed-order sums, NO atomics (determinism)
+        static const int fc_uniq[] = { 6 };
+        static const int fc_start[] = { 0 };
+        static const int fc_count[] = { 1 };
+        static const int fc_ids[] = { 0 };
+        // zero: only the (body of contact c) rows are nonzero for column block c
+        glass::set_const<T, 252>(static_cast<T>(0), s_dfext_dfc);
+        // one thread per (contact, out-component k, in-component j)
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 36; ind += blockDim.x*blockDim.y){
+            int j = ind % 6; int rest = ind / 6; int k = rest % 6; int c = rest / 6;
+            const int b = fc_body[c];
+            const T r0 = fc_offset[3*c+0], r1 = fc_offset[3*c+1], r2 = fc_offset[3*c+2];
+            // Rt(a, r) = R^T[a][r] = R[r][a] = s_Xworld[16*b + 4*a + r]
+            T val = static_cast<T>(0);
+            if (k >= 3) {
+                // linear rows: [ 0 | R^T ] -> only the linear half of f_c contributes
+                if (j >= 3) { val = s_Xworld[16*b + 4*(k-3) + (j-3)]; }
+            }
+            else {
+                // angular rows: [ R^T | skew(r_c) R^T ]
+                if (j < 3) { val = s_Xworld[16*b + 4*k + j]; }
+                else {
+                    // (skew(r) R^T)[k][j-3] = sum_a skew(r)[k][a] * R^T[a][j-3]
+                    const int jj = j - 3;
+                    const T Rt0 = s_Xworld[16*b + 4*0 + jj];
+                    const T Rt1 = s_Xworld[16*b + 4*1 + jj];
+                    const T Rt2 = s_Xworld[16*b + 4*2 + jj];
+                    // skew(r) rows: [0,-r2,r1], [r2,0,-r0], [-r1,r0,0]
+                    val = (k == 0) ? (-r2*Rt1 + r1*Rt2)
+                        : ((k == 1) ? ( r2*Rt0 - r0*Rt2)
+                                    : (-r1*Rt0 + r0*Rt1));
+                }
+            }
+            s_dfext_dfc[(6*b + k) + 42*(6*c + j)] = val;
+        }
+        __syncthreads();
+    }
+
+    /**
+     * d(f_ext)/dq at fixed contact wrench
+     *
+     * Notes:
+     *   d(f_ext[b])/dq_v = [ -w_v x g - r_c x (w_v x h) ; -w_v x h ], with w_v the ANGULAR half of body b's LOCAL body-Jacobian column v (= -s_dtau_dfext[v + nv*(6b+k)], k in 0..2).
+     *   This is the chain-rule term a solver DROPS if it treats the applied wrench as q-independent.
+     *
+     * @param s_dfext_dq is the output, size 6*NUM_BODIES*NUM_VEL, column-major [row + 6*NUM_BODIES*v]
+     * @param s_f_c is the contact wrench input, size 6*NUM_CONTACT_FRAMES (the Jacobian is LINEAR in it)
+     * @param s_dtau_dfext is -J^T from grid::f_ext_gradient_device, size NUM_VEL*6*NUM_BODIES (column-major [v + NUM_VEL*(6*i+k)]); its columns ARE the local body Jacobian
+     * @param s_q is the vector of joint positions
+     * @param s_Xhom is the per-joint local homogeneous transforms (already updated for q)
+     * @param s_temp is helper shared memory (holds s_Xworld = 16*NUM_JOINTS)
+     * @param s_topology_helpers is the (shared) memory location for the topology_helpers (nullptr/unused for serial chains with identical Ss)
+     * @param d_workspace is the global-memory scratch used when !TEMP_IN_SMEM
+     */
+    template <typename T, bool TEMP_IN_SMEM = true>
+    __device__
+    void f_ext_body_jacobian_dq_inner(T *s_dfext_dq, const T *s_f_c, const T *s_dtau_dfext, const T *s_q, const T *s_Xhom, int *s_topology_helpers, T *s_temp, T *d_workspace, unsigned char *s_linalg_smem) {
+        if constexpr (!TEMP_IN_SMEM) { s_temp = d_workspace; } else { (void)d_workspace; }
+        (void)s_q; (void)s_linalg_smem;
+        T *s_Xworld = s_temp;   // 16 * 7
+        //
+        // Build world transforms for every joint via BFS-level chain-up
+        //
+        // BFS level 0 -> joints [0]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 0; par = -1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 1 -> joints [1]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 1; par = 0; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 2 -> joints [2]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 2; par = 1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 3 -> joints [3]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 3; par = 2; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 4 -> joints [4]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 4; par = 3; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 5 -> joints [5]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 5; par = 4; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 6 -> joints [6]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 6; par = 5; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // baked contact set: body id + LOCAL frame origin offset per contact
+        static const int fc_body[] = { 6 };
+        static const T fc_offset[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.040000000000000001) };
+        // body-grouped: one writer per output slot, fixed-order sums, NO atomics (determinism)
+        static const int fc_uniq[] = { 6 };
+        static const int fc_start[] = { 0 };
+        static const int fc_count[] = { 1 };
+        static const int fc_ids[] = { 0 };
+        // zero every slot: bodies with no contact have zero sensitivity
+        glass::set_const<T, 294>(static_cast<T>(0), s_dfext_dq);
+        // one thread per (contacted body, component, velocity): single writer
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 42; ind += blockDim.x*blockDim.y){
+            int k = ind % 6; int rest = ind / 6; int u = rest % 1; int v = rest / 1;
+            const int b = fc_uniq[u];
+            // w_v = angular half of body b's LOCAL body-Jacobian column v = -s_dtau_dfext[v + nv*(6b+kk)]
+            const T w0 = -s_dtau_dfext[v + 7*(6*b + 0)];
+            const T w1 = -s_dtau_dfext[v + 7*(6*b + 1)];
+            const T w2 = -s_dtau_dfext[v + 7*(6*b + 2)];
+            T acc = static_cast<T>(0);
+            for (int t = 0; t < fc_count[u]; ++t) {
+                const int c = fc_ids[fc_start[u] + t];
+                const T *nw = &s_f_c[6*c];       // world angular (moment about the CONTACT origin)
+                const T *fw = &s_f_c[6*c + 3];   // world linear
+                T g[3], h[3];
+                for (int a = 0; a < 3; ++a) {
+                    const T *Ra = &s_Xworld[16*b + 4*a];   // column a of R  ->  row a of R^T
+                    g[a] = Ra[0]*nw[0] + Ra[1]*nw[1] + Ra[2]*nw[2];
+                    h[a] = Ra[0]*fw[0] + Ra[1]*fw[1] + Ra[2]*fw[2];
+                }
+                const T r0 = fc_offset[3*c+0], r1 = fc_offset[3*c+1], r2 = fc_offset[3*c+2];
+                // dh = -w x h ;  dg = -w x g
+                const T dh0 = -(w1*h[2] - w2*h[1]), dh1 = -(w2*h[0] - w0*h[2]), dh2 = -(w0*h[1] - w1*h[0]);
+                if (k >= 3) { acc += (k == 3) ? dh0 : ((k == 4) ? dh1 : dh2); }
+                else {
+                    const T dg0 = -(w1*g[2] - w2*g[1]), dg1 = -(w2*g[0] - w0*g[2]), dg2 = -(w0*g[1] - w1*g[0]);
+                    // angular sensitivity = dg + r_c x dh
+                    const T rxd0 = r1*dh2 - r2*dh1;
+                    const T rxd1 = r2*dh0 - r0*dh2;
+                    const T rxd2 = r0*dh1 - r1*dh0;
+                    acc += ((k == 0) ? (dg0 + rxd0) : ((k == 1) ? (dg1 + rxd1) : (dg2 + rxd2)));
+                }
+            }
+            s_dfext_dq[(6*b + k) + 42*v] = acc;
+        }
+        __syncthreads();
+    }
+
+    /**
+     * Contact-frame wrenches -> the joint-local f_ext array plant_step consumes
+     *
+     * @param s_f_ext is the output joint-local wrench array, size 42
+     * @param s_f_c is the contact wrench input, size 6 ([n_w; f_w] per frame, WORLD-ALIGNED, moment about the contact origin)
+     * @param s_q is the vector of joint positions
+     * @param d_robotModel is the initialized model-specific helpers on the GPU
+     * @param d_workspace is the global scratch (= 0 bytes at TIER_SHARED, 144*sizeof(T) at TIER_LITE+); pass nullptr at TIER_SHARED
+     */
+    template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+    __device__
+    void f_ext_body_device(T *s_f_ext, const T *s_f_c, const T *s_q, const robotModel<T> *d_robotModel, T *d_workspace = nullptr) {
+        // GRID shared arena layout
+        //   T s_XmatsHom[144]
+        //   T s_temp[144] (TIER_SHARED only; LITE/MINIMAL route to d_workspace)
+        //   bytes s_linalg_smem[GRID_EE_LINALG_SHARED_BYTES<T>()]
+        extern __shared__ __align__(16) unsigned char s_arena[];
+        size_t s_arena_offset = 0;
+        s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+        T *s_XmatsHom = grid_arena_ptr<T>(s_arena, s_arena_offset);
+        s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        T *s_temp;
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            (void)d_workspace;
+            s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+            s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        }
+        else {
+            s_temp = d_workspace;
+        }
+        int *s_topology_helpers = nullptr;
+        unsigned char *s_linalg_smem = nullptr;
+        if (static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>()) > 0) {
+            s_arena_offset = grid_align_up(s_arena_offset, static_cast<size_t>(16));
+            s_linalg_smem = grid_arena_ptr<unsigned char>(s_arena, s_arena_offset);
+            s_arena_offset += static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>());
+        }
+        #ifdef GRID_CUDA_DEBUG_LAYOUT
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(288, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        else {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(144, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        #endif
+        (void)s_arena_offset;
+        load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
+        f_ext_body_inner<T>(s_f_ext, s_f_c, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+    }
+
+    /**
+     * d(f_ext)/d(contact wrench) -- compose with dqdd/dfext to get dqdd/df_c
+     *
+     * @param s_dfext_dfc is the output d(f_ext)/d(f_c), size 252 (column-major [row + 42*(6*c+j)])
+     * @param s_q is the vector of joint positions
+     * @param d_robotModel is the initialized model-specific helpers on the GPU
+     * @param d_workspace is the global scratch (= 0 bytes at TIER_SHARED, 144*sizeof(T) at TIER_LITE+); pass nullptr at TIER_SHARED
+     */
+    template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+    __device__
+    void f_ext_body_jacobian_dfc_device(T *s_dfext_dfc, const T *s_q, const robotModel<T> *d_robotModel, T *d_workspace = nullptr) {
+        // GRID shared arena layout
+        //   T s_XmatsHom[144]
+        //   T s_temp[144] (TIER_SHARED only; LITE/MINIMAL route to d_workspace)
+        //   bytes s_linalg_smem[GRID_EE_LINALG_SHARED_BYTES<T>()]
+        extern __shared__ __align__(16) unsigned char s_arena[];
+        size_t s_arena_offset = 0;
+        s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+        T *s_XmatsHom = grid_arena_ptr<T>(s_arena, s_arena_offset);
+        s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        T *s_temp;
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            (void)d_workspace;
+            s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+            s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        }
+        else {
+            s_temp = d_workspace;
+        }
+        int *s_topology_helpers = nullptr;
+        unsigned char *s_linalg_smem = nullptr;
+        if (static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>()) > 0) {
+            s_arena_offset = grid_align_up(s_arena_offset, static_cast<size_t>(16));
+            s_linalg_smem = grid_arena_ptr<unsigned char>(s_arena, s_arena_offset);
+            s_arena_offset += static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>());
+        }
+        #ifdef GRID_CUDA_DEBUG_LAYOUT
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(288, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        else {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(144, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        #endif
+        (void)s_arena_offset;
+        load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
+        f_ext_body_jacobian_dfc_inner<T>(s_dfext_dfc, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+    }
+
+    /**
+     * d(f_ext)/dq at fixed contact wrench (the chain-rule term solvers drop)
+     *
+     * @param s_dfext_dq is the output d(f_ext)/dq, size 294 (column-major [row + 42*v])
+     * @param s_f_c is the contact wrench input, size 6 ([n_w; f_w] per frame, WORLD-ALIGNED, moment about the contact origin)
+     * @param s_dtau_dfext is -J^T from grid::f_ext_gradient_device, size 294
+     * @param s_q is the vector of joint positions
+     * @param d_robotModel is the initialized model-specific helpers on the GPU
+     * @param d_workspace is the global scratch (= 0 bytes at TIER_SHARED, 144*sizeof(T) at TIER_LITE+); pass nullptr at TIER_SHARED
+     */
+    template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+    __device__
+    void f_ext_body_jacobian_dq_device(T *s_dfext_dq, const T *s_f_c, const T *s_dtau_dfext, const T *s_q, const robotModel<T> *d_robotModel, T *d_workspace = nullptr) {
+        // GRID shared arena layout
+        //   T s_XmatsHom[144]
+        //   T s_temp[144] (TIER_SHARED only; LITE/MINIMAL route to d_workspace)
+        //   bytes s_linalg_smem[GRID_EE_LINALG_SHARED_BYTES<T>()]
+        extern __shared__ __align__(16) unsigned char s_arena[];
+        size_t s_arena_offset = 0;
+        s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+        T *s_XmatsHom = grid_arena_ptr<T>(s_arena, s_arena_offset);
+        s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        T *s_temp;
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            (void)d_workspace;
+            s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+            s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        }
+        else {
+            s_temp = d_workspace;
+        }
+        int *s_topology_helpers = nullptr;
+        unsigned char *s_linalg_smem = nullptr;
+        if (static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>()) > 0) {
+            s_arena_offset = grid_align_up(s_arena_offset, static_cast<size_t>(16));
+            s_linalg_smem = grid_arena_ptr<unsigned char>(s_arena, s_arena_offset);
+            s_arena_offset += static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>());
+        }
+        #ifdef GRID_CUDA_DEBUG_LAYOUT
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(288, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        else {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(144, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        #endif
+        (void)s_arena_offset;
+        load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
+        f_ext_body_jacobian_dq_inner<T>(s_dfext_dq, s_f_c, s_dtau_dfext, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+    }
+
+    // W1b batched multi-target world positions (opt-in via multi_target_batch); NUM_MULTI_TARGETS = 44
+    const int NUM_MULTI_TARGETS = 44;
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ inline size_t MULTI_TARGET_POSITION_DYNAMIC_SHARED_MEM_BYTES() { if constexpr (TIER == TIER_SHARED) return grid_shared_arena_bytes<T>(288, TOPOLOGY_HELPERS_COUNT, GRID_EE_LINALG_SHARED_BYTES<T>()); else return grid_shared_arena_bytes<T>(144, TOPOLOGY_HELPERS_COUNT, GRID_EE_LINALG_SHARED_BYTES<T>()); }
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t MULTI_TARGET_POSITION_DEVICE_INLINE_WORKSPACE_BYTES() { return (TIER == TIER_SHARED) ? static_cast<size_t>(0) : sizeof(T) * static_cast<size_t>(144); }
+    /**
+     * Batched multi-target world positions
+     *
+     * Notes:
+     *   Computes world positions of a baked batch of fixed-offset targets (grasp points / spheres).
+     *   One shared FK (world transforms) + parallel-over-targets offset extraction.
+     *
+     * @param s_out_pos is shared memory of size 3*N_TARGETS (xyz per target), N_TARGETS = 44
+     * @param s_q is the vector of joint positions
+     * @param s_Xhom is the per-joint local homogeneous transforms (already updated for q)
+     * @param s_temp is helper shared memory (holds s_Xworld = 16*NUM_JOINTS)
+     * @param s_topology_helpers is the (shared) memory location for the topology_helpers (nullptr/unused for serial chains with identical Ss)
+     * @param d_workspace is the global-memory scratch used when !TEMP_IN_SMEM
+     */
+    template <typename T, bool TEMP_IN_SMEM = true>
+    __device__
+    void multi_target_position_inner(T *s_out_pos, const T *s_q, const T *s_Xhom, int *s_topology_helpers, T *s_temp, T *d_workspace, unsigned char *s_linalg_smem) {
+        if constexpr (!TEMP_IN_SMEM) { s_temp = d_workspace; } else { (void)d_workspace; }
+        (void)s_q; (void)s_linalg_smem;
+        T *s_Xworld = s_temp;   // 16 * 7
+        //
+        // Build world transforms for every joint via BFS-level chain-up
+        //
+        // BFS level 0 -> joints [0]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 0; par = -1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 1 -> joints [1]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 1; par = 0; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 2 -> joints [2]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 2; par = 1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 3 -> joints [3]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 3; par = 2; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 4 -> joints [4]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 4; par = 3; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 5 -> joints [5]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 5; par = 4; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 6 -> joints [6]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 6; par = 5; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // baked target batch: anchor frame id + LOCAL offset per target
+        static const int mt_anchor[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6 };
+        static const T mt_offset[] = { static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.040000000000000001) };
+        //
+        // Extract each target's world position = R_world[anchor] @ offset + p_world
+        //
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 132; ind += blockDim.x*blockDim.y){
+            int row = ind % 3; int t = ind / 3;
+            const T *X = &s_Xworld[16 * mt_anchor[t]];
+            const T *o = &mt_offset[3 * t];
+            s_out_pos[3*t + row] = X[row]*o[0] + X[row + 4]*o[1] + X[row + 8]*o[2] + X[row + 12];
+        }
+        __syncthreads();
+    }
+
+    /**
+     * Computes batched multi-target world positions
+     *
+     * Notes:
+     *   Computes world positions of a baked batch of fixed-offset targets (grasp points / spheres).
+     *   Inline-CUDA / grid_collision users: at TIER_LITE/TIER_MINIMAL the shared FK scratch (s_Xworld, ~144*sizeof(T) bytes) moves from smem to d_workspace, freeing smem for the caller's outer kernel.
+     *   Output placement is the CALLER's choice (the s_out_pos pointer): smem for small batches, a global buffer when 3*N is large.
+     *
+     * @param s_out_pos is a pointer to memory of size 3*N_TARGETS where N_TARGETS = 44 (caller chooses smem for small batches or a global buffer for many spheres)
+     * @param s_q is the vector of joint positions
+     * @param d_robotModel is the pointer to the initialized model specific helpers on the GPU (XImats, topology_helpers, etc.)
+     * @param d_workspace is the global scratch buffer; size MULTI_TARGET_POSITION_DEVICE_INLINE_WORKSPACE_BYTES<T, RESOURCE_TIER>() bytes (= 0 at TIER_SHARED, 144*sizeof(T) at TIER_LITE+). Pass nullptr at TIER_SHARED
+     */
+    template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+    __device__
+    void multi_target_position_device(T *s_out_pos, const T *s_q, const robotModel<T> *d_robotModel, T *d_workspace = nullptr) {
+        // GRID shared arena layout
+        //   T s_XmatsHom[144]
+        //   T s_temp[144] (TIER_SHARED only; LITE/MINIMAL route to d_workspace)
+        //   bytes s_linalg_smem[GRID_EE_LINALG_SHARED_BYTES<T>()]
+        extern __shared__ __align__(16) unsigned char s_arena[];
+        size_t s_arena_offset = 0;
+        s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+        T *s_XmatsHom = grid_arena_ptr<T>(s_arena, s_arena_offset);
+        s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        T *s_temp;
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            (void)d_workspace;
+            s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+            s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        }
+        else {
+            s_temp = d_workspace;
+        }
+        int *s_topology_helpers = nullptr;
+        unsigned char *s_linalg_smem = nullptr;
+        if (static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>()) > 0) {
+            s_arena_offset = grid_align_up(s_arena_offset, static_cast<size_t>(16));
+            s_linalg_smem = grid_arena_ptr<unsigned char>(s_arena, s_arena_offset);
+            s_arena_offset += static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>());
+        }
+        #ifdef GRID_CUDA_DEBUG_LAYOUT
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(288, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        else {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(144, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        #endif
+        (void)s_arena_offset;
+        load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
+        multi_target_position_inner<T, true>(s_out_pos, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+    }
+
+    // W2a batched multi-target world-position GRADIENT (opt-in via multi_target_batch)
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ inline size_t MULTI_TARGET_POSITION_GRADIENT_DYNAMIC_SHARED_MEM_BYTES() { if constexpr (TIER == TIER_SHARED) return grid_shared_arena_bytes<T>(714, TOPOLOGY_HELPERS_COUNT, GRID_EE_LINALG_SHARED_BYTES<T>()); else return grid_shared_arena_bytes<T>(144, TOPOLOGY_HELPERS_COUNT, GRID_EE_LINALG_SHARED_BYTES<T>()); }
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t MULTI_TARGET_POSITION_GRADIENT_DEVICE_INLINE_WORKSPACE_BYTES() { return (TIER == TIER_SHARED) ? static_cast<size_t>(0) : sizeof(T) * static_cast<size_t>(570); }
+    /**
+     * Batched multi-target world-position gradient
+     *
+     * Notes:
+     *   Position gradient d(world pos)/dv of a baked batch of fixed-offset targets (grasp points / spheres).
+     *   Anchor-deduped geometric Jacobian (built once per distinct anchor) + offset epilogue; NO FK re-walk.
+     *
+     * @param s_out_grad is shared memory of size 3*NUM_VEL*N_TARGETS (3 x nv per target), N_TARGETS = 44, NUM_VEL = 7
+     * @param s_q is the vector of joint positions (unused; kept for signature parity)
+     * @param s_Xhom is the per-joint LOCAL homogeneous transforms (already updated for q)
+     * @param s_temp is helper shared memory (Xworld | Jv | Jw | ro)
+     * @param s_topology_helpers is the (shared) memory location for the topology_helpers (nullptr/unused for serial chains with identical Ss)
+     * @param d_workspace is the global-memory scratch used when !TEMP_IN_SMEM
+     */
+    template <typename T, bool TEMP_IN_SMEM = true>
+    __device__
+    void multi_target_position_gradient_inner(T *s_out_grad, const T *s_q, const T *s_Xhom, int *s_topology_helpers, T *s_temp, T *d_workspace, unsigned char *s_linalg_smem) {
+        if constexpr (!TEMP_IN_SMEM) { s_temp = d_workspace; } else { (void)d_workspace; }
+        (void)s_q; (void)s_linalg_smem;
+        // scratch layout: Xworld | Jv (3 x nv x anchor) | Jw (3 x nv x anchor) | ro (3 x target)
+        T *s_Xworld = &s_temp[0];
+        T *s_Jv     = &s_temp[144];
+        T *s_Jw     = &s_temp[291];
+        T *s_ro     = &s_temp[438];
+        //
+        // Step 1: build world transforms for every joint via BFS-level chain-up
+        //
+        // BFS level 0 -> joints [0]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 0; par = -1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 1 -> joints [1]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 1; par = 0; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 2 -> joints [2]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 2; par = 1; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 3 -> joints [3]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 3; par = 2; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 4 -> joints [4]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 4; par = 3; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 5 -> joints [5]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 5; par = 4; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        // BFS level 6 -> joints [6]
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 16; ind += blockDim.x*blockDim.y){
+            int slot = ind / 16; int ele = ind % 16;
+            int row = ele & 3; int col = ele >> 2;
+            // branch to get pointer locations
+            int jid; int par;
+                 if (slot < 1){ jid = 6; par = 5; }
+            if (par == -1) {
+                s_Xworld[16*jid + ele] = s_Xhom[16*jid + ele];
+            }
+            else {
+                s_Xworld[16*jid + ele] = dot_prod<T,4,4,1>(&s_Xworld[16*par + row], &s_Xhom[16*jid + 4*col]);
+            }
+        }
+        __syncthreads();
+        //
+        // Step 2: zero the J_v and J_w scratch (out-of-chain columns stay zero)
+        //
+        glass::set_const<T, 294>(static_cast<T>(0), s_Jv);
+        //
+        // Step 3: per-chain-joint columns of J_v, J_w (one block-parallel work-item per (ee, S-column))
+        //
+        static const int eeg_job_j[] = { 0, 0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6 };
+        static const int eeg_job_anc[] = { 0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6 };
+        static const int eeg_job_rev[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+        static const int eeg_job_base[] = { 0, 21, 24, 42, 45, 48, 63, 66, 69, 72, 84, 87, 90, 93, 96, 105, 108, 111, 114, 117, 120, 126, 129, 132, 135, 138, 141, 144 };
+        static const T eeg_job_ax[] = { static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1), static_cast<T>(0), static_cast<T>(0), static_cast<T>(1) };
+        for(int job_idx = threadIdx.x + threadIdx.y*blockDim.x; job_idx < 28; job_idx += blockDim.x*blockDim.y){
+            int j   = eeg_job_j[job_idx];
+            int ee_anchor = eeg_job_anc[job_idx];
+            int col_base = eeg_job_base[job_idx];
+            T ax0 = eeg_job_ax[3*job_idx + 0]; T ax1 = eeg_job_ax[3*job_idx + 1]; T ax2 = eeg_job_ax[3*job_idx + 2];
+            T axw_0 = s_Xworld[16*j + 0]*ax0 + s_Xworld[16*j + 4]*ax1 + s_Xworld[16*j + 8]*ax2;
+            T axw_1 = s_Xworld[16*j + 1]*ax0 + s_Xworld[16*j + 5]*ax1 + s_Xworld[16*j + 9]*ax2;
+            T axw_2 = s_Xworld[16*j + 2]*ax0 + s_Xworld[16*j + 6]*ax1 + s_Xworld[16*j + 10]*ax2;
+            if (eeg_job_rev[job_idx]) {
+                s_Jw[col_base + 0] = axw_0; s_Jw[col_base + 1] = axw_1; s_Jw[col_base + 2] = axw_2;
+                T dx = s_Xworld[16*ee_anchor + 12] - s_Xworld[16*j + 12];
+                T dy = s_Xworld[16*ee_anchor + 13] - s_Xworld[16*j + 13];
+                T dz = s_Xworld[16*ee_anchor + 14] - s_Xworld[16*j + 14];
+                s_Jv[col_base + 0] = axw_1*dz - axw_2*dy;
+                s_Jv[col_base + 1] = axw_2*dx - axw_0*dz;
+                s_Jv[col_base + 2] = axw_0*dy - axw_1*dx;
+            }
+            else {
+                s_Jv[col_base + 0] = axw_0; s_Jv[col_base + 1] = axw_1; s_Jv[col_base + 2] = axw_2;
+            }
+        }
+        __syncthreads();
+        // baked batch: target -> anchor world-frame jid, target -> deduped anchor slot, LOCAL offset
+        static const int mt_anchor[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6 };
+        static const int mt_anchor_idx[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6 };
+        static const T mt_offset[] = { static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0.29999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.29999999999999999), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(-0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0.14999999999999999), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0.040000000000000001) };
+        //
+        // Phase B pre-pass: ro[t] = R_world[anchor(t)] @ offset(t)  (once per target)
+        //
+        for(int t = threadIdx.x + threadIdx.y*blockDim.x; t < 44; t += blockDim.x*blockDim.y){
+            const T *X = &s_Xworld[16 * mt_anchor[t]];
+            const T *o = &mt_offset[3 * t];
+            s_ro[3*t + 0] = X[0]*o[0] + X[4]*o[1] + X[8]*o[2];
+            s_ro[3*t + 1] = X[1]*o[0] + X[5]*o[1] + X[9]*o[2];
+            s_ro[3*t + 2] = X[2]*o[0] + X[6]*o[1] + X[10]*o[2];
+        }
+        __syncthreads();
+        //
+        // Phase B: dpos[t][:,vi] = Jv[anchor,:,vi] + Jw[anchor,:,vi] x ro[t]  (Jw=0 for prismatic -> no cross)
+        //
+        for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 308; ind += blockDim.x*blockDim.y){
+            int vi = ind % 7; int t = ind / 7;
+            int jb = 3 * (7 * mt_anchor_idx[t] + vi);
+            T Jv0 = s_Jv[jb+0], Jv1 = s_Jv[jb+1], Jv2 = s_Jv[jb+2];
+            T Jw0 = s_Jw[jb+0], Jw1 = s_Jw[jb+1], Jw2 = s_Jw[jb+2];
+            T r0 = s_ro[3*t+0], r1 = s_ro[3*t+1], r2 = s_ro[3*t+2];
+            int ob = 3 * (7 * t + vi);
+            s_out_grad[ob + 0] = Jv0 + (Jw1*r2 - Jw2*r1);
+            s_out_grad[ob + 1] = Jv1 + (Jw2*r0 - Jw0*r2);
+            s_out_grad[ob + 2] = Jv2 + (Jw0*r1 - Jw1*r0);
+        }
+        __syncthreads();
+    }
+
+    /**
+     * Computes batched multi-target world-position gradient
+     *
+     * Notes:
+     *   Position gradient d(world pos)/dv of a baked batch of fixed-offset targets.
+     *   Inline-CUDA / grid_collision users: at TIER_LITE/TIER_MINIMAL the anchor-deduped Jacobian scratch (s_Xworld|Jv|Jw|ro, ~570*sizeof(T) bytes; Jv/Jw dominate on big robots) moves from smem to d_workspace.
+     *   Output placement is the CALLER's choice (the s_out_grad pointer): smem for small batches, a global buffer when 3*nv*N is large.
+     *
+     * @param s_out_grad is a pointer to memory of size 3*NUM_VEL*N_TARGETS where N_TARGETS = 44 (caller chooses smem for small batches or a global buffer for many spheres)
+     * @param s_q is the vector of joint positions
+     * @param d_robotModel is the pointer to the initialized model specific helpers on the GPU (XImats, topology_helpers, etc.)
+     * @param d_workspace is the global scratch buffer; size MULTI_TARGET_POSITION_GRADIENT_DEVICE_INLINE_WORKSPACE_BYTES<T, RESOURCE_TIER>() bytes (= 0 at TIER_SHARED, 570*sizeof(T) at TIER_LITE+). Pass nullptr at TIER_SHARED
+     */
+    template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+    __device__
+    void multi_target_position_gradient_device(T *s_out_grad, const T *s_q, const robotModel<T> *d_robotModel, T *d_workspace = nullptr) {
+        // GRID shared arena layout
+        //   T s_XmatsHom[144]
+        //   T s_temp[570] (TIER_SHARED only; LITE/MINIMAL route to d_workspace)
+        //   bytes s_linalg_smem[GRID_EE_LINALG_SHARED_BYTES<T>()]
+        extern __shared__ __align__(16) unsigned char s_arena[];
+        size_t s_arena_offset = 0;
+        s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+        T *s_XmatsHom = grid_arena_ptr<T>(s_arena, s_arena_offset);
+        s_arena_offset += sizeof(T) * static_cast<size_t>(144);
+        T *s_temp;
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            (void)d_workspace;
+            s_arena_offset = grid_align_up(s_arena_offset, alignof(T));
+            s_temp = grid_arena_ptr<T>(s_arena, s_arena_offset);
+            s_arena_offset += sizeof(T) * static_cast<size_t>(570);
+        }
+        else {
+            s_temp = d_workspace;
+        }
+        int *s_topology_helpers = nullptr;
+        unsigned char *s_linalg_smem = nullptr;
+        if (static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>()) > 0) {
+            s_arena_offset = grid_align_up(s_arena_offset, static_cast<size_t>(16));
+            s_linalg_smem = grid_arena_ptr<unsigned char>(s_arena, s_arena_offset);
+            s_arena_offset += static_cast<size_t>(GRID_EE_LINALG_SHARED_BYTES<T>());
+        }
+        #ifdef GRID_CUDA_DEBUG_LAYOUT
+        if constexpr (RESOURCE_TIER == TIER_SHARED) {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(714, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        else {
+            assert(s_arena_offset == grid_shared_arena_bytes<T>(144, 0, GRID_EE_LINALG_SHARED_BYTES<T>()));
+        }
+        #endif
+        (void)s_arena_offset;
+        load_update_XmatsHom_helpers<T>(s_XmatsHom, s_topology_helpers, s_q, d_robotModel, s_temp);
+        multi_target_position_gradient_inner<T, true>(s_out_grad, s_q, s_XmatsHom, s_topology_helpers, s_temp, nullptr, s_linalg_smem);
+    }
+
     /**
      * Compute the RNEA (Recursive Newton-Euler Algorithm)
      *
@@ -38221,4 +39353,298 @@ namespace grid {
         }
 
         #define GRID_PLANT_HAS_MOMENTUM_COST 1
+    }
+    
+    #include "grid_collision_geometry.cuh"  // W3 Component E: SDF primitives (grid_collision::)
+    /**
+     * Collision namespace: baked sphere data + config_free composed over grid::multi_target_position + the static SDF geometry header
+     *
+     */
+    namespace grid_collision {
+        using grid::TIER_SHARED; using grid::TIER_LITE; using grid::TIER_MINIMAL;
+        constexpr int NUM_COLLISION_SPHERES = 44;
+        constexpr int NUM_COLLISION_SELF_CC_RANGES = 36;
+        static_assert(NUM_COLLISION_SPHERES == grid::NUM_MULTI_TARGETS, "collision sphere batch must be the multi_target batch");
+        __device__ const float g_collision_sphere_r[44] = {0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.129903811f, 0.033f};
+        __device__ const int g_collision_self_cc_ranges[108] = {0, 21, 43, 1, 21, 43, 2, 21, 43, 3, 21, 43, 4, 21, 43, 5, 21, 43, 6, 21, 43, 7, 21, 43, 8, 21, 43, 9, 21, 43, 10, 21, 43, 11, 21, 43, 12, 21, 43, 13, 27, 43, 14, 27, 43, 15, 27, 43, 16, 27, 43, 17, 27, 43, 18, 27, 43, 19, 27, 43, 20, 27, 43, 21, 31, 43, 22, 31, 43, 23, 31, 43, 24, 31, 43, 25, 31, 43, 26, 31, 43, 27, 36, 43, 28, 36, 43, 29, 36, 43, 30, 36, 43, 31, 42, 43, 32, 42, 43, 33, 42, 43, 34, 42, 43, 35, 42, 43};
+        /**
+         * Fill s_r[NUM_COLLISION_SPHERES] with the baked fp32 radii cast to T
+         *
+         * @param s_r is caller shared memory of size NUM_COLLISION_SPHERES
+         */
+        template <typename T>
+        __device__ __forceinline__
+        void load_collision_radii(T *s_r) {
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < NUM_COLLISION_SPHERES; i += blockDim.x*blockDim.y){
+                s_r[i] = static_cast<T>(g_collision_sphere_r[i]);
+            }
+        }
+
+        /**
+         * Collision-free test for configuration q (self + environment)
+         *
+         * Notes:
+         *   Returns true iff the current configuration q is COLLISION-FREE (self + environment).
+         *   Sphere world positions via the W1b batched extractor; SDF self/env checks via the static header.
+         *   Every thread computes the same verdict; the self/env range loops are serial (parallelize = W3 perf TODO).
+         *
+         * @param s_q is the vector of joint positions
+         * @param d_robotModel is the initialized model-specific helpers on the GPU
+         * @param env is the runtime obstacle set (grid_collision::Environment<T>)
+         * @param s_sphere_pos is caller scratch of size 3*NUM_COLLISION_SPHERES (smem for small N, global for many)
+         * @param s_sphere_r is caller scratch of size NUM_COLLISION_SPHERES (filled here from the baked radii)
+         * @param d_workspace is the multi_target FK scratch at TIER_LITE+ (nullptr at TIER_SHARED)
+         */
+        template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+        __device__
+        bool config_free(const T *s_q, const grid::robotModel<T> *d_robotModel, const Environment<T> &env, T *s_sphere_pos, T *s_sphere_r, T *d_workspace = nullptr) {
+            grid::multi_target_position_device<T, RESOURCE_TIER>(s_sphere_pos, s_q, d_robotModel, d_workspace);
+            load_collision_radii<T>(s_sphere_r);
+            __syncthreads();
+            if (grid_cc_self_collision<T>(s_sphere_pos, s_sphere_r, g_collision_self_cc_ranges, NUM_COLLISION_SELF_CC_RANGES)) return false;
+            for (int i = 0; i < NUM_COLLISION_SPHERES; ++i) {
+                if (grid_cc_sphere_in_environment<T>(env, s_sphere_pos[3*i], s_sphere_pos[3*i+1], s_sphere_pos[3*i+2], s_sphere_r[i])) return false;
+            }
+            return true;
+        }
+
+        /**
+         * collision_distance: per-sphere nearest signed clearance d_i(q) + surface normal (env only)
+         *
+         * Notes:
+         *   d_i = min over environment obstacles of the signed distance (>0 clear, <0 penetrating).
+         *   s_dist[i] = +1e30 sentinel when the environment is empty. Raw building block for any collision objective; the cost fns below reduce over it.
+         *
+         * @param s_dist is the per-sphere clearance output (size NUM_COLLISION_SPHERES)
+         * @param s_normal is the per-sphere nearest-obstacle unit normal (size 3*NUM_COLLISION_SPHERES)
+         * @param s_q is the vector of joint positions
+         * @param d_robotModel is the initialized model-specific helpers on the GPU
+         * @param env is the runtime obstacle set (grid_collision::Environment<T>)
+         * @param s_sphere_pos is caller scratch of size 3*NUM_COLLISION_SPHERES (sphere world positions)
+         * @param s_sphere_r is caller scratch of size NUM_COLLISION_SPHERES (filled here from the baked radii)
+         * @param d_workspace is the multi_target FK scratch at TIER_LITE+ (nullptr at TIER_SHARED)
+         */
+        template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+        __device__
+        void collision_distance(T *s_dist, T *s_normal, const T *s_q, const grid::robotModel<T> *d_robotModel, const Environment<T> &env, T *s_sphere_pos, T *s_sphere_r, T *d_workspace = nullptr) {
+            grid::multi_target_position_device<T, RESOURCE_TIER>(s_sphere_pos, s_q, d_robotModel, d_workspace);
+            load_collision_radii<T>(s_sphere_r);
+            __syncthreads();
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < NUM_COLLISION_SPHERES; i += blockDim.x*blockDim.y){
+                T nx, ny, nz;
+                s_dist[i] = grid_cc_nearest_obstacle<T>(env, s_sphere_pos[3*i], s_sphere_pos[3*i+1], s_sphere_pos[3*i+2], s_sphere_r[i], &nx, &ny, &nz);
+                s_normal[3*i+0] = nx; s_normal[3*i+1] = ny; s_normal[3*i+2] = nz;
+            }
+            __syncthreads();
+        }
+
+        /**
+         * collision_distance_gradient: per-sphere clearance Jacobian s_ddist[i*NV+vi] = d(d_i)/dq_vi = n_i^T dp_i/dq_vi
+         *
+         * Notes:
+         *   Also returns s_dist (the clearances) so a consumer has value + Jacobian in one call.
+         *   n_i^T (dp_i/dq) composes the SDF normal with grid::multi_target_position_gradient_device.
+         *   s_ddist layout is per-sphere-major: sphere i's NV-gradient is s_ddist[i*NV .. i*NV+NV-1].
+         *
+         * @param s_dist is the per-sphere clearance output (size NUM_COLLISION_SPHERES)
+         * @param s_ddist is the per-sphere clearance Jacobian output (size NUM_COLLISION_SPHERES*NUM_VEL, sphere-major)
+         * @param s_q is the vector of joint positions
+         * @param d_robotModel is the initialized model-specific helpers on the GPU
+         * @param env is the runtime obstacle set (grid_collision::Environment<T>)
+         * @param s_sphere_pos is caller scratch of size 3*NUM_COLLISION_SPHERES (sphere world positions)
+         * @param s_sphere_r is caller scratch of size NUM_COLLISION_SPHERES (filled here from the baked radii)
+         * @param d_workspace is the multi_target FK scratch at TIER_LITE+ (nullptr at TIER_SHARED)
+         * @param s_normal is caller scratch of size 3*NUM_COLLISION_SPHERES (nearest-obstacle normals)
+         * @param s_pos_grad is caller scratch of size 3*NUM_VEL*NUM_COLLISION_SPHERES (batched dp/dq)
+         */
+        template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+        __device__
+        void collision_distance_gradient(T *s_dist, T *s_ddist, const T *s_q, const grid::robotModel<T> *d_robotModel, const Environment<T> &env, T *s_sphere_pos, T *s_sphere_r, T *s_normal, T *s_pos_grad, T *d_workspace = nullptr) {
+            collision_distance<T, RESOURCE_TIER>(s_dist, s_normal, s_q, d_robotModel, env, s_sphere_pos, s_sphere_r, d_workspace);
+            grid::multi_target_position_gradient_device<T, RESOURCE_TIER>(s_pos_grad, s_q, d_robotModel, d_workspace);
+            __syncthreads();
+            for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < NUM_COLLISION_SPHERES * 7; ind += blockDim.x*blockDim.y){
+                int vi = ind % 7; int i = ind / 7;
+                int jb = 3 * (7 * i + vi);
+                s_ddist[i*7 + vi] = s_normal[3*i+0]*s_pos_grad[jb+0] + s_normal[3*i+1]*s_pos_grad[jb+1] + s_normal[3*i+2]*s_pos_grad[jb+2];
+            }
+            __syncthreads();
+        }
+
+        /**
+         * collision_distance_pairs: UN-REDUCED signed clearance d_io(q) + normal, for every (sphere, obstacle) pair
+         *
+         * Notes:
+         *   Same SDFs as collision_distance but WITHOUT the min-over-obstacles reduction, which is non-smooth precisely where the nearest obstacle switches. Each pair row is smooth in q.
+         *   Obstacle o indexes the FLATTENED env: spheres | capsules | cuboids | planes, o in [0, n_obs) with n_obs = grid_cc_num_obstacles(env). Pair index is pair = i*n_obs + o (sphere-major).
+         *   n_obs == 0 (empty environment) is well-defined: the loop bound is 0 and nothing is written.
+         *
+         * @param s_dist is the per-PAIR clearance output (size NUM_COLLISION_SPHERES*n_obs, RUNTIME-sized)
+         * @param s_normal is the per-PAIR unit surface normal (size 3*NUM_COLLISION_SPHERES*n_obs, RUNTIME-sized)
+         * @param s_q is the vector of joint positions
+         * @param d_robotModel is the initialized model-specific helpers on the GPU
+         * @param env is the runtime obstacle set (grid_collision::Environment<T>)
+         * @param s_sphere_pos is caller scratch of size 3*NUM_COLLISION_SPHERES (sphere world positions)
+         * @param s_sphere_r is caller scratch of size NUM_COLLISION_SPHERES (filled here from the baked radii)
+         * @param d_workspace is the multi_target FK scratch at TIER_LITE+ (nullptr at TIER_SHARED)
+         */
+        template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+        __device__
+        void collision_distance_pairs(T *s_dist, T *s_normal, const T *s_q, const grid::robotModel<T> *d_robotModel, const Environment<T> &env, T *s_sphere_pos, T *s_sphere_r, T *d_workspace = nullptr) {
+            grid::multi_target_position_device<T, RESOURCE_TIER>(s_sphere_pos, s_q, d_robotModel, d_workspace);
+            load_collision_radii<T>(s_sphere_r);
+            __syncthreads();
+            const int n_obs = grid_cc_num_obstacles<T>(env);
+            for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < NUM_COLLISION_SPHERES * n_obs; ind += blockDim.x*blockDim.y){
+                int o = ind % n_obs; int i = ind / n_obs;
+                T nx, ny, nz;
+                s_dist[ind] = grid_cc_obstacle_signed<T>(env, o, s_sphere_pos[3*i], s_sphere_pos[3*i+1], s_sphere_pos[3*i+2], s_sphere_r[i], &nx, &ny, &nz);
+                s_normal[3*ind+0] = nx; s_normal[3*ind+1] = ny; s_normal[3*ind+2] = nz;
+            }
+            __syncthreads();
+        }
+
+        /**
+         * collision_distance_pairs_gradient: per-PAIR clearance Jacobian s_ddist[pair*NV + vi] = d(d_io)/dq_vi = n_io^T dp_i/dq_vi
+         *
+         * Notes:
+         *   The un-reduced twin of collision_distance_gradient: one NV-row per (sphere, obstacle) pair, each smooth in q. Also returns s_dist so a consumer has value + Jacobian in one call.
+         *   Obstacle o indexes the FLATTENED env: spheres | capsules | cuboids | planes, o in [0, n_obs) with n_obs = grid_cc_num_obstacles(env). Pair index is pair = i*n_obs + o (sphere-major).
+         *   s_ddist layout is pair-major: pair (i,o)'s NV-gradient is s_ddist[pair*NV .. pair*NV+NV-1].
+         *
+         * @param s_dist is the per-PAIR clearance output (size NUM_COLLISION_SPHERES*n_obs, RUNTIME-sized)
+         * @param s_ddist is the per-PAIR clearance Jacobian output (size NUM_COLLISION_SPHERES*n_obs*NUM_VEL, pair-major, RUNTIME-sized)
+         * @param s_q is the vector of joint positions
+         * @param d_robotModel is the initialized model-specific helpers on the GPU
+         * @param env is the runtime obstacle set (grid_collision::Environment<T>)
+         * @param s_sphere_pos is caller scratch of size 3*NUM_COLLISION_SPHERES (sphere world positions)
+         * @param s_sphere_r is caller scratch of size NUM_COLLISION_SPHERES (filled here from the baked radii)
+         * @param d_workspace is the multi_target FK scratch at TIER_LITE+ (nullptr at TIER_SHARED)
+         * @param s_normal is caller scratch of size 3*NUM_COLLISION_SPHERES*n_obs (per-pair normals, RUNTIME-sized)
+         * @param s_pos_grad is caller scratch of size 3*NUM_VEL*NUM_COLLISION_SPHERES (batched dp/dq)
+         */
+        template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER>
+        __device__
+        void collision_distance_pairs_gradient(T *s_dist, T *s_ddist, const T *s_q, const grid::robotModel<T> *d_robotModel, const Environment<T> &env, T *s_sphere_pos, T *s_sphere_r, T *s_normal, T *s_pos_grad, T *d_workspace = nullptr) {
+            collision_distance_pairs<T, RESOURCE_TIER>(s_dist, s_normal, s_q, d_robotModel, env, s_sphere_pos, s_sphere_r, d_workspace);
+            grid::multi_target_position_gradient_device<T, RESOURCE_TIER>(s_pos_grad, s_q, d_robotModel, d_workspace);
+            __syncthreads();
+            const int n_obs = grid_cc_num_obstacles<T>(env);
+            for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < NUM_COLLISION_SPHERES * n_obs * 7; ind += blockDim.x*blockDim.y){
+                int vi = ind % 7; int pair = ind / 7; int i = pair / n_obs;
+                int jb = 3 * (7 * i + vi);
+                s_ddist[ind] = s_normal[3*pair+0]*s_pos_grad[jb+0] + s_normal[3*pair+1]*s_pos_grad[jb+1] + s_normal[3*pair+2]*s_pos_grad[jb+2];
+            }
+            __syncthreads();
+        }
+
+        /**
+         * collision_cost: value = 1/2 * weight * sum_i max(0, margin - d_i)^2 (environment hinge)
+         *
+         * Notes:
+         *   Self-contained (no gradient scratch); every thread returns after the serial reduction.
+         *   ACCUMULATE=false overwrites s_out[0]; true adds (fuse with other costs).
+         *
+         * @param s_out is the scalar cost output (s_out[0])
+         * @param s_q is the vector of joint positions
+         * @param d_robotModel is the initialized model-specific helpers on the GPU
+         * @param env is the runtime obstacle set (grid_collision::Environment<T>)
+         * @param margin is the safety distance (cost is a hinge on clearance < margin)
+         * @param weight is the scalar quadratic penalty weight
+         * @param s_sphere_pos is caller scratch of size 3*NUM_COLLISION_SPHERES (sphere world positions)
+         * @param s_sphere_r is caller scratch of size NUM_COLLISION_SPHERES (filled here from the baked radii)
+         * @param d_workspace is the multi_target FK scratch at TIER_LITE+ (nullptr at TIER_SHARED)
+         */
+        template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER, bool ACCUMULATE = false>
+        __device__
+        void collision_cost(T *s_out, const T *s_q, const grid::robotModel<T> *d_robotModel, const Environment<T> &env, T margin, T weight, T *s_sphere_pos, T *s_sphere_r, T *d_workspace = nullptr) {
+            grid::multi_target_position_device<T, RESOURCE_TIER>(s_sphere_pos, s_q, d_robotModel, d_workspace);
+            load_collision_radii<T>(s_sphere_r);
+            __syncthreads();
+            if(threadIdx.x == 0 && threadIdx.y == 0){
+                T acc = static_cast<T>(0);
+                for (int i = 0; i < NUM_COLLISION_SPHERES; ++i) {
+                    T nx, ny, nz;
+                    T d = grid_cc_nearest_obstacle<T>(env, s_sphere_pos[3*i], s_sphere_pos[3*i+1], s_sphere_pos[3*i+2], s_sphere_r[i], &nx, &ny, &nz);
+                    T viol = margin - d;
+                    if (viol > static_cast<T>(0)) acc += static_cast<T>(0.5) * weight * viol * viol;
+                }
+                if (ACCUMULATE) { s_out[0] += acc; } else { s_out[0] = acc; }
+            }
+            __syncthreads();
+        }
+
+        /**
+         * collision_cost_gradient: grad_q[vi] = -sum_i (weight*viol_i) d(d_i)/dq_vi  (viol_i = max(0,margin-d_i))
+         *
+         * Notes:
+         *   Gradient over q only (size NUM_VEL = 7); built on collision_distance_gradient.
+         *   ACCUMULATE=false overwrites s_grad_q; true adds.
+         *
+         * @param s_grad_q is the q-gradient output (size NUM_VEL)
+         * @param s_q is the vector of joint positions
+         * @param d_robotModel is the initialized model-specific helpers on the GPU
+         * @param env is the runtime obstacle set (grid_collision::Environment<T>)
+         * @param margin is the safety distance (cost is a hinge on clearance < margin)
+         * @param weight is the scalar quadratic penalty weight
+         * @param s_sphere_pos is caller scratch of size 3*NUM_COLLISION_SPHERES (sphere world positions)
+         * @param s_sphere_r is caller scratch of size NUM_COLLISION_SPHERES (filled here from the baked radii)
+         * @param d_workspace is the multi_target FK scratch at TIER_LITE+ (nullptr at TIER_SHARED)
+         * @param s_normal is caller scratch of size 3*NUM_COLLISION_SPHERES
+         * @param s_dist is caller scratch of size NUM_COLLISION_SPHERES
+         * @param s_ddist is caller scratch of size NUM_COLLISION_SPHERES*NUM_VEL (sphere-major clearance Jacobian)
+         * @param s_pos_grad is caller scratch of size 3*NUM_VEL*NUM_COLLISION_SPHERES (batched dp/dq)
+         */
+        template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER, bool ACCUMULATE = false>
+        __device__
+        void collision_cost_gradient(T *s_grad_q, const T *s_q, const grid::robotModel<T> *d_robotModel, const Environment<T> &env, T margin, T weight, T *s_sphere_pos, T *s_sphere_r, T *s_normal, T *s_dist, T *s_ddist, T *s_pos_grad, T *d_workspace = nullptr) {
+            collision_distance_gradient<T, RESOURCE_TIER>(s_dist, s_ddist, s_q, d_robotModel, env, s_sphere_pos, s_sphere_r, s_normal, s_pos_grad, d_workspace);
+            // grad_q[vi] = sum_i (weight*viol_i) * d(viol_i)/dq_vi, with d(viol)/dq = -d(clearance)/dq = -s_ddist
+            for(int vi = threadIdx.x + threadIdx.y*blockDim.x; vi < 7; vi += blockDim.x*blockDim.y){
+                T g = static_cast<T>(0);
+                for (int i = 0; i < NUM_COLLISION_SPHERES; ++i) {
+                    T viol = margin - s_dist[i];
+                    if (viol > static_cast<T>(0)) g += (weight * viol) * s_ddist[i*7 + vi];
+                }
+                if (ACCUMULATE) { s_grad_q[vi] += -g; } else { s_grad_q[vi] = -g; }
+            }
+            __syncthreads();
+        }
+
+        /**
+         * collision_cost_hessian: GN hessian H[vi,vj] = sum_{active i} weight d(d_i)/dq_vi d(d_i)/dq_vj
+         *
+         * Notes:
+         *   NUM_VEL x NUM_VEL (= 7x7) column-major; PSD by construction; built on collision_distance_gradient. GN term only (residual-weighted SDF curvature dropped -- the ratified PSD choice; full-Newton collision hessian = labeled TODO).
+         *   ACCUMULATE=false overwrites; true adds.
+         *
+         * @param s_hess is the NUM_VEL x NUM_VEL column-major hessian output
+         * @param s_q is the vector of joint positions
+         * @param d_robotModel is the initialized model-specific helpers on the GPU
+         * @param env is the runtime obstacle set (grid_collision::Environment<T>)
+         * @param margin is the safety distance (cost is a hinge on clearance < margin)
+         * @param weight is the scalar quadratic penalty weight
+         * @param s_sphere_pos is caller scratch of size 3*NUM_COLLISION_SPHERES (sphere world positions)
+         * @param s_sphere_r is caller scratch of size NUM_COLLISION_SPHERES (filled here from the baked radii)
+         * @param d_workspace is the multi_target FK scratch at TIER_LITE+ (nullptr at TIER_SHARED)
+         * @param s_normal is caller scratch of size 3*NUM_COLLISION_SPHERES
+         * @param s_dist is caller scratch of size NUM_COLLISION_SPHERES
+         * @param s_ddist is caller scratch of size NUM_COLLISION_SPHERES*NUM_VEL (sphere-major clearance Jacobian)
+         * @param s_pos_grad is caller scratch of size 3*NUM_VEL*NUM_COLLISION_SPHERES (batched dp/dq)
+         */
+        template <typename T, int RESOURCE_TIER = GRID_DEFAULT_RESOURCE_TIER, bool ACCUMULATE = false>
+        __device__
+        void collision_cost_hessian(T *s_hess, const T *s_q, const grid::robotModel<T> *d_robotModel, const Environment<T> &env, T margin, T weight, T *s_sphere_pos, T *s_sphere_r, T *s_normal, T *s_dist, T *s_ddist, T *s_pos_grad, T *d_workspace = nullptr) {
+            collision_distance_gradient<T, RESOURCE_TIER>(s_dist, s_ddist, s_q, d_robotModel, env, s_sphere_pos, s_sphere_r, s_normal, s_pos_grad, d_workspace);
+            for(int ind = threadIdx.x + threadIdx.y*blockDim.x; ind < 49; ind += blockDim.x*blockDim.y){
+                int row = ind % 7; int col = ind / 7;
+                T h = static_cast<T>(0);
+                for (int i = 0; i < NUM_COLLISION_SPHERES; ++i) {
+                    if ((margin - s_dist[i]) > static_cast<T>(0)) h += weight * s_ddist[i*7 + row] * s_ddist[i*7 + col];
+                }
+                if (ACCUMULATE) { s_hess[ind] += h; } else { s_hess[ind] = h; }
+            }
+            __syncthreads();
+        }
+
     }

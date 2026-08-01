@@ -1,0 +1,2 @@
+# Tests the receipt is ALLOWED to skip (gpu-proof verify --expected-skips).
+# Keep minimal and justified. Currently: none — every gate must run.

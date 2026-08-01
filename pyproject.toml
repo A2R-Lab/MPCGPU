@@ -1,0 +1,23 @@
+# MPCGPU is a CUDA/Makefile project — this file exists for tool configuration
+# only (pytest + the pytest-gpu-proof receipt; mirrors GATO's GPU CI pattern).
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+
+[tool.gpu_proof]
+# The GPU gate suite runs locally on the lab box (test/run_gpu_proof.sh); the
+# signed receipt (gpu-proof.json, repo root) is verified in CPU-only CI against
+# github.com/plancherb1.keys. The receipt attests the full correctness-gate
+# suite: the 4 tools/run_gates.sh gates (single-cost response, terminal-cost
+# regression, PCG + QDLDL closed-loop tracking), the forward-dynamics adapter
+# parity gate, the grid.cuh byte-diff vs GATO (URDF-divergence gate), and the
+# GBD-PCG cooperative-solver gates.
+mode = "local"
+output = "gpu-proof.json"
+github_username = "plancherb1"     # org remotes (A2R-Lab) carry no SSH keys — sign as the keyholder
+# Fingerprint the code-under-test + harness (tracked files only, so gate .exe
+# build debris and regenerated trajfiles never leak in). GLASS / GBD-PCG /
+# GRiD / qdldl remain submodule gitlinks, pinned by the receipt's commit SHA.
+fingerprint_paths = ["include", "tools", "examples", "test", "Makefile"]
+max_age_days = 30
+require_gpu = true

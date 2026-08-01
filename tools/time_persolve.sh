@@ -16,7 +16,7 @@ CYCLES=${3:-3}
 OUT=${4:-}
 [[ "$LINSYS" == "pcg" ]] && LS=1 || LS=0
 LD=qdldl/build/out
-CF="--compiler-options -Wall -O3 -DNDEBUG -arch=sm_120 -Iinclude -Iinclude/common -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas"
+CF="--compiler-options -Wall -O3 -DNDEBUG -arch=sm_120 -Iinclude -Iinclude/common -IGRiD/grid_codegen/collision -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas"
 FAIR="-DKNOT_POINTS=$N -DPCG_MAX_ITER=200 -DPCG_RES_TOL=1e-4 -DGATO_REG_PATTERN -DRHO_INIT=0.01 -DSQP_MAX_ITER=1 -DSQP_MAX_TIME_US=100000000"
 EXE=tools/vt_time_${LINSYS}_N${N}.exe
 

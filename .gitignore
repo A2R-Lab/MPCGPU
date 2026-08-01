@@ -6,3 +6,6 @@
 
 # Runtime experiment output (track_iiwa_* writes results here)
 tmp/
+# receipt tooling venv (test/run_gpu_proof.sh bootstrap)
+.venv/
+__pycache__/

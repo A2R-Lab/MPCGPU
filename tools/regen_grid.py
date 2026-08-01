@@ -34,7 +34,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GRID_ROOT = Path(os.environ.get("GRID_ROOT", REPO_ROOT / "GRiD")).resolve()
 
-URDF = REPO_ROOT / "tools" / "iiwa14.urdf"
+# Prefer the sibling GATO checkout's URDF: it is byte-identical to the vendored
+# tools/iiwa14.urdf BUT sits next to the link STL meshes, which the collision
+# spherization (collision_spec_from_urdf) resolves relative to the URDF file.
+# The lone vendored copy silently degrades the sphere set (meshes unresolvable)
+# and breaks the grid.cuh byte-diff gate vs GATO. Override with GRID_URDF=.
+_GATO_URDF = Path(os.environ.get("GATO_ROOT", REPO_ROOT.parent / "GATO")) \
+    / "examples" / "iiwa_description" / "iiwa14.urdf"
+URDF = Path(os.environ["GRID_URDF"]) if "GRID_URDF" in os.environ else (
+    _GATO_URDF if _GATO_URDF.exists() else REPO_ROOT / "tools" / "iiwa14.urdf")
 OUT = REPO_ROOT / "include" / "dynamics" / "iiwa" / "grid.cuh"
 FIXED_TARGET_NAME = "EE"   # iiwa14 fixed end-effector joint (matches GATO)
 
@@ -62,11 +70,21 @@ def main() -> None:
 
     codegen = GRiDCodeGenerator(robot, DEBUG_MODE=False, NEED_PRINT_MAT=True,
                                 FILE_NAMESPACE="grid")
+    # collision_spec + contact_frames mirror GATO's builder.codegen defaults
+    # (collision_res=0.15, contact_frames=[ee_frame]) — GATO's iiwa14 grid.cuh
+    # bakes the grid_collision namespace + EE wrench map since its CL-2b regen,
+    # and the byte-diff gate (test/test_gates.py::test_grid_cuh_matches_gato)
+    # requires identical codegen inputs. MPCGPU does not call either namespace;
+    # carrying them (unused __device__ code) costs nothing.
+    from grid_codegen.algorithms._collision import collision_spec_from_urdf
+    from grid_codegen.algorithms._f_ext_contact import contact_frames_from_urdf
     codegen.gen_all_code(
         include_homogenous_transforms=True,     # required for EE pose + gradient
         fixed_target_name=FIXED_TARGET_NAME,
         codegen_profile="all",
         output_path=str(OUT),
+        collision_spec=collision_spec_from_urdf(robot, str(URDF), resolution=0.15),
+        contact_frames=contact_frames_from_urdf(robot, [FIXED_TARGET_NAME]),
     )
     print(f"[iiwa14] wrote {OUT}")
 

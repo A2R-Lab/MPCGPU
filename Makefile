@@ -7,7 +7,7 @@ NVCC = nvcc
 # Defaults to sm_120 (RTX 50-series / Blackwell). Replaces the old per-build -arch hand-edits.
 ARCH ?= sm_120
 
-CFLAGS = --compiler-options -Wall -O3 -DNDEBUG -arch=$(ARCH) -Iinclude -Iinclude/common -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas
+CFLAGS = --compiler-options -Wall -O3 -DNDEBUG -arch=$(ARCH) -Iinclude -Iinclude/common -IGRiD/grid_codegen/collision -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas
 
 
 examples: examples/pcg.exe examples/qdldl.exe
