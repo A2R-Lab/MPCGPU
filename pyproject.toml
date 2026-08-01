@@ -3,6 +3,9 @@
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+markers = [
+    "gpu_proof: outcome recorded in the signed pytest-gpu-proof receipt (auto-applied to ALL tests by test/conftest.py)",
+]
 
 [tool.gpu_proof]
 # The GPU gate suite runs locally on the lab box (test/run_gpu_proof.sh); the
