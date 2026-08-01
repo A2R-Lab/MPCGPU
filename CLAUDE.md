@@ -47,7 +47,7 @@ Parameters in `include/common/settings.cuh` are all `#ifndef`-guarded → overri
 (one-solve EE-cost response at the fair config: ‖d_xu step‖ ≈ 339.6, post-solve window tracking
 ≈ 0.0107), test_terminal_cost (terminal q-gradient vs pinocchio truth on the committed
 `tools/data/` dump inputs — the terminal-cost-bug regression test, see below), and one
-`validate_track` tracking pass per linsys (PCG w/ GATO_REG_PATTERN ≈ 0.0315 mean, QDLDL ≈ 0.0334).
+`validate_track` tracking pass per linsys (PCG w/ GATO_REG_PATTERN ≈ 0.0288 mean, QDLDL ≈ 0.0294; EE-frame era).
 GBD-PCG has its own `test/run_gates.sh`. Additional standing gates:
 
 - `make test_fd_parity` — adapter `forwardDynamics` vs `grid::forward_dynamics_device` (expect max err 0).
@@ -65,13 +65,13 @@ aliased the bottom of `s_Qk` and the terminal q-gradient came out wrong (dumped 
 vs a pinocchio-derived truth vector on the dumped solve-3000 inputs; run via `tools/run_gates.sh`).
 All benchmark numbers predating the fix (before 2026-07-06) are invalid — do not mix.
 
-## Benchmark (SSOT: `docs/benchmark_3way_2026-07-06.md`)
+## Benchmark (SSOT: `docs/benchmark_3way_2026-08-01.md`; the 07-06 doc keeps the conditioning analysis)
 
 The 3-way iiwa14 fig8 benchmark config (2026-07-07): SQP=1, PCG cap 200, rel tol 1e-4,
 RHO_INIT=0.01, **`-DGATO_REG_PATTERN`** — rho added only to the position half of Q, R
 unregularized (GATO's convention; guarded in `include/{pcg,qdldl}/linsys_setup.cuh`). Under it
 the stair preconditioner is near-ideal (cond(Pinv·S) ≈ 2e2), the native eta-exit is honest,
-avg 1.1 PCG iters/solve → **0.218 ms/solve, tracking 0.0315** (fastest solver in the table at
+avg 1.1 PCG iters/solve → **0.222 ms/solve, tracking 0.0288** (EE-frame era 2026-08-01; fastest solver in the table at
 B=1). The **default compile behavior** (no flag) is the historic full-Q+R regularization:
 cond ≈ 3e4 and the eta-exit under-reports the true residual ~500x (fires ~10x early). Harnesses:
 `tools/run_3way_iiwa.sh` (fair 3-way tracking check), `tools/time_persolve.sh [N] [pcg|qdldl]`
@@ -83,7 +83,7 @@ The regenerated grid is **pinocchio-exact**; the *old vendored* grid had a ~2×-
 correct iiwa is **stiff** (last-joint inertia ≈ 0.003 → `Minv[6,6] ≈ 392`). The shipped `examples/trajfiles/`
 were generated for the *wrong* robot, so the MPC is closed-loop **unstable** on them. Tracking on the OLD
 shipped trajfiles is NOT a gate; tracking on the regenerated fig8 reference IS one now (post terminal-cost
-fix: ≈ 0.0315 mean at the fair config, checked by `tools/run_gates.sh`).
+fix: ≈ 0.0288 mean at the fair config, EE-frame era, checked by `tools/run_gates.sh`).
 
 **Why it diverged, and the fix (diagnosed 2026-06-28).** The iiwa is 7-DOF tracking a 3-DOF EE-*position*
 task → a 4-D cost nullspace that includes **joint 7** (its EE-position Jacobian column is ~0, and `s_Q[q-block]

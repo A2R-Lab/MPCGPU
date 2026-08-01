@@ -1,5 +1,11 @@
 # 3-way iiwa14 fig8 benchmark — tracking + isolated per-solve timing (2026-07-06/07)
 
+> **SUPERSEDED (2026-08-01): every number below is stale** — the 2026-07-30
+> named-target regen moved solver/goal/metric from the L7 frame to the URDF
+> "EE" fixed joint, and the GLASS/GRiD bump shifted dynamics. Fresh numbers:
+> `docs/benchmark_3way_2026-08-01.md`. The regularization-pattern /
+> preconditioner ANALYSIS below (cond numbers, eta-exit behavior) still stands.
+
 > **2026-07-07 UPDATE — the regularization pattern IS the preconditioner story (and the new
 > benchmark config).** MPCGPU and GATO build the IDENTICAL block-tridiagonal stair
 > preconditioner; what differed was the system it preconditions. Under MPCGPU's historic
