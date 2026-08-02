@@ -1,5 +1,9 @@
 # CLAUDE.md — orientation for AI agents (and humans) working on GBD-PCG
 
+GBD-PCG lives **in-tree in MPCGPU** (folded 2026-08 with full history; the standalone
+A2R-Lab/GBD-PCG repo is retired). It uses MPCGPU's top-level `GLASS/` submodule —
+there is no nested GLASS pin anymore; one bump covers both.
+
 GBD-PCG is a **cooperative, grid-wide** preconditioned conjugate gradient solver
 for the block-tridiagonal Schur systems that arise in optimal control. It solves
 `Pinv · S · λ = Pinv · γ` where `S` (and the preconditioner `Pinv`) are symmetric
@@ -25,8 +29,8 @@ single-block by charter: "never split a primitive across blocks").
 
 ## Defers in-block linear algebra to GLASS
 
-The per-block (in-block) linear algebra is **GLASS** (`glass::`, submodule pinned
-to match the consuming repo — currently `5caa6d0`, naming r2 + tile4 gemm):
+The per-block (in-block) linear algebra is **GLASS** (`glass::`, MPCGPU's top-level
+`GLASS/` submodule, `-I../GLASS` from this directory):
 
 - The per-block-row band matvec is `glass::gemv` (column-major, `ROW_MAJOR=false`)
   — see `bdmv` in `include/utils.cuh`. With the absent `L` (block 0) / `R` (last
@@ -68,7 +72,7 @@ knobs in `include/pcg.cuh`, both **0 = off by default** (pure upstream behavior)
   (grid.sync iteration). `include/interface.cuh` — host `solvePCG` wrappers +
   cooperative launch. `include/utils.cuh` — `bdmv` (GLASS gemv) + `loadbdVec` (halo
   gather with zero-padded boundaries). `include/{types,constants,gpuassert}.cuh`.
-- `GLASS/` — submodule (the in-block linear-algebra library).
+- `../GLASS/` — MPCGPU's GLASS submodule (the in-block linear-algebra library).
 - `examples/` — `pcg_solve.cu` (legacy demo; **note**: it leaves `d_Pinv`
   uninitialized and its hardcoded `S` is indefinite, so it NaNs — kept for API
   shape only). **`test_pcg_spd.cu` is the real correctness gate**: random SPD
@@ -81,7 +85,7 @@ Header-only to *use*. To run the test (needs a cooperative-launch-capable GPU):
 
 ```bash
 cd examples && make test STATE_SIZE=14 KNOT_POINTS=32   # ARCH defaults to sm_120
-test/run_gates.sh          # one-command gate runner (from repo root): test_pcg_spd at
+test/run_gates.sh          # one-command gate runner (from this directory): test_pcg_spd at
                            # 6x8 + 14x32, test_bdmv, test_pcg_dumped (skips if no dumps)
 ```
 
@@ -96,4 +100,4 @@ middle / last every iteration) + `compute-sanitizer --tool memcheck|racecheck`.
 
 - Short, single-line commit messages; no `Co-Authored-By` footer.
 - Preserve the cooperative grid-wide structure; keep in-block linalg on `glass::`.
-- Bump the `GLASS` submodule pin to match the consuming repo (MPCGPU / GATO).
+- GLASS is MPCGPU's top-level submodule — bump it there (one pin for the whole repo).

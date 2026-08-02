@@ -1,11 +1,11 @@
 # pytest-gpu-proof verification policy for MPCGPU.
 #
 # allow_dirty:false is load-bearing: the fingerprint hashes the tracked sources
-# (include/, tools/, examples/, test/, Makefile) but cannot descend into the
-# GLASS / GBD-PCG / GRiD / qdldl submodule gitlinks — those are pinned by the
-# parent tree, and a clean tree is what guarantees the receipt's commit SHA
-# faithfully describes the solver + linalg code that was exercised. (Untracked
-# content inside a submodule, or gitignored .exe build debris, does not count
-# as dirty.)
+# (include/, tools/, examples/, test/, Makefile, GBD-PCG/ — in-tree since the
+# 2026-08 fold) but cannot descend into the GLASS / GRiD / qdldl submodule
+# gitlinks — those are pinned by the parent tree, and a clean tree is what
+# guarantees the receipt's commit SHA faithfully describes the solver + linalg
+# code that was exercised. (Untracked content inside a submodule, or gitignored
+# .exe build debris, does not count as dirty.)
 allow_dirty: false
 max_age_days: 30

@@ -1,5 +1,11 @@
 # GBD-PCG
 
+> **Now part of MPCGPU.** GBD-PCG was folded into the
+> [MPCGPU](https://github.com/A2R-Lab/MPCGPU) repo (this directory, full history
+> preserved) in 2026-08; the standalone GBD-PCG repo is retired and no longer
+> updated. In-block linear algebra comes from MPCGPU's top-level `GLASS/`
+> submodule (single pin — no nested copy).
+
 GBD-PCG is a **cooperative, grid-wide** preconditioned conjugate gradient solver for the
 block-tridiagonal Schur-complement systems that arise in trajectory optimization. It is the
 linear-system solver used by [MPCGPU](https://arxiv.org/abs/2309.08079). It solves
@@ -18,8 +24,8 @@ grid (the `checkPcgOccupancy` helper in `include/pcg.cuh` verifies this; the lau
 not call it automatically). Each block owns one block-row of `S`/`Pinv` plus a halo
 of its neighbours' state; cross-block dot-product reductions go through global scratch.
 
-All in-block linear algebra defers to [GLASS](https://github.com/A2R-Lab/GLASS), vendored as a
-submodule (`GLASS/`): the per-block-row band matvec `bdmv` is `glass::gemv`
+All in-block linear algebra defers to [GLASS](https://github.com/A2R-Lab/GLASS), MPCGPU's
+top-level `GLASS/` submodule (`-I../GLASS` from this directory): the per-block-row band matvec `bdmv` is `glass::gemv`
 (`include/utils.cuh`), dot products are `glass::dot_lowmem`, copies/reductions are
 `glass::copy`/`glass::reduce`. There is no hand-rolled in-block BLAS here — new in-block
 primitives belong upstream in GLASS.
@@ -41,9 +47,10 @@ primitives belong upstream in GLASS.
 ## Requirements
 
 - CUDA toolkit + a GPU with cooperative-launch support.
-- The GLASS submodule: `git submodule update --init --recursive`.
+- MPCGPU's `GLASS` submodule: `make submodules` from the MPCGPU root.
 
-Header-only to use: `#include "gpu_pcg.cuh"` with `-Iinclude -IGLASS`. `STATE_SIZE` and
+Header-only to use: `#include "gpu_pcg.cuh"` with `-IGBD-PCG/include -IGLASS` (paths from the
+MPCGPU root). `STATE_SIZE` and
 `KNOT_POINTS` must be **compile-time constants** (`-DSTATE_SIZE=.. -DKNOT_POINTS=..`) — the
 kernel is instantiated as `pcg<T, STATE_SIZE, KNOT_POINTS>`, and the runtime `state_size` /
 `knot_points` arguments must match them.
@@ -120,12 +127,12 @@ See `CLAUDE.md` for the full semantics and when each matters.
 ## Build and test
 
 ```bash
-git submodule update --init --recursive
+make submodules                # from the MPCGPU root (pulls GLASS)
 
-# SPD residual gate at chosen dims (ARCH defaults to sm_120):
+# SPD residual gate at chosen dims (ARCH defaults to sm_120), from this directory:
 make -C examples test STATE_SIZE=14 KNOT_POINTS=32
 
-# One-command gate runner (run from the repo root):
+# One-command gate runner (run from this directory):
 test/run_gates.sh              # or: ARCH=sm_86 test/run_gates.sh
 ```
 

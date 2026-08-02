@@ -1,6 +1,6 @@
 NVCC = nvcc
 ARCH ?= sm_120
-CFLAGS = --compiler-options -Wall  -O3 -I../include -I../GLASS -arch=$(ARCH)
+CFLAGS = --compiler-options -Wall  -O3 -I../include -I../../GLASS -arch=$(ARCH)
 
 # Dims for the SPD residual test (compile-time kernel template params).
 STATE_SIZE ?= 14

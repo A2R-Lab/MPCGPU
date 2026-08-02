@@ -19,12 +19,12 @@
 #                       to ~1e-5 rel; historic full-Q+R can plateau near 1e-2 — see the
 #                       eta-exit notes in CLAUDE.md), so the bar is rel < 1e-1 and finite.
 #
-# Usage: test/run_gates.sh            (run from the GBD-PCG repo root)
+# Usage: test/run_gates.sh            (run from the GBD-PCG/ directory of MPCGPU)
 #        ARCH=sm_86 test/run_gates.sh
 set -uo pipefail
 ARCH=${ARCH:-sm_120}
-CF="--compiler-options -Wall -O3 -Iinclude -IGLASS -arch=$ARCH"
-[[ -f include/pcg.cuh ]] || { echo "run from the GBD-PCG repo root"; exit 1; }
+CF="--compiler-options -Wall -O3 -Iinclude -I../GLASS -arch=$ARCH"
+[[ -f include/pcg.cuh ]] || { echo "run from the GBD-PCG/ directory"; exit 1; }
 PY=${PYTHON:-python3}   # must have numpy (synthetic-strip gate); set PYTHON=/path/to/venv/python
 
 npass=0; nfail=0; nskip=0

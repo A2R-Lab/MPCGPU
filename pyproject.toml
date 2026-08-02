@@ -19,8 +19,9 @@ mode = "local"
 output = "gpu-proof.json"
 github_username = "plancherb1"     # org remotes (A2R-Lab) carry no SSH keys — sign as the keyholder
 # Fingerprint the code-under-test + harness (tracked files only, so gate .exe
-# build debris and regenerated trajfiles never leak in). GLASS / GBD-PCG /
-# GRiD / qdldl remain submodule gitlinks, pinned by the receipt's commit SHA.
-fingerprint_paths = ["include", "tools", "examples", "test", "Makefile"]
+# build debris and regenerated trajfiles never leak in). GBD-PCG is in-tree
+# (2026-08 fold) and fingerprinted; GLASS / GRiD / qdldl remain submodule
+# gitlinks, pinned by the receipt's commit SHA.
+fingerprint_paths = ["include", "tools", "examples", "test", "Makefile", "GBD-PCG"]
 max_age_days = 30
 require_gpu = true

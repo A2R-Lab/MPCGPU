@@ -21,7 +21,7 @@ LD_LIBRARY_PATH=$PWD/qdldl/build/out ./examples/pcg.exe
 LD_LIBRARY_PATH=$PWD/qdldl/build/out ./examples/qdldl.exe
 ```
 
-Dependencies are vendored as submodules: [GRiD](https://github.com/robot-acceleration/GRiD) (rigid-body-dynamics code generation), [GLASS](https://github.com/A2R-Lab/GLASS) (in-block GPU linear algebra), and [GBD-PCG](GBD-PCG/) (the cooperative, grid-wide block-tridiagonal PCG solver — which carries its own nested GLASS submodule; `make submodules` pulls everything recursively).
+Dependencies are vendored as submodules: [GRiD](https://github.com/robot-acceleration/GRiD) (rigid-body-dynamics code generation) and [GLASS](https://github.com/A2R-Lab/GLASS) (in-block GPU linear algebra); `make submodules` pulls everything. [GBD-PCG](GBD-PCG/) (the cooperative, grid-wide block-tridiagonal PCG solver) lives in-tree since 2026-08 — its standalone repo is retired, history preserved here — and shares the single top-level GLASS pin.
 
 ### Setting parameters
 
@@ -49,8 +49,8 @@ they are not usable tracking references — regenerate with `gen_reference` inst
 `tools/run_gates.sh` builds and runs the correctness gates (cost/step response, terminal-cost gradient
 regression, and one tracking pass per linear-system solver). `tools/run_3way_iiwa.sh` runs the fair 3-way
 iiwa14 figure-8 tracking comparison and `tools/time_persolve.sh` the isolated per-solve timing; the
-benchmark configuration and results are documented in `docs/benchmark_3way_2026-07-06.md`. The GBD-PCG
-submodule has its own gate runner (`GBD-PCG/test/run_gates.sh`).
+benchmark configuration and results are documented in `docs/benchmark_3way_2026-08-01.md`. The in-tree
+GBD-PCG solver has its own gate runner (`GBD-PCG/test/run_gates.sh`).
 
 ### Other solvers and problems
 

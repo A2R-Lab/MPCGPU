@@ -27,7 +27,7 @@ test_fd_parity:
 gen_ref:
 	$(NVCC) $(CFLAGS) tools/gen_reference.cu -o tools/gen_reference.exe
 
-# Pull GRiD/GLASS/GBD-PCG (and their nested submodules) to the pinned commits
+# Pull GRiD/GLASS/qdldl to the pinned commits (GBD-PCG is in-tree since the 2026-08 fold)
 submodules:
 	git submodule update --init --recursive
 

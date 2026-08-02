@@ -23,12 +23,15 @@ GATO. Future GRiD/GLASS bumps are a `regen` + pin bump, not hand-patching.
   (`cudaLaunchCooperativeKernel`, one block per knot, `grid.sync()`). It is the cooperative analog of
   GLASS's **single-block** `glass::pcg`/`glass::bdmv`. Its per-block matvec (`bdmv`) defers to
   `glass::gemv` (col-major, zero-padded boundaries); its in-block ops are `glass::copy/dot/reduce`.
+  **In-tree since 2026-08** (folded from the retired standalone A2R-Lab/GBD-PCG repo, full history
+  preserved as a subtree merge); it compiles against the top-level `GLASS/` submodule.
 
 ## Submodules / pins
 
-`GRiD` (dynamics codegen), `GLASS` (linalg), `GBD-PCG` (cooperative PCG; **has its own nested `GLASS`**).
-Bump protocol: move the pin, `git submodule update --init --recursive`, rebuild, revalidate. When bumping
-GLASS, bump it in **both** `GLASS/` and `GBD-PCG/GLASS/` and keep them equal.
+`GRiD` (dynamics codegen), `GLASS` (linalg), `qdldl`. GBD-PCG is **in-tree** (not a submodule) —
+there is exactly ONE GLASS pin for the whole repo. Bump protocol: move the pin,
+`git submodule update --init --recursive`, rebuild, revalidate (GBD-PCG picks the new GLASS up
+automatically via `-I../GLASS` / `-IGLASS`).
 
 ## Build / run
 
@@ -49,8 +52,9 @@ gate below as a pytest suite; `./test/run_gpu_proof.sh` runs it on the GPU box (
 signs `gpu-proof.json`; commit the receipt and the CPU-only `verify-gpu-proof` workflow checks
 it on every push. Config in `pyproject.toml [tool.gpu_proof]` + `test/gpu-proof-policy.yaml`.
 Changes under `include/`, `tools/`, `examples/`, `test/`, or `Makefile` change the fingerprint —
-regenerate the receipt with such a push. The suite also runs GBD-PCG's own gate runner, so the
-receipt attests the cooperative solver too (GBD-PCG carries no separate receipt).
+regenerate the receipt with such a push (`GBD-PCG/` is fingerprinted too since the 2026-08 fold).
+The suite also runs GBD-PCG's own gate runner, so the receipt attests the cooperative solver too
+(GBD-PCG carries no separate receipt — its standalone repo is retired).
 
 ⚠ `tools/regen_grid.py` regenerates against the **sibling GATO checkout's URDF** (same bytes as
 `tools/iiwa14.urdf` but sitting next to the link STLs): the collision spherization resolves
