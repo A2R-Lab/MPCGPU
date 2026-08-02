@@ -7,14 +7,15 @@
     },
     "platform": "linux",
     "plugin_version": "0.1.0",
-    "pytest_version": "9.1.1",
+    "pytest_version": "9.0.3",
     "python_version": "3.12.3"
   },
   "fingerprint": {
     "algorithm": "sha256",
-    "digest": "2e454b0784e9e6a663cbf0d1c43c0dab150dbc54b66530e440d96148bf7e9da6",
-    "file_count": 61,
+    "digest": "d59f1d1c2a058c971be8220c9ca961c10b43f887ae061aa350a371664b8dbf1e",
+    "file_count": 78,
     "included_paths": [
+      "GBD-PCG",
       "Makefile",
       "examples",
       "include",
@@ -25,14 +26,14 @@
   "mode": "local",
   "repo": {
     "branch": "modernize-grid-glass",
-    "commit_sha": "b4c8c59c91574b3759b746d6fd9916c9eda48e85",
+    "commit_sha": "4d5c74f763dcdf5184f2151fb0d14a4b0afafa6c",
     "dirty": false,
     "github_username": "plancherb1",
     "remote_url": "git@github.com:A2R-Lab/MPCGPU.git"
   },
   "schema_version": "1",
   "session": {
-    "ended_at": "2026-08-01T23:08:47Z",
+    "ended_at": "2026-08-02T12:58:34Z",
     "node_ids": [
       "test/test_gates.py::test_gate[single_cost_test]",
       "test/test_gates.py::test_gate[test_terminal_cost]",
@@ -43,19 +44,19 @@
       "test/test_gates.py::test_grid_cuh_matches_gato",
       "test/test_gates.py::test_gbdpcg_gates"
     ],
-    "started_at": "2026-08-01T23:05:55Z"
+    "started_at": "2026-08-02T12:57:37Z"
   },
   "signature": {
     "algorithm": "ed25519",
     "backend": "ssh-local",
     "key_fingerprint": "SHA256:hfyUcDJTDLry3j7nJ9V2X8iEIgNFmFJQKGQirOdyWtY",
     "signer": "plancherb1",
-    "value": "nMCo0Qsdq3hc29xvAU9jsCK3X8p1RctyIGO3GsAVUdvJqvBnCuF3L5Z0Rmz8cA3FjGtqMk+RvFe0rpCLhdKkDg=="
+    "value": "JQpsFlNOQFG5Q7/OBrtmz84apXxaibLlDZJ0jlW8+hRvZqXxQXujxkDcVx9n1KGmwMkYYHvcVwrvsKe2P5yPBg=="
   },
   "tests": [
     {
       "checks": [],
-      "duration_s": 0.0002,
+      "duration_s": 0.0003,
       "node_id": "test/test_gates.py::test_gate[single_cost_test]",
       "outcome": "passed"
     },
@@ -79,25 +80,25 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0,
+      "duration_s": 0.0001,
       "node_id": "test/test_gates.py::test_gate_runner_exit",
       "outcome": "passed"
     },
     {
       "checks": [],
-      "duration_s": 3.7458,
+      "duration_s": 3.7045,
       "node_id": "test/test_gates.py::test_fd_parity",
       "outcome": "passed"
     },
     {
       "checks": [],
-      "duration_s": 0.0037,
+      "duration_s": 0.004,
       "node_id": "test/test_gates.py::test_grid_cuh_matches_gato",
       "outcome": "passed"
     },
     {
       "checks": [],
-      "duration_s": 9.6534,
+      "duration_s": 9.6832,
       "node_id": "test/test_gates.py::test_gbdpcg_gates",
       "outcome": "passed"
     }
