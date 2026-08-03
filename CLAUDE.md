@@ -87,6 +87,12 @@ All benchmark numbers predating the fix (before 2026-07-06) are invalid — do n
 
 ## Benchmark (SSOT: `docs/benchmark_3way_2026-08-01.md`; the 07-06 doc keeps the conditioning analysis)
 
+Horizon scaling: `docs/nsweep_persolve_2026-08-03.md` — per-solve cost vs N∈{8..512} for both
+linsys backends. Cooperative PCG is horizon-INDEPENDENT to N≈128 (~225 µs floor) then +0.57 µs/knot
+(416 µs @ N=512 = 2.4 kHz — the paper's kHz@512 claim holds with headroom); QDLDL is linear at
+≈3.4 µs/knot and crosses 1 ms at N≈264. Longer horizons track *worse* at SQP=1 — N=32–64 is the
+operating sweet spot.
+
 The 3-way iiwa14 fig8 benchmark config (2026-07-07): SQP=1, PCG cap 200, rel tol 1e-4,
 RHO_INIT=0.01, **`-DGATO_REG_PATTERN`** — rho added only to the position half of Q, R
 unregularized (GATO's convention; guarded in `include/{pcg,qdldl}/linsys_setup.cuh`). Under it
