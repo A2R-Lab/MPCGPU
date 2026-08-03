@@ -7,12 +7,12 @@
     },
     "platform": "linux",
     "plugin_version": "0.1.0",
-    "pytest_version": "9.0.3",
+    "pytest_version": "9.1.1",
     "python_version": "3.12.3"
   },
   "fingerprint": {
     "algorithm": "sha256",
-    "digest": "d59f1d1c2a058c971be8220c9ca961c10b43f887ae061aa350a371664b8dbf1e",
+    "digest": "2084b41f940d61d423a17039003bfb2f337281d26760b1bc37660a254de71dcc",
     "file_count": 78,
     "included_paths": [
       "GBD-PCG",
@@ -26,14 +26,14 @@
   "mode": "local",
   "repo": {
     "branch": "modernize-grid-glass",
-    "commit_sha": "4d5c74f763dcdf5184f2151fb0d14a4b0afafa6c",
+    "commit_sha": "9493e25a589113523052fc04b6e3f048e3159fb9",
     "dirty": false,
     "github_username": "plancherb1",
     "remote_url": "git@github.com:A2R-Lab/MPCGPU.git"
   },
   "schema_version": "1",
   "session": {
-    "ended_at": "2026-08-02T12:58:34Z",
+    "ended_at": "2026-08-03T01:22:07Z",
     "node_ids": [
       "test/test_gates.py::test_gate[single_cost_test]",
       "test/test_gates.py::test_gate[test_terminal_cost]",
@@ -44,19 +44,19 @@
       "test/test_gates.py::test_grid_cuh_matches_gato",
       "test/test_gates.py::test_gbdpcg_gates"
     ],
-    "started_at": "2026-08-02T12:57:37Z"
+    "started_at": "2026-08-03T01:21:13Z"
   },
   "signature": {
     "algorithm": "ed25519",
     "backend": "ssh-local",
     "key_fingerprint": "SHA256:hfyUcDJTDLry3j7nJ9V2X8iEIgNFmFJQKGQirOdyWtY",
     "signer": "plancherb1",
-    "value": "JQpsFlNOQFG5Q7/OBrtmz84apXxaibLlDZJ0jlW8+hRvZqXxQXujxkDcVx9n1KGmwMkYYHvcVwrvsKe2P5yPBg=="
+    "value": "cF7DSCK68Qbxc0dY4/xPAqrhFKBDATdAUkJ5YbmWpOe5RYF6cXZ3qC+qI1TJyjSNvrEucb5QQIMJlJn6oXlfBg=="
   },
   "tests": [
     {
       "checks": [],
-      "duration_s": 0.0003,
+      "duration_s": 0.0002,
       "node_id": "test/test_gates.py::test_gate[single_cost_test]",
       "outcome": "passed"
     },
@@ -80,25 +80,25 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0001,
+      "duration_s": 0.0,
       "node_id": "test/test_gates.py::test_gate_runner_exit",
       "outcome": "passed"
     },
     {
       "checks": [],
-      "duration_s": 3.7045,
+      "duration_s": 3.6877,
       "node_id": "test/test_gates.py::test_fd_parity",
       "outcome": "passed"
     },
     {
       "checks": [],
-      "duration_s": 0.004,
+      "duration_s": 0.0024,
       "node_id": "test/test_gates.py::test_grid_cuh_matches_gato",
       "outcome": "passed"
     },
     {
       "checks": [],
-      "duration_s": 9.6832,
+      "duration_s": 8.8211,
       "node_id": "test/test_gates.py::test_gbdpcg_gates",
       "outcome": "passed"
     }
