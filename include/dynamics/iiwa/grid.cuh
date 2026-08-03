@@ -9336,27 +9336,6 @@ namespace grid {
         }
     }
 
-    /**
-     * Compute the outer product between two vectors: dest = ab^T
-     *
-     * Notes:
-     *   Function assumes it is called by a single thread.
-     *
-     * @param a - first vector
-     * @param b - second vector
-     * @param dest - destination matrix
-     * @param aLength - length of a
-     * @param bLength - length of b
-     * @param idx - index of resulting matrix to be computed by this thread
-     */
-    template <typename T>
-    __device__
-    void outerProduct(T *a, T *b, T *dest, int aLength, int bLength, int idx) {
-        int row = idx / bLength;
-        int col = idx % bLength;
-        if (row < aLength && col < bLength) dest[col * aLength + row] = a[row] * b[col];
-    }
-
     //
     // Topology Helpers not needed!
     //
@@ -9635,264 +9614,264 @@ namespace grid {
         h_XImats[250] = static_cast<T>(0);
         h_XImats[251] = static_cast<T>(0);
         // I[0]
-        h_XImats[252] = static_cast<T>(0.00455);
+        h_XImats[252] = static_cast<T>(0.12112799999999999);
         h_XImats[253] = static_cast<T>(0.0);
         h_XImats[254] = static_cast<T>(0.0);
         h_XImats[255] = static_cast<T>(0.0);
-        h_XImats[256] = static_cast<T>(0.0);
-        h_XImats[257] = static_cast<T>(0.0);
+        h_XImats[256] = static_cast<T>(-0.6911999999999999);
+        h_XImats[257] = static_cast<T>(-0.17279999999999998);
         h_XImats[258] = static_cast<T>(0.0);
-        h_XImats[259] = static_cast<T>(0.00454);
-        h_XImats[260] = static_cast<T>(-1e-05);
-        h_XImats[261] = static_cast<T>(0.0);
+        h_XImats[259] = static_cast<T>(0.11624399999999999);
+        h_XImats[260] = static_cast<T>(0.020735999999999997);
+        h_XImats[261] = static_cast<T>(0.6911999999999999);
         h_XImats[262] = static_cast<T>(0.0);
         h_XImats[263] = static_cast<T>(0.0);
         h_XImats[264] = static_cast<T>(0.0);
-        h_XImats[265] = static_cast<T>(-1e-05);
-        h_XImats[266] = static_cast<T>(0.00029);
-        h_XImats[267] = static_cast<T>(0.0);
+        h_XImats[265] = static_cast<T>(0.020735999999999997);
+        h_XImats[266] = static_cast<T>(0.017484);
+        h_XImats[267] = static_cast<T>(0.17279999999999998);
         h_XImats[268] = static_cast<T>(0.0);
         h_XImats[269] = static_cast<T>(0.0);
         h_XImats[270] = static_cast<T>(0.0);
-        h_XImats[271] = static_cast<T>(0.0);
-        h_XImats[272] = static_cast<T>(0.0);
-        h_XImats[273] = static_cast<T>(3.94781);
+        h_XImats[271] = static_cast<T>(0.6911999999999999);
+        h_XImats[272] = static_cast<T>(0.17279999999999998);
+        h_XImats[273] = static_cast<T>(5.76);
         h_XImats[274] = static_cast<T>(0.0);
         h_XImats[275] = static_cast<T>(0.0);
-        h_XImats[276] = static_cast<T>(0.0);
+        h_XImats[276] = static_cast<T>(-0.6911999999999999);
         h_XImats[277] = static_cast<T>(0.0);
         h_XImats[278] = static_cast<T>(0.0);
         h_XImats[279] = static_cast<T>(0.0);
-        h_XImats[280] = static_cast<T>(3.94781);
+        h_XImats[280] = static_cast<T>(5.76);
         h_XImats[281] = static_cast<T>(0.0);
-        h_XImats[282] = static_cast<T>(0.0);
+        h_XImats[282] = static_cast<T>(-0.17279999999999998);
         h_XImats[283] = static_cast<T>(0.0);
         h_XImats[284] = static_cast<T>(0.0);
         h_XImats[285] = static_cast<T>(0.0);
         h_XImats[286] = static_cast<T>(0.0);
-        h_XImats[287] = static_cast<T>(3.94781);
+        h_XImats[287] = static_cast<T>(5.76);
         // I[1]
-        h_XImats[288] = static_cast<T>(0.02393692375);
-        h_XImats[289] = static_cast<T>(-7.969867499999998e-05);
-        h_XImats[290] = static_cast<T>(-5.6734649999999994e-05);
+        h_XImats[288] = static_cast<T>(0.04160197057286055);
+        h_XImats[289] = static_cast<T>(0.00011239454317625987);
+        h_XImats[290] = static_cast<T>(-0.01573530024735758);
         h_XImats[291] = static_cast<T>(0.0);
-        h_XImats[292] = static_cast<T>(-0.1891155);
-        h_XImats[293] = static_cast<T>(0.26566225);
-        h_XImats[294] = static_cast<T>(-7.9698675e-05);
-        h_XImats[295] = static_cast<T>(0.0080432562475);
-        h_XImats[296] = static_cast<T>(-0.0111578145);
-        h_XImats[297] = static_cast<T>(0.1891155);
+        h_XImats[292] = static_cast<T>(-0.266699989017675);
+        h_XImats[293] = static_cast<T>(-0.0019049922930431);
+        h_XImats[294] = static_cast<T>(0.00011239454317625987);
+        h_XImats[295] = static_cast<T>(0.06380575000459363);
+        h_XImats[296] = static_cast<T>(8.001033406865006e-05);
+        h_XImats[297] = static_cast<T>(0.266699989017675);
         h_XImats[298] = static_cast<T>(0.0);
-        h_XImats[299] = static_cast<T>(-0.0013508249999999997);
-        h_XImats[300] = static_cast<T>(-5.6734649999999994e-05);
-        h_XImats[301] = static_cast<T>(-0.011157814499999998);
-        h_XImats[302] = static_cast<T>(0.0160944779975);
-        h_XImats[303] = static_cast<T>(-0.26566225);
-        h_XImats[304] = static_cast<T>(0.0013508249999999997);
+        h_XImats[299] = static_cast<T>(-0.374650007856855);
+        h_XImats[300] = static_cast<T>(-0.01573530024735758);
+        h_XImats[301] = static_cast<T>(8.001033406865006e-05);
+        h_XImats[302] = static_cast<T>(0.03310492242248474);
+        h_XImats[303] = static_cast<T>(0.0019049922930431);
+        h_XImats[304] = static_cast<T>(0.374650007856855);
         h_XImats[305] = static_cast<T>(0.0);
         h_XImats[306] = static_cast<T>(0.0);
-        h_XImats[307] = static_cast<T>(0.1891155);
-        h_XImats[308] = static_cast<T>(-0.26566225);
-        h_XImats[309] = static_cast<T>(4.50275);
+        h_XImats[307] = static_cast<T>(0.266699989017675);
+        h_XImats[308] = static_cast<T>(0.0019049922930431);
+        h_XImats[309] = static_cast<T>(6.35);
         h_XImats[310] = static_cast<T>(0.0);
         h_XImats[311] = static_cast<T>(0.0);
-        h_XImats[312] = static_cast<T>(-0.1891155);
+        h_XImats[312] = static_cast<T>(-0.266699989017675);
         h_XImats[313] = static_cast<T>(0.0);
-        h_XImats[314] = static_cast<T>(0.0013508249999999997);
+        h_XImats[314] = static_cast<T>(0.374650007856855);
         h_XImats[315] = static_cast<T>(0.0);
-        h_XImats[316] = static_cast<T>(4.50275);
+        h_XImats[316] = static_cast<T>(6.35);
         h_XImats[317] = static_cast<T>(0.0);
-        h_XImats[318] = static_cast<T>(0.26566225);
-        h_XImats[319] = static_cast<T>(-0.0013508249999999997);
+        h_XImats[318] = static_cast<T>(-0.0019049922930431);
+        h_XImats[319] = static_cast<T>(-0.374650007856855);
         h_XImats[320] = static_cast<T>(0.0);
         h_XImats[321] = static_cast<T>(0.0);
         h_XImats[322] = static_cast<T>(0.0);
-        h_XImats[323] = static_cast<T>(4.50275);
+        h_XImats[323] = static_cast<T>(6.35);
         // I[2]
-        h_XImats[324] = static_cast<T>(0.045932560000000004);
-        h_XImats[325] = static_cast<T>(-5e-05);
-        h_XImats[326] = static_cast<T>(7e-05);
+        h_XImats[324] = static_cast<T>(0.08729999808545157);
+        h_XImats[325] = static_cast<T>(-5.260676579451288e-10);
+        h_XImats[326] = static_cast<T>(-2.0418312232572323e-09);
         h_XImats[327] = static_cast<T>(0.0);
-        h_XImats[328] = static_cast<T>(-0.319176);
-        h_XImats[329] = static_cast<T>(0.073656);
-        h_XImats[330] = static_cast<T>(-5e-05);
-        h_XImats[331] = static_cast<T>(0.04368288);
-        h_XImats[332] = static_cast<T>(-0.00950528);
-        h_XImats[333] = static_cast<T>(0.319176);
+        h_XImats[328] = static_cast<T>(-0.4550000028455);
+        h_XImats[329] = static_cast<T>(0.10499995576035);
+        h_XImats[330] = static_cast<T>(-5.260676579451287e-10);
+        h_XImats[331] = static_cast<T>(0.08295000073983008);
+        h_XImats[332] = static_cast<T>(-0.013649993895035295);
+        h_XImats[333] = static_cast<T>(0.4550000028455);
         h_XImats[334] = static_cast<T>(0.0);
-        h_XImats[335] = static_cast<T>(0.0);
-        h_XImats[336] = static_cast<T>(7e-05);
-        h_XImats[337] = static_cast<T>(-0.00950528);
-        h_XImats[338] = static_cast<T>(0.00293968);
-        h_XImats[339] = static_cast<T>(-0.073656);
-        h_XImats[340] = static_cast<T>(0.0);
+        h_XImats[335] = static_cast<T>(-1.7143151552345002e-08);
+        h_XImats[336] = static_cast<T>(-2.0418312232572323e-09);
+        h_XImats[337] = static_cast<T>(-0.013649993895035297);
+        h_XImats[338] = static_cast<T>(0.010749997345621643);
+        h_XImats[339] = static_cast<T>(-0.10499995576035);
+        h_XImats[340] = static_cast<T>(1.7143151552345002e-08);
         h_XImats[341] = static_cast<T>(0.0);
         h_XImats[342] = static_cast<T>(0.0);
-        h_XImats[343] = static_cast<T>(0.319176);
-        h_XImats[344] = static_cast<T>(-0.073656);
-        h_XImats[345] = static_cast<T>(2.4552);
+        h_XImats[343] = static_cast<T>(0.4550000028455);
+        h_XImats[344] = static_cast<T>(-0.10499995576035);
+        h_XImats[345] = static_cast<T>(3.5);
         h_XImats[346] = static_cast<T>(0.0);
         h_XImats[347] = static_cast<T>(0.0);
-        h_XImats[348] = static_cast<T>(-0.319176);
+        h_XImats[348] = static_cast<T>(-0.4550000028455);
         h_XImats[349] = static_cast<T>(0.0);
-        h_XImats[350] = static_cast<T>(0.0);
+        h_XImats[350] = static_cast<T>(1.7143151552345002e-08);
         h_XImats[351] = static_cast<T>(0.0);
-        h_XImats[352] = static_cast<T>(2.4552);
+        h_XImats[352] = static_cast<T>(3.5);
         h_XImats[353] = static_cast<T>(0.0);
-        h_XImats[354] = static_cast<T>(0.073656);
-        h_XImats[355] = static_cast<T>(0.0);
+        h_XImats[354] = static_cast<T>(0.10499995576035);
+        h_XImats[355] = static_cast<T>(-1.7143151552345002e-08);
         h_XImats[356] = static_cast<T>(0.0);
         h_XImats[357] = static_cast<T>(0.0);
         h_XImats[358] = static_cast<T>(0.0);
-        h_XImats[359] = static_cast<T>(2.4552);
+        h_XImats[359] = static_cast<T>(3.5);
         // I[3]
-        h_XImats[360] = static_cast<T>(0.053182199750000006);
-        h_XImats[361] = static_cast<T>(0.00088);
-        h_XImats[362] = static_cast<T>(-0.00112);
+        h_XImats[360] = static_cast<T>(0.03675750325128786);
+        h_XImats[361] = static_cast<T>(-6.220314824991959e-10);
+        h_XImats[362] = static_cast<T>(-2.453491357183656e-10);
         h_XImats[363] = static_cast<T>(0.0);
-        h_XImats[364] = static_cast<T>(-0.0887927);
-        h_XImats[365] = static_cast<T>(0.17497385);
-        h_XImats[366] = static_cast<T>(0.00088);
-        h_XImats[367] = static_cast<T>(0.014458951800000001);
-        h_XImats[368] = static_cast<T>(-0.0070591109);
-        h_XImats[369] = static_cast<T>(0.0887927);
+        h_XImats[364] = static_cast<T>(-0.119000048111);
+        h_XImats[365] = static_cast<T>(0.23449999984880002);
+        h_XImats[366] = static_cast<T>(-6.220314824991959e-10);
+        h_XImats[367] = static_cast<T>(0.020446003271548687);
+        h_XImats[368] = static_cast<T>(-0.007973003406400392);
+        h_XImats[369] = static_cast<T>(0.119000048111);
         h_XImats[370] = static_cast<T>(0.0);
-        h_XImats[371] = static_cast<T>(0.0);
-        h_XImats[372] = static_cast<T>(-0.00112);
-        h_XImats[373] = static_cast<T>(-0.0070591109);
-        h_XImats[374] = static_cast<T>(0.06130324795);
-        h_XImats[375] = static_cast<T>(-0.17497385);
-        h_XImats[376] = static_cast<T>(0.0);
+        h_XImats[371] = static_cast<T>(-9.380180836949994e-09);
+        h_XImats[372] = static_cast<T>(-2.4534913571836563e-10);
+        h_XImats[373] = static_cast<T>(-0.007973003406400392);
+        h_XImats[374] = static_cast<T>(0.02171149997973923);
+        h_XImats[375] = static_cast<T>(-0.23449999984880002);
+        h_XImats[376] = static_cast<T>(9.380180836949994e-09);
         h_XImats[377] = static_cast<T>(0.0);
         h_XImats[378] = static_cast<T>(0.0);
-        h_XImats[379] = static_cast<T>(0.0887927);
-        h_XImats[380] = static_cast<T>(-0.17497385);
-        h_XImats[381] = static_cast<T>(2.61155);
+        h_XImats[379] = static_cast<T>(0.119000048111);
+        h_XImats[380] = static_cast<T>(-0.23449999984880002);
+        h_XImats[381] = static_cast<T>(3.5);
         h_XImats[382] = static_cast<T>(0.0);
         h_XImats[383] = static_cast<T>(0.0);
-        h_XImats[384] = static_cast<T>(-0.0887927);
+        h_XImats[384] = static_cast<T>(-0.119000048111);
         h_XImats[385] = static_cast<T>(0.0);
-        h_XImats[386] = static_cast<T>(0.0);
+        h_XImats[386] = static_cast<T>(9.380180836949994e-09);
         h_XImats[387] = static_cast<T>(0.0);
-        h_XImats[388] = static_cast<T>(2.61155);
+        h_XImats[388] = static_cast<T>(3.5);
         h_XImats[389] = static_cast<T>(0.0);
-        h_XImats[390] = static_cast<T>(0.17497385);
-        h_XImats[391] = static_cast<T>(0.0);
+        h_XImats[390] = static_cast<T>(0.23449999984880002);
+        h_XImats[391] = static_cast<T>(-9.380180836949994e-09);
         h_XImats[392] = static_cast<T>(0.0);
         h_XImats[393] = static_cast<T>(0.0);
         h_XImats[394] = static_cast<T>(0.0);
-        h_XImats[395] = static_cast<T>(2.61155);
+        h_XImats[395] = static_cast<T>(3.5);
         // I[4]
-        h_XImats[396] = static_cast<T>(0.02396997);
-        h_XImats[397] = static_cast<T>(-1.7161e-05);
-        h_XImats[398] = static_cast<T>(-1.5916e-05);
+        h_XImats[396] = static_cast<T>(0.031759501206084464);
+        h_XImats[397] = static_cast<T>(-7.349665418713475e-06);
+        h_XImats[398] = static_cast<T>(2.6598755117970484e-05);
         h_XImats[399] = static_cast<T>(0.0);
-        h_XImats[400] = static_cast<T>(-0.25916);
-        h_XImats[401] = static_cast<T>(0.07161000000000001);
-        h_XImats[402] = static_cast<T>(-1.7161e-05);
-        h_XImats[403] = static_cast<T>(0.0225361941);
-        h_XImats[404] = static_cast<T>(-0.00544236);
-        h_XImats[405] = static_cast<T>(0.25916);
+        h_XImats[400] = static_cast<T>(-0.2659999956621);
+        h_XImats[401] = static_cast<T>(-0.07350004441535);
+        h_XImats[402] = static_cast<T>(-7.349665418713476e-06);
+        h_XImats[403] = static_cast<T>(0.02891603433732768);
+        h_XImats[404] = static_cast<T>(0.005586003400945494);
+        h_XImats[405] = static_cast<T>(0.2659999956621);
         h_XImats[406] = static_cast<T>(0.0);
-        h_XImats[407] = static_cast<T>(-0.00034100000000000005);
-        h_XImats[408] = static_cast<T>(-1.5916e-05);
-        h_XImats[409] = static_cast<T>(-0.00544236);
-        h_XImats[410] = static_cast<T>(0.0016238441000000002);
-        h_XImats[411] = static_cast<T>(-0.07161000000000001);
-        h_XImats[412] = static_cast<T>(0.00034100000000000005);
+        h_XImats[407] = static_cast<T>(0.0003499834419956);
+        h_XImats[408] = static_cast<T>(2.6598755117970484e-05);
+        h_XImats[409] = static_cast<T>(0.005586003400945493);
+        h_XImats[410] = static_cast<T>(0.006033536862133741);
+        h_XImats[411] = static_cast<T>(0.07350004441535);
+        h_XImats[412] = static_cast<T>(-0.0003499834419956);
         h_XImats[413] = static_cast<T>(0.0);
         h_XImats[414] = static_cast<T>(0.0);
-        h_XImats[415] = static_cast<T>(0.25916);
-        h_XImats[416] = static_cast<T>(-0.07161000000000001);
-        h_XImats[417] = static_cast<T>(3.41);
+        h_XImats[415] = static_cast<T>(0.2659999956621);
+        h_XImats[416] = static_cast<T>(0.07350004441535);
+        h_XImats[417] = static_cast<T>(3.5);
         h_XImats[418] = static_cast<T>(0.0);
         h_XImats[419] = static_cast<T>(0.0);
-        h_XImats[420] = static_cast<T>(-0.25916);
+        h_XImats[420] = static_cast<T>(-0.2659999956621);
         h_XImats[421] = static_cast<T>(0.0);
-        h_XImats[422] = static_cast<T>(0.00034100000000000005);
+        h_XImats[422] = static_cast<T>(-0.0003499834419956);
         h_XImats[423] = static_cast<T>(0.0);
-        h_XImats[424] = static_cast<T>(3.41);
+        h_XImats[424] = static_cast<T>(3.5);
         h_XImats[425] = static_cast<T>(0.0);
-        h_XImats[426] = static_cast<T>(0.07161000000000001);
-        h_XImats[427] = static_cast<T>(-0.00034100000000000005);
+        h_XImats[426] = static_cast<T>(-0.07350004441535);
+        h_XImats[427] = static_cast<T>(0.0003499834419956);
         h_XImats[428] = static_cast<T>(0.0);
         h_XImats[429] = static_cast<T>(0.0);
         h_XImats[430] = static_cast<T>(0.0);
-        h_XImats[431] = static_cast<T>(3.41);
+        h_XImats[431] = static_cast<T>(3.5);
         // I[5]
-        h_XImats[432] = static_cast<T>(0.000501761734);
-        h_XImats[433] = static_cast<T>(-5e-05);
-        h_XImats[434] = static_cast<T>(-3e-05);
+        h_XImats[432] = static_cast<T>(0.011419774351150058);
+        h_XImats[433] = static_cast<T>(0.0);
+        h_XImats[434] = static_cast<T>(-6.598851780613524e-05);
         h_XImats[435] = static_cast<T>(0.0);
-        h_XImats[436] = static_cast<T>(-0.00135518);
-        h_XImats[437] = static_cast<T>(0.0020327699999999997);
-        h_XImats[438] = static_cast<T>(-5e-05);
-        h_XImats[439] = static_cast<T>(0.002810542072);
-        h_XImats[440] = static_cast<T>(-4.0813108000000006e-05);
-        h_XImats[441] = static_cast<T>(0.00135518);
+        h_XImats[436] = static_cast<T>(-0.10997997014034);
+        h_XImats[437] = static_cast<T>(4.768652207304001e-09);
+        h_XImats[438] = static_cast<T>(0.0);
+        h_XImats[439] = static_cast<T>(0.011620422360287286);
+        h_XImats[440] = static_cast<T>(-2.467813722148336e-10);
+        h_XImats[441] = static_cast<T>(0.10997997014034);
         h_XImats[442] = static_cast<T>(0.0);
-        h_XImats[443] = static_cast<T>(0.0);
-        h_XImats[444] = static_cast<T>(-3e-05);
-        h_XImats[445] = static_cast<T>(-4.0813108000000006e-05);
-        h_XImats[446] = static_cast<T>(0.002321219662);
-        h_XImats[447] = static_cast<T>(-0.0020327699999999997);
-        h_XImats[448] = static_cast<T>(0.0);
+        h_XImats[443] = static_cast<T>(-0.001080007614342);
+        h_XImats[444] = static_cast<T>(-6.598851780613524e-05);
+        h_XImats[445] = static_cast<T>(-2.467813722148336e-10);
+        h_XImats[446] = static_cast<T>(0.0036006480091372553);
+        h_XImats[447] = static_cast<T>(-4.768652207304001e-09);
+        h_XImats[448] = static_cast<T>(0.001080007614342);
         h_XImats[449] = static_cast<T>(0.0);
         h_XImats[450] = static_cast<T>(0.0);
-        h_XImats[451] = static_cast<T>(0.00135518);
-        h_XImats[452] = static_cast<T>(-0.0020327699999999997);
-        h_XImats[453] = static_cast<T>(3.38795);
+        h_XImats[451] = static_cast<T>(0.10997997014034);
+        h_XImats[452] = static_cast<T>(-4.768652207304001e-09);
+        h_XImats[453] = static_cast<T>(1.8);
         h_XImats[454] = static_cast<T>(0.0);
         h_XImats[455] = static_cast<T>(0.0);
-        h_XImats[456] = static_cast<T>(-0.00135518);
+        h_XImats[456] = static_cast<T>(-0.10997997014034);
         h_XImats[457] = static_cast<T>(0.0);
-        h_XImats[458] = static_cast<T>(0.0);
+        h_XImats[458] = static_cast<T>(0.001080007614342);
         h_XImats[459] = static_cast<T>(0.0);
-        h_XImats[460] = static_cast<T>(3.38795);
+        h_XImats[460] = static_cast<T>(1.8);
         h_XImats[461] = static_cast<T>(0.0);
-        h_XImats[462] = static_cast<T>(0.0020327699999999997);
-        h_XImats[463] = static_cast<T>(0.0);
+        h_XImats[462] = static_cast<T>(4.768652207304001e-09);
+        h_XImats[463] = static_cast<T>(-0.001080007614342);
         h_XImats[464] = static_cast<T>(0.0);
         h_XImats[465] = static_cast<T>(0.0);
         h_XImats[466] = static_cast<T>(0.0);
-        h_XImats[467] = static_cast<T>(3.38795);
+        h_XImats[467] = static_cast<T>(1.8);
         // I[6]
-        h_XImats[468] = static_cast<T>(0.008218328);
-        h_XImats[469] = static_cast<T>(0.00022);
-        h_XImats[470] = static_cast<T>(-0.00029);
+        h_XImats[468] = static_cast<T>(0.0014800002018213413);
+        h_XImats[469] = static_cast<T>(0.0);
+        h_XImats[470] = static_cast<T>(-2.7657300069272947e-10);
         h_XImats[471] = static_cast<T>(0.0);
-        h_XImats[472] = static_cast<T>(-0.0093664);
-        h_XImats[473] = static_cast<T>(0.0);
-        h_XImats[474] = static_cast<T>(0.00022);
-        h_XImats[475] = static_cast<T>(0.011098328);
-        h_XImats[476] = static_cast<T>(-0.00029);
-        h_XImats[477] = static_cast<T>(0.0093664);
+        h_XImats[472] = static_cast<T>(-0.02400000504552);
+        h_XImats[473] = static_cast<T>(-2.498451792768e-08);
+        h_XImats[474] = static_cast<T>(0.0);
+        h_XImats[475] = static_cast<T>(0.0014800002018209805);
+        h_XImats[476] = static_cast<T>(4.99690463603504e-10);
+        h_XImats[477] = static_cast<T>(0.02400000504552);
         h_XImats[478] = static_cast<T>(0.0);
-        h_XImats[479] = static_cast<T>(0.0);
-        h_XImats[480] = static_cast<T>(-0.00029);
-        h_XImats[481] = static_cast<T>(-0.00029);
-        h_XImats[482] = static_cast<T>(0.0029754);
-        h_XImats[483] = static_cast<T>(0.0);
-        h_XImats[484] = static_cast<T>(0.0);
+        h_XImats[479] = static_cast<T>(-1.3828647127439989e-08);
+        h_XImats[480] = static_cast<T>(-2.765730006927295e-10);
+        h_XImats[481] = static_cast<T>(4.996904636035041e-10);
+        h_XImats[482] = static_cast<T>(0.0010000000000006796);
+        h_XImats[483] = static_cast<T>(2.498451792768e-08);
+        h_XImats[484] = static_cast<T>(1.3828647127439989e-08);
         h_XImats[485] = static_cast<T>(0.0);
         h_XImats[486] = static_cast<T>(0.0);
-        h_XImats[487] = static_cast<T>(0.0093664);
-        h_XImats[488] = static_cast<T>(0.0);
-        h_XImats[489] = static_cast<T>(0.41132);
+        h_XImats[487] = static_cast<T>(0.02400000504552);
+        h_XImats[488] = static_cast<T>(2.498451792768e-08);
+        h_XImats[489] = static_cast<T>(1.2);
         h_XImats[490] = static_cast<T>(0.0);
         h_XImats[491] = static_cast<T>(0.0);
-        h_XImats[492] = static_cast<T>(-0.0093664);
+        h_XImats[492] = static_cast<T>(-0.02400000504552);
         h_XImats[493] = static_cast<T>(0.0);
-        h_XImats[494] = static_cast<T>(0.0);
+        h_XImats[494] = static_cast<T>(1.3828647127439989e-08);
         h_XImats[495] = static_cast<T>(0.0);
-        h_XImats[496] = static_cast<T>(0.41132);
+        h_XImats[496] = static_cast<T>(1.2);
         h_XImats[497] = static_cast<T>(0.0);
-        h_XImats[498] = static_cast<T>(0.0);
-        h_XImats[499] = static_cast<T>(0.0);
+        h_XImats[498] = static_cast<T>(-2.498451792768e-08);
+        h_XImats[499] = static_cast<T>(-1.3828647127439989e-08);
         h_XImats[500] = static_cast<T>(0.0);
         h_XImats[501] = static_cast<T>(0.0);
         h_XImats[502] = static_cast<T>(0.0);
-        h_XImats[503] = static_cast<T>(0.41132);
+        h_XImats[503] = static_cast<T>(1.2);
         // Xhom[0]
         h_XImats[504] = static_cast<T>(0);
         h_XImats[505] = static_cast<T>(0);
@@ -31426,11 +31405,11 @@ namespace grid {
                 { 20, 19, 18, 17, 16, 15, -1 },
                 { 27, 26, 25, 24, 23, 22, 21 },
             };
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&S[jid*6], &psid[ancestor_j*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &S[jid*6], &psid[ancestor_j*6], &t[t_idx]);
             }
             __syncthreads();
             
@@ -31461,11 +31440,11 @@ namespace grid {
 
             // Compute t2 = outer(S[j], S[ancestor])
             // t2[j][k] is stored at t[((j*(j+1)/2) + k)*36]
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&S[jid*6], &S[ancestor_j*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &S[jid*6], &S[ancestor_j*6], &t[t_idx]);
             }
             __syncthreads();
             
@@ -31497,11 +31476,11 @@ namespace grid {
 
             // Compute t3 = outer(psid[j], psid[ancestor])
             // t3[j][k] is stored at t[((j*(j+1)/2) + k)*36]
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&psid[jid*6], &psid[ancestor_j*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &psid[jid*6], &psid[ancestor_j*6], &t[t_idx]);
             }
             __syncthreads();
             
@@ -31525,11 +31504,11 @@ namespace grid {
 
             // Compute t4 = outer(S[j], psidd[ancestor])
             // t4[j][k] is stored at t[((j*(j+1)/2) + k)*36]
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&S[jid*6], &psidd[ancestor_j*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &S[jid*6], &psidd[ancestor_j*6], &t[t_idx]);
             }
             __syncthreads();
             
@@ -31553,11 +31532,11 @@ namespace grid {
 
             // Compute t5 = outer(S[j], (Sd+psid)[ancestor])
             // t5[j][k] is stored at t[((j*(j+1)/2) + k)*36]
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&S[jid*6], &psid_Sd[ancestor_j*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &S[jid*6], &psid_Sd[ancestor_j*6], &t[t_idx]);
             }
             __syncthreads();
             
@@ -31579,11 +31558,11 @@ namespace grid {
 
             // Compute t6 = outer(S[ancestor], psid[joint])
             // t6[j][k] is stored at t[((j*(j+1)/2) + k)*36]
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&S[ancestor_j*6], &psid[jid*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &S[ancestor_j*6], &psid[jid*6], &t[t_idx]);
             }
             __syncthreads();
             
@@ -31611,11 +31590,11 @@ namespace grid {
 
             // Compute t7 = outer(S[ancestor], psidd[joint])
             // t7[j][k] is stored at t[((j*(j+1)/2) + k)*36]
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&S[ancestor_j*6], &psidd[jid*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &S[ancestor_j*6], &psidd[jid*6], &t[t_idx]);
             }
             __syncthreads();
             
@@ -31637,11 +31616,11 @@ namespace grid {
 
             // Compute t8 = outer(S[ancestor], S[joint])
             // t8[j][k] is stored at t[((j*(j+1)/2) + k)*36]
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&S[ancestor_j*6], &S[jid*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &S[ancestor_j*6], &S[jid*6], &t[t_idx]);
             }
             __syncthreads();
             
@@ -31678,11 +31657,11 @@ namespace grid {
 
             // Compute t9 = outer(S[ancestor], (Sd+psid)[joint])
             // t9[j][k] is stored at t[((j*(j+1)/2) + k)*36]
-            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28*36; i += blockDim.x*blockDim.y){
-                int jid = jids[i / 36];
-                int ancestor_j = ancestors_j[i / 36];
+            for(int i = threadIdx.x + threadIdx.y*blockDim.x; i < 28; i += blockDim.x*blockDim.y){
+                int jid = jids[i];
+                int ancestor_j = ancestors_j[i];
                 int t_idx = t_index_map[jid][ancestor_j]*36;
-                outerProduct<T>(&S[ancestor_j*6], &psid_Sd[jid*6], &t[t_idx], 6, 6, i%36);
+                glass::thread::gemm<T, 6, 6, 1>(static_cast<T>(1), &S[ancestor_j*6], &psid_Sd[jid*6], &t[t_idx]);
             }
             __syncthreads();
             
