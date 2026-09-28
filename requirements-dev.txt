@@ -1,0 +1,10 @@
+# CUDA/Makefile project: Python is for code generation and validation only.
+pytest>=8
+pytest-gpu-proof==0.4.0
+pyyaml>=6
+numpy>=1.26
+sympy>=1.12
+beautifulsoup4>=4.12
+lxml>=5
+# Independent dynamics/kinematics oracle (tooling only, not solver runtime).
+pin==3.8.0

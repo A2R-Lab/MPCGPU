@@ -23,7 +23,8 @@ void loadbdVec(T *s_var,
         // matrix strip multiplies zero; load NEXT into [2*block_dim, 3*block_dim).
         for (unsigned ind = threadIdx.x; ind < block_dim; ind += blockDim.x){
             s_var[ind] = static_cast<T>(0);
-            s_var[ind + 2*block_dim] = *(d_var_b + block_dim + ind);
+            s_var[ind + 2*block_dim] = max_block_id == 0 ? static_cast<T>(0)
+                : *(d_var_b + block_dim + ind);
         }
     }
     else if (block_id == max_block_id){
@@ -53,9 +54,9 @@ void loadbdVec(T *s_var,
 // loadbdVec, every block-row is one uniform full-width matvec — no first/middle/last
 // special-casing:
 //   s_dst(b_dim) = strip(b_dim x 3*b_dim, column-major [L|D|R]) * s_vec(3*b_dim).
-// That is exactly glass::gemv with ROW_MAJOR=false (column-major), which matches the
+// That is exactly glass::block::gemv with ROW_MAJOR=false (column-major), which matches the
 // strip's s_mat[b_dim*c + r] storage. No trailing sync (callers barrier after, as
-// before). GBD-PCG stays the cooperative grid-wide analog of glass::bdmv / glass::pcg
+// before). GBD-PCG stays the cooperative grid-wide analog of glass::block::bdmv / glass::block::pcg
 // (which are single-block); only this in-block matvec primitive is shared with GLASS.
 //
 template <typename T>
@@ -68,17 +69,14 @@ void bdmv(T *s_dst,
           uint32_t block_id)
 {
     (void)max_block_id; (void)block_id;   // boundaries handled by zero-padding now
-    glass::gemv<T, /*TRANSPOSE*/false, /*ROW_MAJOR*/false, /*TRAILING_SYNC*/false>(
+    glass::block::gemv<T, /*TRANSPOSE*/false, /*ROW_MAJOR*/false, /*TRAILING_SYNC*/false>(
         b_dim, 3 * b_dim, static_cast<T>(1), s_mat, s_vec, s_dst);
 }
 
 template <typename T>
 __device__
 void gato_memcpy(T *dst, T *src, unsigned size_Ts){
-	unsigned ind;
-	for(ind=threadIdx.x; ind < size_Ts; ind+=blockDim.x){
-		dst[ind] = src[ind];
-	}
+    glass::block::copy<T>(size_Ts, src, dst);
 }
 
 template <typename T>
@@ -130,13 +128,8 @@ void store_block_bd(uint32_t b_dim, uint32_t m_dim, T *src, T *dst, unsigned col
 
     if(multiplier==1){
 
-        glass::copy<T>(b_dim*b_dim, src, &dst[block_row_offset+block_col_offset]);
+        glass::block::copy<T>(b_dim*b_dim, src, &dst[block_row_offset+block_col_offset]);
 
-        gato_memcpy<T>(
-            dst+block_row_offset+block_col_offset,
-            src,
-            b_dim*b_dim
-        );
 
     }
     else{
@@ -147,4 +140,3 @@ void store_block_bd(uint32_t b_dim, uint32_t m_dim, T *src, T *dst, unsigned col
 
     }
 }
-

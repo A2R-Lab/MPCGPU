@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <cuda_runtime.h>
+#include <stdexcept>
 #include <cooperative_groups.h>
 #include "types.cuh"
 #include "gpuassert.cuh"
@@ -37,7 +38,7 @@ template <typename T>
 size_t pcgSharedMemSize(uint32_t state_size, uint32_t knot_points){
     return sizeof(T) * max(
                         (2*3*state_size*state_size + 
-                        10 * state_size + 
+                        12 * state_size +
                         2*max(state_size, knot_points)),
                         (9 * state_size*state_size));
 }
@@ -47,7 +48,8 @@ template <typename T>
 bool checkPcgOccupancy(void* kernel, dim3 block, uint32_t state_size, uint32_t knot_points){
     
     const uint32_t smem_size = pcgSharedMemSize<T>(state_size, knot_points);
-    int dev = 0;
+    int dev;
+    gpuErrchk(cudaGetDevice(&dev));
     
     cudaDeviceProp deviceProp; 
     cudaGetDeviceProperties(&deviceProp, dev);
@@ -55,8 +57,7 @@ bool checkPcgOccupancy(void* kernel, dim3 block, uint32_t state_size, uint32_t k
     int supportsCoopLaunch = 0; 
     gpuErrchk(cudaDeviceGetAttribute(&supportsCoopLaunch, cudaDevAttrCooperativeLaunch, dev));
     if(!supportsCoopLaunch){
-        printf("[Error] Device does not support Cooperative Threads\n");
-        exit(5);
+        throw std::runtime_error("Device does not support cooperative launch");
     }
     
     int numProcs = deviceProp.multiProcessorCount; 
@@ -64,8 +65,7 @@ bool checkPcgOccupancy(void* kernel, dim3 block, uint32_t state_size, uint32_t k
     gpuErrchk(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocksPerSm, kernel, block.x*block.y*block.z, smem_size));
 
     if((int) knot_points > numProcs*numBlocksPerSm){
-        printf("Too many knot points ([%d]). Device supports [%d] active blocks, over [%d] SMs.\n", knot_points, numProcs*numBlocksPerSm, numProcs);
-        exit(6);
+        throw std::invalid_argument("Knot count exceeds cooperative resident-grid capacity");
     }
 
     return true;
@@ -125,7 +125,7 @@ void pcg(
     bool max_iter_exit = true;
 
     // populate shared memory. Zero the absent L (block 0) / R (last block) strips so
-    // bdmv runs one uniform full-width [L|D|R] matvec (glass::gemv) with no boundary
+    // bdmv runs one uniform full-width [L|D|R] matvec (glass::block::gemv) with no boundary
     // cases — the zeroed strip multiplies the zeroed halo pad slot (see loadbdVec).
     for (unsigned ind = thread_id; ind < 3*states_sq; ind += block_dim){
         if(block_id == 0 && ind < states_sq){ s_S[ind] = static_cast<T>(0); s_Pinv[ind] = static_cast<T>(0); continue; }
@@ -134,7 +134,7 @@ void pcg(
         s_S[ind] = d_S[block_id*states_sq*3 + ind];
         s_Pinv[ind] = d_Pinv[block_id*states_sq*3 + ind];
     }
-    glass::copy<T>(state_size, &d_gamma[block_x_statesize], s_gamma);
+    glass::block::copy<T>(state_size, &d_gamma[block_x_statesize], s_gamma);
 
 
     //
@@ -167,31 +167,31 @@ void pcg(
 
 
     // eta = r * r_tilde  (dot_lowmem leaves s_r_b / s_r_tilde intact; result in s_eta_new_b[0])
-    glass::dot_lowmem<T>(state_size, s_r_b, s_r_tilde, s_eta_new_b);
+    glass::block::dot_lowmem<T>(state_size, s_r_b, s_r_tilde, s_eta_new_b);
     if(thread_id == 0){ d_eta_new_temp[block_id] = s_eta_new_b[0]; }
     grid.sync(); //-------------------------------------
     // cross-block sum: load the per-block partials into shared, then in-place reduce → [0]
-    glass::copy<T>(knot_points, d_eta_new_temp, s_eta_new_b);
+    glass::block::copy<T>(knot_points, d_eta_new_temp, s_eta_new_b);
     __syncthreads();
-    glass::reduce<T>(knot_points, s_eta_new_b);
+    glass::block::reduce<T>(knot_points, s_eta_new_b);
     __syncthreads();
     eta = s_eta_new_b[0];
 
-    // Converged-start / zero-RHS guard (mirrors glass::pcg solve.cuh). If the initial preconditioned
+    // Converged-start / zero-RHS guard (mirrors glass::block::pcg solve.cuh). If the initial preconditioned
     // residual is already below tolerance, lambda (the warm start) IS the solution — skip the loop.
     // Without this, iter 0 computes alpha = eta / (pᵀSp) = 0/0 → NaN whenever the residual starts at
     // ~0: regulation (γ≈0), or any well-tracked warm start (this is the offset-6 NaN on moving refs).
     // All blocks share the grid-reduced eta, so the early return is uniform — no grid.sync mismatch.
-    if(abs(eta) < exit_tol){
+    if(eta == T(0) || abs(eta) < exit_tol){
         if(block_id == 0 && thread_id == 0){ d_iters[0] = 0; d_max_iter_exit[0] = false; }
         __syncthreads();
-        glass::copy<T>(state_size, s_lambda_b, &d_lambda[block_x_statesize]);
+        glass::block::copy<T>(state_size, s_lambda_b, &d_lambda[block_x_statesize]);
         grid.sync();
         return;
     }
 
     // Capture the initial preconditioned residual for the RELATIVE stopping test below.
-    // glass::pcg (the single-block analog) stops on |rho| < abs_tol + rel_tol*|rho_init|;
+    // glass::block::pcg (the single-block analog) stops on |rho| < abs_tol + rel_tol*|rho_init|;
     // GBD-PCG must use the SAME relative criterion or it over-solves: an absolute-only
     // threshold demands |eta_init|/exit_tol orders of reduction, which on a large-RHS
     // (moving-reference) system is thousands of iters vs the ~100-200 a relative test needs.
@@ -202,15 +202,15 @@ void pcg(
     // ||gamma||^2 (cross-block) for the relative true-residual stop test.
     // NOTE: stage a copy so dot_lowmem's x/y args are not aliased (no existing call site
     // passes x==y; do not assume it is supported).
-    glass::copy<T>(state_size, s_gamma, s_upsilon);
+    glass::block::copy<T>(state_size, s_gamma, s_upsilon);
     __syncthreads();
-    glass::dot_lowmem<T>(state_size, s_gamma, s_upsilon, s_v_b);
+    glass::block::dot_lowmem<T>(state_size, s_gamma, s_upsilon, s_v_b);
     __syncthreads();
     if(thread_id == 0){ d_v_temp[block_id] = s_v_b[0]; }
     grid.sync(); //-------------------------------------
-    glass::copy<T>(knot_points, d_v_temp, s_v_b);
+    glass::block::copy<T>(knot_points, d_v_temp, s_v_b);
     __syncthreads();
-    glass::reduce<T>(knot_points, s_v_b);
+    glass::block::reduce<T>(knot_points, s_v_b);
     __syncthreads();
     const T gamma_norm2 = s_v_b[0];
 #endif
@@ -226,13 +226,13 @@ void pcg(
         __syncthreads();
 
         // alpha = eta / (p * upsilon)
-        glass::dot_lowmem<T>(state_size, s_p_b, s_upsilon, s_v_b);
+        glass::block::dot_lowmem<T>(state_size, s_p_b, s_upsilon, s_v_b);
         __syncthreads();
         if(thread_id == 0){ d_v_temp[block_id] = s_v_b[0]; }
         grid.sync(); //-------------------------------------
-        glass::copy<T>(knot_points, d_v_temp, s_v_b);
+        glass::block::copy<T>(knot_points, d_v_temp, s_v_b);
         __syncthreads();
-        glass::reduce<T>(knot_points, s_v_b);
+        glass::block::reduce<T>(knot_points, s_v_b);
         __syncthreads();
         alpha = eta / s_v_b[0];
         // lambda = lambda + alpha * p
@@ -278,15 +278,15 @@ void pcg(
             __syncthreads();
             // stage into s_r_tilde (dead here: recomputed right after this block) to avoid
             // aliased x==y in dot_lowmem
-            glass::copy<T>(state_size, s_upsilon, s_r_tilde);
+            glass::block::copy<T>(state_size, s_upsilon, s_r_tilde);
             __syncthreads();
-            glass::dot_lowmem<T>(state_size, s_upsilon, s_r_tilde, s_v_b);
+            glass::block::dot_lowmem<T>(state_size, s_upsilon, s_r_tilde, s_v_b);
             __syncthreads();
             if(thread_id == 0){ d_v_temp[block_id] = s_v_b[0]; }
             grid.sync(); //-------------------------------------
-            glass::copy<T>(knot_points, d_v_temp, s_v_b);
+            glass::block::copy<T>(knot_points, d_v_temp, s_v_b);
             __syncthreads();
-            glass::reduce<T>(knot_points, s_v_b);
+            glass::block::reduce<T>(knot_points, s_v_b);
             __syncthreads();
             // uniform across blocks (grid-reduced value) => uniform break, no sync mismatch
             if(s_v_b[0] <= rel_tol*rel_tol*gamma_norm2){ iter++; max_iter_exit = false; break; }
@@ -300,15 +300,19 @@ void pcg(
         __syncthreads();
 
         // eta_new = r * r_tilde  (inputs preserved; result in s_eta_new_b[0])
-        glass::dot_lowmem<T>(state_size, s_r_b, s_r_tilde, s_eta_new_b);
+        glass::block::dot_lowmem<T>(state_size, s_r_b, s_r_tilde, s_eta_new_b);
         __syncthreads();
         if(thread_id == 0){ d_eta_new_temp[block_id] = s_eta_new_b[0]; }
         grid.sync(); //-------------------------------------
-        glass::copy<T>(knot_points, d_eta_new_temp, s_eta_new_b);
+        glass::block::copy<T>(knot_points, d_eta_new_temp, s_eta_new_b);
         __syncthreads();
-        glass::reduce<T>(knot_points, s_eta_new_b);
+        glass::block::reduce<T>(knot_points, s_eta_new_b);
         __syncthreads();
         eta_new = s_eta_new_b[0];
+
+        // Exact convergence must not feed 0/0 into the next recurrence,
+        // including when tolerances are zero or true-exit checks are periodic.
+        if (eta_new == T(0)) { iter++; max_iter_exit = false; break; }
 
 #if !PCG_TRUE_EXIT_CHECK_PERIOD
         if(abs(eta_new) < exit_tol + rel_tol * eta_init){ iter++; max_iter_exit = false; break; }
@@ -332,7 +336,7 @@ void pcg(
     if(block_id == 0 && thread_id == 0){ d_iters[0] = iter; d_max_iter_exit[0] = max_iter_exit; }
     
     __syncthreads();
-    glass::copy<T>(state_size, s_lambda_b, &d_lambda[block_x_statesize]);
+    glass::block::copy<T>(state_size, s_lambda_b, &d_lambda[block_x_statesize]);
 
     grid.sync();
 }

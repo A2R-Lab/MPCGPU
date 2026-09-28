@@ -73,11 +73,11 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 #ifdef GATO_REG_PATTERN
             // GATO convention: rho on the POSITION half of Q only; R unregularized.
-            glass::add_identity_partial<T>(state_size, s_Q0, rho, state_size/2);
-            glass::add_identity_partial<T>(state_size, s_QN, rho, state_size/2);
+            glass::block::add_identity_partial<T>(state_size, s_Q0, rho, state_size/2);
+            glass::block::add_identity_partial<T>(state_size, s_QN, rho, state_size/2);
 #else
-            glass::add_identity<T>(state_size, s_Q0, rho);
-            glass::add_identity<T>(state_size, s_QN, rho);
+            glass::block::add_identity<T>(state_size, s_Q0, rho);
+            glass::block::add_identity<T>(state_size, s_QN, rho);
 #endif
             
             __syncthreads();//----------------------------------------------------------------
@@ -89,9 +89,9 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 
             // invert Q_N, Q_0
-            glass::set_identity<T>(state_size, s_Q0_i); glass::set_identity<T>(state_size, s_QN_i);
+            glass::block::set_identity<T>(state_size, s_Q0_i); glass::block::set_identity<T>(state_size, s_QN_i);
             __syncthreads();//----------------------------------------------------------------
-            glass::inv<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
+            glass::block::inv<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
             
             __syncthreads();//----------------------------------------------------------------
 
@@ -101,7 +101,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             
 
             // compute gamma
-            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_gamma_k);
+            glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_gamma_k);
             __syncthreads();//----------------------------------------------------------------
             
             // save -Q0_i in spot 00 in S
@@ -111,7 +111,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 
             // compute Q0^{-1}q0
-            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_Q0);
+            glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_Q0);
             __syncthreads();//----------------------------------------------------------------
 
 
@@ -168,19 +168,19 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
 #ifdef GATO_REG_PATTERN
             // GATO convention: rho on the POSITION half of Q only; R unregularized.
-            glass::add_identity_partial<T>(state_size, s_Qk, rho, state_size/2);
-            glass::add_identity_partial<T>(state_size, s_Qkp1, rho, state_size/2);
+            glass::block::add_identity_partial<T>(state_size, s_Qk, rho, state_size/2);
+            glass::block::add_identity_partial<T>(state_size, s_Qkp1, rho, state_size/2);
             // R unregularized (GATO convention)
 #else
-            glass::add_identity<T>(state_size, s_Qk, rho);
-            glass::add_identity<T>(state_size, s_Qkp1, rho);
-            glass::add_identity<T>(control_size, s_Rk, rho);
+            glass::block::add_identity<T>(state_size, s_Qk, rho);
+            glass::block::add_identity<T>(state_size, s_Qkp1, rho);
+            glass::block::add_identity<T>(control_size, s_Rk, rho);
 #endif
             
             // Invert Q, Qp1, R 
-            glass::set_identity<T>(state_size, s_Qk_i); glass::set_identity<T>(state_size, s_Qkp1_i); glass::set_identity<T>(control_size, s_Rk_i);
+            glass::block::set_identity<T>(state_size, s_Qk_i); glass::block::set_identity<T>(state_size, s_Qkp1_i); glass::block::set_identity<T>(control_size, s_Rk_i);
             __syncthreads();//----------------------------------------------------------------
-            glass::inv<T>( state_size,state_size,control_size,state_size,
+            glass::block::inv<T>( state_size,state_size,control_size,state_size,
                 s_Qk, 
                 s_Qkp1, 
                 s_Rk, 
@@ -213,7 +213,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // Compute -AQ^{-1} in phi
-            glass::gemm<T>(
+            glass::block::gemm<T>(
                 state_size, 
                 state_size, 
                 state_size,
@@ -226,7 +226,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // Compute -BR^{-1} in Qkp1
-            glass::gemm<T>(
+            glass::block::gemm<T>(
                 state_size, 
                 control_size, 
                 control_size,
@@ -239,20 +239,20 @@ void form_schur_qdl_kernel(uint32_t state_size,
             __syncthreads();//----------------------------------------------------------------
 
             // compute Q_{k+1}^{-1}q_{k+1} - IntegratorError in gamma
-            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Qkp1_i, s_qkp1, s_gamma_k);
+            glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Qkp1_i, s_qkp1, s_gamma_k);
             for(unsigned i = threadIdx.x; i < state_size; i += blockDim.x){
                 s_gamma_k[i] -= d_c[(blockrow*state_size)+i];
             }
             __syncthreads();//----------------------------------------------------------------
 
             // compute -AQ^{-1}q for gamma         temp storage in extra temp
-            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_phi_k, s_qk, s_extra_temp);
+            glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_phi_k, s_qk, s_extra_temp);
             
 
             __syncthreads();//----------------------------------------------------------------
             
             // compute -BR^{-1}r for gamma           temp storage in extra temp + states
-            glass::gemv<T, false, false>(state_size, control_size, static_cast<T>(1), s_Qkp1, s_rk, s_extra_temp + state_size);
+            glass::block::gemv<T, false, false>(state_size, control_size, static_cast<T>(1), s_Qkp1, s_rk, s_extra_temp + state_size);
 
             __syncthreads();//----------------------------------------------------------------
             
@@ -264,7 +264,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             // compute A Q^{-1} A^T for theta — TRANSPOSE_B (glass gemm<T,TRANSPOSE_A,TRANSPOSE_B>);
             // gemm<T,true> transposes the wrong operand (see pcg/linsys_setup.cuh for the full note).
-            glass::gemm<T, false, true>(
+            glass::block::gemm<T, false, true>(
                 state_size,
                 state_size,
                 state_size,
@@ -285,7 +285,7 @@ void form_schur_qdl_kernel(uint32_t state_size,
 
             // compute B R^{-1} B^T for theta — TRANSPOSE_B, result state x state contracting over
             // control => gemm<T,false,true>(state, state, control) (n,k were also swapped before).
-            glass::gemm<T, false, true>(
+            glass::block::gemm<T, false, true>(
                 state_size,
                 state_size,
                 control_size,

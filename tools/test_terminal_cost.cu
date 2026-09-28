@@ -2,7 +2,7 @@
 // terminal-reference smem-aliasing bug, fixed in 88c3853).
 // Loads the COMMITTED solve-3000 dump inputs (tools/data/mpc_{xu_pre,goal}.bin — captured
 // 2026-07-07 from a fair-config closed loop, post-fix; run from the repo root), then:
-//   (A) replays gato_plant::trackingCostGradientAndHessian_lastblock exactly as kkt.cuh does;
+//   (A) replays mpcgpu_plant::trackingCostGradientAndHessian_lastblock exactly as kkt.cuh does;
 //   (B) calls trackingCostGradHess directly on (x_63, ref_63) with a fresh arena.
 // Prints s_qkp1 from both. Ground truth = N_COST * J_EEpos^T (p(q63) - ref63) via pinocchio
 // at the CONTACT frame (the URDF's fixed EE joint, +4cm z off L7; GRiD >= e31f7bd includes
@@ -50,7 +50,7 @@ __global__ void lastblock_kernel(T* d_xux, T* d_ref12, T* d_qkp1_out, void* d_dy
     for(int i = threadIdx.x; i < 12; i += blockDim.x) s_eePos_traj[i] = d_ref12[i];
     __syncthreads();
 
-    gato_plant::trackingCostGradientAndHessian_lastblock<T>(
+    mpcgpu_plant::trackingCostGradientAndHessian_lastblock<T>(
         ss, cs, s_xux, s_eePos_traj, /*s_x_goal=*/nullptr,
         s_Qk, s_qk, s_Rk, s_rk, s_Qkp1, s_qkp1, s_extra_temp, d_dynMem);
     __syncthreads();
@@ -72,7 +72,7 @@ __global__ void direct_kernel(T* d_x63, T* d_ref63, T* d_q_out, void* d_dynMem){
     for(int i = threadIdx.x; i < 6; i += blockDim.x) s_ref[i] = d_ref63[i];
     __syncthreads();
 
-    gato_plant::trackingCostGradHess<T>(s_x, s_x, s_ref, /*s_x_goal=*/nullptr,
+    mpcgpu_plant::trackingCostGradHess<T>(s_x, s_x, s_ref, /*s_x_goal=*/nullptr,
         s_Q, s_q, s_R, s_r, s_temp, (const grid::robotModel<T>*)d_dynMem,
         static_cast<T>(Q_COST), static_cast<T>(QD_COST), static_cast<T>(U_COST), static_cast<T>(Q_LIM_COST),
         static_cast<T>(VEL_LIM_COST), static_cast<T>(CTRL_LIM_COST), /*ee_weight=*/static_cast<T>(N_COST));
@@ -90,7 +90,7 @@ __global__ void shifted_kernel(T* d_x63, T* d_ref63, T* d_q_out, void* d_dynMem)
     for(int i = threadIdx.x; i < (int)ss; i += blockDim.x) s_x[i] = d_x63[i];
     for(int i = threadIdx.x; i < 6; i += blockDim.x) s_ref[i] = d_ref63[i];
     __syncthreads();
-    gato_plant::trackingCostGradHess<T>(s_x, s_x, s_ref, nullptr, s_Q, s_q, s_R, s_r, s_temp,
+    mpcgpu_plant::trackingCostGradHess<T>(s_x, s_x, s_ref, nullptr, s_Q, s_q, s_R, s_r, s_temp,
         (const grid::robotModel<T>*)d_dynMem,
         (T)Q_COST, (T)QD_COST, (T)U_COST, (T)Q_LIM_COST, (T)VEL_LIM_COST, (T)CTRL_LIM_COST, (T)N_COST);
     __syncthreads();
@@ -108,12 +108,12 @@ __global__ void seq_kernel(T* d_xux, T* d_ref12, T* d_q_out, void* d_dynMem){
     for(int i = threadIdx.x; i < (int)(2*ss+cs); i += blockDim.x) s_xux[i] = d_xux[i];
     for(int i = threadIdx.x; i < 12; i += blockDim.x) s_ref[i] = d_ref12[i];
     __syncthreads();
-    gato_plant::trackingCostGradHess<T>(s_xux, s_xux + ss, s_ref, nullptr, s_Qk, s_qk, s_Rk, s_rk, s_temp,
+    mpcgpu_plant::trackingCostGradHess<T>(s_xux, s_xux + ss, s_ref, nullptr, s_Qk, s_qk, s_Rk, s_rk, s_temp,
         (const grid::robotModel<T>*)d_dynMem,
         (T)Q_COST, (T)QD_COST, (T)U_COST, (T)Q_LIM_COST, (T)VEL_LIM_COST, (T)CTRL_LIM_COST, (T)EE_COST);
     __syncthreads();
     T *s_xkp1 = s_xux + ss + cs;
-    gato_plant::trackingCostGradHess<T>(s_xkp1, s_xkp1, &s_ref[6], nullptr, s_Qkp1, s_qkp1, s_Rk, s_rk, s_temp,
+    mpcgpu_plant::trackingCostGradHess<T>(s_xkp1, s_xkp1, &s_ref[6], nullptr, s_Qkp1, s_qkp1, s_Rk, s_rk, s_temp,
         (const grid::robotModel<T>*)d_dynMem,
         (T)Q_COST, (T)QD_COST, (T)U_COST, (T)Q_LIM_COST, (T)VEL_LIM_COST, (T)CTRL_LIM_COST, (T)N_COST);
     __syncthreads();
@@ -150,7 +150,7 @@ int main(){
     printf("(A) lastblock  s_qkp1 q-block: ");
     for(int i=0;i<7;i++) printf("% .4f ", (double)outA[i]); printf("\n");
 
-    size_t smemB = sizeof(T)*(ss + 6 + ss*ss + ss + cs*cs + cs) + sizeof(T)*gato_plant::trackingCostGradHess_TempMemCt<T>();
+    size_t smemB = sizeof(T)*(ss + 6 + ss*ss + ss + cs*cs + cs) + sizeof(T)*mpcgpu_plant::trackingCostGradHess_TempMemCt<T>();
     direct_kernel<<<1, KKT_THREADS, smemB>>>(d_x63, d_ref63, d_out, (void*)d_robotModel);
     cudaDeviceSynchronize();
     std::vector<T> outB(ss); cudaMemcpy(outB.data(), d_out, ss*sizeof(T), cudaMemcpyDeviceToHost);

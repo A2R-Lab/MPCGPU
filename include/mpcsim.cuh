@@ -208,7 +208,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 #endif
 
 
-    void *d_dynmem = gato_plant::initializeDynamicsConstMem<T>();
+    void *d_dynmem = mpcgpu_plant::initializeDynamicsConstMem<T>();
 
 
     // temp host memory
@@ -228,10 +228,16 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     pcg_config<T> config;
     config.pcg_block = PCG_NUM_THREADS;
     config.pcg_exit_tol = linsys_exit_tol;   // absolute floor on preconditioned residual eta
-    config.pcg_rel_tol = PCG_RES_TOL;        // relative tol (eta vs eta_init), matches glass::pcg
+    config.pcg_rel_tol = PCG_RES_TOL;        // relative tol (eta vs eta_init), matches glass::block::pcg
     config.pcg_max_iter = PCG_MAX_ITER;
 #endif
 
+    mpcgpu::SqpWorkspace workspace(state_size, control_size, knot_points);
+#ifdef MPCGPU_NO_REUSE
+    mpcgpu::SqpWorkspace* workspace_ptr = nullptr;
+#else
+    auto* workspace_ptr = &workspace;
+#endif
     T rho = RHO_INIT;
     T rho_reset = RHO_INIT;
 
@@ -256,7 +262,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     // zero-control hold diverges on the stiff iiwa. (Previously each warm solve was discarded by resetting
     // d_xu to d_xu_traj — that left tracking starting cold.)
     for(int j = 0; j < 100; j++){
-        sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, RHO_INIT, d_xs_goal);
+        sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, RHO_INIT, d_xs_goal, workspace_ptr);
     }
     rho = RHO_INIT;
     config.pcg_exit_tol = linsys_exit_tol;
@@ -264,7 +270,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     config.pcg_max_iter = PCG_MAX_ITER;
 	#else
     for(int j = 0; j < 100; j++){
-        sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, RHO_INIT, d_xs_goal);
+        sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, RHO_INIT, d_xs_goal, workspace_ptr);
     }
     rho = RHO_INIT;
 	#endif
@@ -294,9 +300,9 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 
 
 #if LINSYS_SOLVE == 1
-        sqp_stats = sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, rho_reset, d_xs_goal);
+        sqp_stats = sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, rho_reset, d_xs_goal, workspace_ptr);
 #else 
-	    sqp_stats = sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, rho_reset, d_xs_goal);
+	    sqp_stats = sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, rho_reset, d_xs_goal, workspace_ptr);
 #endif
 
         cur_linsys_iters = std::get<0>(sqp_stats);
@@ -377,7 +383,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
             {
                 const uint32_t ssc = state_size + control_size;
                 gpuErrchk(cudaMemcpy(&d_xu[(knot_points-1)*ssc], &d_xu[(knot_points-2)*ssc], state_size*sizeof(T), cudaMemcpyDeviceToDevice));
-                const size_t tail_smem = sizeof(T)*(2*state_size + control_size + state_size/2 + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared());
+                const size_t tail_smem = sizeof(T)*(2*state_size + control_size + state_size/2 + mpcgpu_plant::forwardDynamicsAndGradient_TempMemSize_Shared());
                 simple_integrator_kernel<T><<<1,32,tail_smem>>>(state_size, control_size, &d_xu[(knot_points-1)*ssc], &d_xu[(knot_points-2)*ssc+state_size], d_dynmem, timestep);
             }
 #endif
@@ -487,15 +493,25 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 #endif
     
 
+#ifdef MPCGPU_CORRECTNESS
+    uint64_t hash = 14695981039346656037ull;
+    for (const auto& state : tracking_path) for (const T& value : state) {
+        const auto* bytes = reinterpret_cast<const unsigned char*>(&value);
+        for (size_t i=0; i<sizeof(T); ++i) { hash ^= bytes[i]; hash *= 1099511628211ull; }
+    }
+    printf("STATE_HASH %016llx\n", static_cast<unsigned long long>(hash));
+#endif
     grid::end_effector_pose_kernel_EE<T><<<1,128,grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT*sizeof(T)>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
     gpuErrchk(cudaMemcpy(h_eePos, d_eePos, 6*sizeof(T), cudaMemcpyDeviceToHost));
     gpuErrchk(cudaMemcpy(h_eePos_goal, d_eePos_goal, 6*sizeof(T), cudaMemcpyDeviceToHost));
     cur_tracking_error = 0.0;
     for(uint32_t i=0; i < 3; i++){
-        cur_tracking_error += abs(h_eePos[i] - h_eePos_goal[i]);
+        T error = h_eePos[i] - h_eePos_goal[i];
+        cur_tracking_error += error * error;
     }
 
-    gato_plant::freeDynamicsConstMem<T>(d_dynmem);
+    cur_tracking_error = sqrt(cur_tracking_error);
+    mpcgpu_plant::freeDynamicsConstMem<T>(d_dynmem);
 
     gpuErrchk(cudaFree(d_lambda));
     gpuErrchk(cudaFree(d_xu));

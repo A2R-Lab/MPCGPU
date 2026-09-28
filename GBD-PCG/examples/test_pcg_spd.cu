@@ -5,7 +5,7 @@
 // builds a random SYMMETRIC, DIAGONALLY-DOMINANT (hence SPD) block-tridiagonal S in
 // the [L|D|R] strip layout, an IDENTITY preconditioner (-> plain CG), runs the
 // cooperative GBD-PCG solve, and checks the residual ||gamma - S*lambda|| on host.
-// It exercises the bdmv->glass::gemv migration + zero-padded boundaries (block 0 has
+// It exercises the bdmv->glass::block::gemv migration + zero-padded boundaries (block 0 has
 // no L, the last block no R) on every iteration.
 //
 // Build (set the dims to match the kernel template instantiation):

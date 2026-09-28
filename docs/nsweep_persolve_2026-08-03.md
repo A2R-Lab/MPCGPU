@@ -1,3 +1,6 @@
+> Historical checkpoint, not current instructions or candidate performance evidence.
+> See [current documentation](README.md) and [implementation status](implementation-status-2026-09-28.md).
+
 # N-sweep: per-solve cost vs horizon length (2026-08-03)
 
 Modern retest of the MPCGPU paper claim — *"kHz control rates with trajectories as

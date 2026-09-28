@@ -45,8 +45,9 @@ __global__ void k_fk(T* d_ee, const T* d_q, void* d_rm){
 int main(int argc, char** argv){
     using T = float;
     const double dt = TIMESTEP;   // shared with the tracker via settings.cuh
-    const T gravity = gato_plant::GRAVITY<T>();
-    std::string prefix = (argc > 1) ? argv[1] : "examples/trajfiles/0_0";
+    const T gravity = mpcgpu_plant::GRAVITY<T>();
+    if (argc < 2) { fprintf(stderr, "Usage: gen_reference <output-prefix> [amplitude] [period_s]\n"); return 2; }
+    std::string prefix = argv[1];
     double A      = (argc > 2) ? atof(argv[2]) : 0.15;   // EE fig8 amplitude (m)
     double period = (argc > 3) ? atof(argv[3]) : 6.0;    // seconds per fig8 cycle
     double omega  = 2.0 * M_PI / period;

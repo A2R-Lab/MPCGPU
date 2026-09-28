@@ -59,7 +59,7 @@ int main(int argc, char** argv){
     gpuErrchk(cudaMemcpy(d_xsgoal, h_xsgoal.data(), h_xsgoal.size()*sizeof(linsys_t), cudaMemcpyHostToDevice));
 #endif
 
-    void *d_dynmem = gato_plant::initializeDynamicsConstMem<linsys_t>();
+    void *d_dynmem = mpcgpu_plant::initializeDynamicsConstMem<linsys_t>();
     pcg_config<linsys_t> config;
     config.pcg_block = PCG_NUM_THREADS;
     config.pcg_exit_tol = 1e-6; config.pcg_rel_tol = PCG_RES_TOL; config.pcg_max_iter = PCG_MAX_ITER;

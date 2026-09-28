@@ -9,3 +9,6 @@ tmp/
 # receipt tooling venv (test/run_gpu_proof.sh bootstrap)
 .venv/
 __pycache__/
+.pytest_cache/
+build/
+*.build.json

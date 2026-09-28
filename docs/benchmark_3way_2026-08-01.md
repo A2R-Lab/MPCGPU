@@ -1,3 +1,6 @@
+> Historical checkpoint, not current instructions or candidate performance evidence.
+> See [current documentation](README.md) and [implementation status](implementation-status-2026-09-28.md).
+
 # 3-way iiwa14 fig8 benchmark — tracking + isolated per-solve timing (2026-08-01)
 
 Supersedes `benchmark_3way_2026-07-06.md` (kept for the methodology history and

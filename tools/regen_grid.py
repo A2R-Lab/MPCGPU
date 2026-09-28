@@ -1,92 +1,64 @@
 #!/usr/bin/env python3
-"""Regenerate MPCGPU's vendored GRiD CUDA header for iiwa14.
+"""Generate MPCGPU's iiwa14 dynamics from its own URDF and pinned GRiD.
 
-Writes:
-    include/dynamics/iiwa/grid.cuh
-
-Drives the GRiD code generator (vendored at the GRiD submodule) against the
-vendored iiwa14 URDF — no robot_descriptions package needed. Run from the MPCGPU
-repo root:
-
-    python tools/regen_grid.py
-
-Requires the GRiD submodule initialized:
-    git submodule update --init --recursive GRiD
-
-profile="all" is used so the generated header matches GATO's iiwa14 grid.cuh
-byte-for-byte (same robot, same generator, same fixed EE target) — this is the
-URDF-divergence gate, and it guarantees every `*_inner` the plant adapter calls
-(forward_dynamics_inner / minv_inner / inverse_dynamics_inner[_vaf] /
-inverse_dynamics_gradient_inner / end_effector_pose[_gradient]_inner /
-load_update_X{I,matsHom}_helpers) plus grid_plant:: are present. MPCGPU does not
-use GRiD's integrators, but carrying them (unused __device__ code) costs nothing
-and keeps the header identical to GATO's for diffing.
-
-Override the codegen location for an out-of-tree generator (e.g. reuse GATO's):
-    GRID_ROOT=/path/to/GRiD python tools/regen_grid.py
+No sibling checkout, meshes, collision spherization, or runtime download is
+needed. --check regenerates in a temporary directory and compares bytes.
 """
 from __future__ import annotations
 
+import argparse
 import os
 import sys
+import tempfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-GRID_ROOT = Path(os.environ.get("GRID_ROOT", REPO_ROOT / "GRiD")).resolve()
-
-# Prefer the sibling GATO checkout's URDF: it is byte-identical to the vendored
-# tools/iiwa14.urdf BUT sits next to the link STL meshes, which the collision
-# spherization (collision_spec_from_urdf) resolves relative to the URDF file.
-# The lone vendored copy silently degrades the sphere set (meshes unresolvable)
-# and breaks the grid.cuh byte-diff gate vs GATO. Override with GRID_URDF=.
-_GATO_URDF = Path(os.environ.get("GATO_ROOT", REPO_ROOT.parent / "GATO")) \
-    / "examples" / "iiwa_description" / "iiwa14.urdf"
-URDF = Path(os.environ["GRID_URDF"]) if "GRID_URDF" in os.environ else (
-    _GATO_URDF if _GATO_URDF.exists() else REPO_ROOT / "tools" / "iiwa14.urdf")
-OUT = REPO_ROOT / "include" / "dynamics" / "iiwa" / "grid.cuh"
-FIXED_TARGET_NAME = "EE"   # iiwa14 fixed end-effector joint (matches GATO)
-
-# GRiD packaging layout: grid_codegen at the GRiD root, URDFParser under
-# external/ (both importable from a raw checkout; no pip install needed).
-sys.path.insert(0, str(GRID_ROOT))
-sys.path.insert(0, str(GRID_ROOT / "external"))
+ROOT = Path(__file__).resolve().parents[1]
+GRID_ROOT = ROOT / "GRiD"
+URDF = ROOT / "tools/iiwa14.urdf"
+OUT = ROOT / "include/dynamics/iiwa/grid.cuh"
 
 
-def main() -> None:
-    if not (GRID_ROOT / "external" / "URDFParser").exists():
-        sys.exit(f"GRiD not found at {GRID_ROOT}. Run: "
-                 f"git submodule update --init --recursive GRiD "
-                 f"(or set GRID_ROOT=/path/to/GRiD).")
-    if not URDF.exists():
-        sys.exit(f"URDF not found: {URDF}")
-
+def generate(output: Path) -> None:
+    # Freeze emission resource choices independently of shell tuning settings.
+    for key, value in {"GRID_CUDA_TARGET_SHARED_MEM_BYTES": "98304",
+                       "GRID_CUDA_TARGET_LITE_SHARED_MEM_BYTES": "49152",
+                       "GRID_CUDA_SHARED_MEM_TYPE_SIZE_BYTES": "4"}.items():
+        os.environ[key] = value
+    sys.path[:0] = [str(GRID_ROOT), str(GRID_ROOT / "external")]
     from URDFParser import URDFParser
     from grid_codegen.GRiDCodeGenerator import GRiDCodeGenerator
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[iiwa14] parsing {URDF}")
-    robot = URDFParser().parse(str(URDF), floating_base=False)       # fixed base
-    print(f"[iiwa14] EE target joint = '{FIXED_TARGET_NAME}'")
-
-    codegen = GRiDCodeGenerator(robot, DEBUG_MODE=False, NEED_PRINT_MAT=True,
-                                FILE_NAMESPACE="grid")
-    # collision_spec + contact_frames mirror GATO's builder.codegen defaults
-    # (collision_res=0.15, contact_frames=[ee_frame]) — GATO's iiwa14 grid.cuh
-    # bakes the grid_collision namespace + EE wrench map since its CL-2b regen,
-    # and the byte-diff gate (test/test_gates.py::test_grid_cuh_matches_gato)
-    # requires identical codegen inputs. MPCGPU does not call either namespace;
-    # carrying them (unused __device__ code) costs nothing.
-    from grid_codegen.algorithms._collision import collision_spec_from_urdf
-    from grid_codegen.algorithms._f_ext_contact import contact_frames_from_urdf
-    codegen.gen_all_code(
-        include_homogenous_transforms=True,     # required for EE pose + gradient
-        fixed_target_name=FIXED_TARGET_NAME,
+    robot = URDFParser().parse(str(URDF), floating_base=False)
+    generator = GRiDCodeGenerator(robot, DEBUG_MODE=False,
+                                  NEED_PRINT_MAT=True, FILE_NAMESPACE="grid")
+    generator.gen_all_code(
+        include_homogenous_transforms=True,
+        fixed_target_name="EE",
         codegen_profile="all",
-        output_path=str(OUT),
-        collision_spec=collision_spec_from_urdf(robot, str(URDF), resolution=0.15),
-        contact_frames=contact_frames_from_urdf(robot, [FIXED_TARGET_NAME]),
+        algorithm_list=["inverse_dynamics", "minv", "forward_dynamics",
+                        "inverse_dynamics_gradient", "forward_dynamics_gradient",
+                        "end_effector_pose", "end_effector_pose_gradient"],
+        vendor_glass=False,
+        output_path=str(output),
     )
-    print(f"[iiwa14] wrote {OUT}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--output", type=Path, default=OUT)
+    args = parser.parse_args()
+    if args.check:
+        with tempfile.TemporaryDirectory(prefix="mpcgpu-codegen-") as tmp:
+            candidate = Path(tmp) / "grid.cuh"
+            generate(candidate)
+            if candidate.read_bytes() != args.output.read_bytes():
+                sys.exit("Generated header differs: run make regen and review the change")
+        print("PASS reproducible iiwa14 code generation")
+    else:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        generate(args.output)
+        print(f"Generated {args.output}")
 
 
 if __name__ == "__main__":

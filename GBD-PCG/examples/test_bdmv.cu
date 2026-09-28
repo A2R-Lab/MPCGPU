@@ -37,7 +37,8 @@ static inline int sidx(int i,int slot,int r,int c,int d){ return i*3*d*d+slot*d*
 
 int main(int argc, char** argv){
     const int d=STATE_SIZE,N=KNOT_POINTS; const uint32_t ss=d*d;
-    const char* fn = (argc>1)? argv[1] : "/tmp/mpc_S.bin";
+    if (argc != 2) { fprintf(stderr,"Usage: test_bdmv <strip-file>\n"); return 2; }
+    const char* fn = argv[1];
     std::vector<float> h_S(3*ss*N); FILE* f=fopen(fn,"rb"); fread(h_S.data(),4,3*ss*N,f); fclose(f);
     printf("matrix=%s\n", fn);
     std::vector<float> h_p(d*N,1.0f);   // p = ones

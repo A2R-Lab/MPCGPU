@@ -1,5 +1,7 @@
 #pragma once
 #include <vector>
+#include "common/workspace.cuh"
+#include <type_traits>
 #include <numeric>
 #include <algorithm>
 #include <cstdint>
@@ -41,7 +43,8 @@ void qdldl_solve_schur(const QDLDL_int An,
 	//Data for results of A\b
 	QDLDL_float *x = h_lambda;
 
-	QDLDL_factor(An,Ap,Ai,Ax,Lp,Li,Lx,D,Dinv,Lnz,etree,bwork,iwork,fwork);
+	if (QDLDL_factor(An,Ap,Ai,Ax,Lp,Li,Lx,D,Dinv,Lnz,etree,bwork,iwork,fwork) < 0)
+        throw std::runtime_error("QDLDL numerical factorization failed");
 
 	for(i=0;i < Ln; i++) x[i] = b[i];
 
@@ -50,8 +53,21 @@ void qdldl_solve_schur(const QDLDL_int An,
 
 
 template <typename T>
-auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, T &rho, T rho_reset, T *d_xs_goal = nullptr){
+auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, T &rho, T rho_reset, T *d_xs_goal = nullptr, mpcgpu::SqpWorkspace* reuse = nullptr){
+    if (state_size != 14 || control_size != 7 || knot_points != KNOT_POINTS || knot_points < 2)
+        throw std::invalid_argument("MPCGPU requires iiwa14 dimensions and the compiled horizon");
+    struct timespec sqp_solve_start, sqp_solve_end;
+    gpuErrchk(cudaDeviceSynchronize());
+#ifndef MPCGPU_CORRECTNESS
+    clock_gettime(CLOCK_MONOTONIC, &sqp_solve_start);
+#endif
+    std::unique_ptr<mpcgpu::SqpWorkspace> owned;
+    if (!reuse) { owned = std::make_unique<mpcgpu::SqpWorkspace>(state_size, control_size, knot_points); reuse = owned.get(); }
+    auto& workspace = *reuse;
+    workspace.begin(state_size, control_size, knot_points, 1);
+
     
+    static_assert(std::is_same_v<T, QDLDL_float>, "QDLDL and solver precision must match");
     // data storage
     std::vector<int> linsys_iter_vec;
     std::vector<bool> linsys_exit_vec;
@@ -61,9 +77,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 
 
     // sqp timing
-    struct timespec sqp_solve_start, sqp_solve_end;
-    gpuErrchk(cudaDeviceSynchronize());
-    clock_gettime(CLOCK_MONOTONIC, &sqp_solve_start);
+    // Clock starts at entry; fresh workspace construction is part of this call.
 
 
     const uint32_t states_sq = state_size*state_size;
@@ -90,18 +104,8 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     uint32_t line_search_step = 0;
 
 
-    // streams n cublas init
-    cudaStream_t streams[num_alphas];
-    for(uint32_t str = 0; str < num_alphas; str++){
-        cudaStreamCreate(&streams[str]);
-    }
-    gpuErrchk(cudaPeekAtLastError());
-
-    cublasHandle_t handle;
-    if (cublasCreate(&handle) != CUBLAS_STATUS_SUCCESS) { printf ("CUBLAS initialization failed\n"); exit(13); }
-    gpuErrchk(cudaPeekAtLastError());
-
-
+    auto& streams = workspace.streams;
+    auto handle = workspace.handle;
     uint32_t sqp_iter = 0;
 
 
@@ -121,25 +125,25 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     
 
 
-    gpuErrchk(cudaMalloc(&d_G_dense,  KKT_G_DENSE_SIZE_BYTES));
-    gpuErrchk(cudaMalloc(&d_C_dense,  KKT_C_DENSE_SIZE_BYTES));
-    gpuErrchk(cudaMalloc(&d_g,        KKT_g_SIZE_BYTES));
-    gpuErrchk(cudaMalloc(&d_c,        KKT_c_SIZE_BYTES));
+    d_G_dense = workspace.device<T>((KKT_G_DENSE_SIZE_BYTES) / sizeof(T));
+    d_C_dense = workspace.device<T>((KKT_C_DENSE_SIZE_BYTES) / sizeof(T));
+    d_g = workspace.device<T>((KKT_g_SIZE_BYTES) / sizeof(T));
+    d_c = workspace.device<T>((KKT_c_SIZE_BYTES) / sizeof(T));
     d_Ginv_dense = d_G_dense;
 
-    gpuErrchk(cudaMalloc(&d_S, 3*states_sq*knot_points*sizeof(T)));
-    gpuErrchk(cudaMalloc(&d_gamma, state_size*knot_points*sizeof(T)));
+    d_S = workspace.device<T>((3*states_sq*knot_points*sizeof(T)) / sizeof(T));
+    d_gamma = workspace.device<T>((state_size*knot_points*sizeof(T)) / sizeof(T));
     gpuErrchk(cudaPeekAtLastError());
 
     
-    gpuErrchk(cudaMalloc(&d_dz,       DZ_SIZE_BYTES));
-    gpuErrchk(cudaMalloc(&d_xs,       state_size*sizeof(T)));
+    d_dz = workspace.device<T>((DZ_SIZE_BYTES) / sizeof(T));
+    d_xs = workspace.device<T>((state_size*sizeof(T)) / sizeof(T));
     gpuErrchk(cudaMemcpy(d_xs, d_xu,  state_size*sizeof(T), cudaMemcpyDeviceToDevice));
-    gpuErrchk(cudaMalloc(&d_merit_news, 8*sizeof(T)));
-    gpuErrchk(cudaMalloc(&d_merit_temp, 8*knot_points*sizeof(T)));
+    d_merit_news = workspace.device<T>((8*sizeof(T)) / sizeof(T));
+    d_merit_temp = workspace.device<T>((8*knot_points*sizeof(T)) / sizeof(T));
     // linsys iterates
 
-    gpuErrchk(cudaMalloc(&d_merit_initial, sizeof(T)));
+    d_merit_initial = workspace.device<T>((sizeof(T)) / sizeof(T));
     gpuErrchk(cudaMemset(d_merit_initial, 0, sizeof(T)));
     
 
@@ -147,23 +151,25 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
 
     const int nnz = (knot_points-1)*states_sq + knot_points*(((state_size+1)*state_size)/2);
     
-    QDLDL_float h_lambda[state_size*knot_points];
-    QDLDL_float h_gamma[state_size*knot_points];
-    QDLDL_int h_col_ptr[state_size*knot_points+1];
-    QDLDL_int h_row_ind[nnz];
-    QDLDL_float h_val[nnz];
+    QDLDL_float* h_lambda = workspace.host<QDLDL_float>(state_size*knot_points);
+    QDLDL_float* h_gamma = workspace.host<QDLDL_float>(state_size*knot_points);
+    QDLDL_int* h_col_ptr = workspace.host<QDLDL_int>(state_size*knot_points+1);
+    QDLDL_int* h_row_ind = workspace.host<QDLDL_int>(nnz);
+    QDLDL_float* h_val = workspace.host<QDLDL_float>(nnz);
     
     QDLDL_int *d_row_ind, *d_col_ptr;
     QDLDL_float *d_val, *d_lambda_double;
-    gpuErrchk(cudaMalloc(&d_col_ptr, (state_size*knot_points+1)*sizeof(QDLDL_int)));
-    gpuErrchk(cudaMalloc(&d_row_ind, nnz*sizeof(QDLDL_int)));
-	gpuErrchk(cudaMalloc(&d_val, nnz*sizeof(QDLDL_float)));
-	gpuErrchk(cudaMalloc(&d_lambda_double, (state_size*knot_points)*sizeof(QDLDL_float)));
+    d_col_ptr = workspace.device<QDLDL_int>(((state_size*knot_points+1)*sizeof(QDLDL_int)) / sizeof(QDLDL_int));
+    d_row_ind = workspace.device<QDLDL_int>((nnz*sizeof(QDLDL_int)) / sizeof(QDLDL_int));
+	d_val = workspace.device<QDLDL_float>((nnz*sizeof(QDLDL_float)) / sizeof(QDLDL_float));
+	d_lambda_double = workspace.device<QDLDL_float>(((state_size*knot_points)*sizeof(QDLDL_float)) / sizeof(QDLDL_float));
     
     // fill col ptr and row ind, these won't change 
-    prep_csr<<<knot_points, 64>>>(state_size, knot_points, d_col_ptr, d_row_ind);
-    gpuErrchk(cudaMemcpy(h_col_ptr, d_col_ptr, (state_size*knot_points+1)*sizeof(QDLDL_int), cudaMemcpyDeviceToHost));
-    gpuErrchk(cudaMemcpy(h_row_ind, d_row_ind, (nnz)*sizeof(QDLDL_int), cudaMemcpyDeviceToHost));
+    if (!workspace.symbolic_ready) {
+        prep_csr<<<knot_points, 64>>>(state_size, knot_points, d_col_ptr, d_row_ind);
+        gpuErrchk(cudaMemcpy(h_col_ptr, d_col_ptr, (state_size*knot_points+1)*sizeof(QDLDL_int), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(h_row_ind, d_row_ind, nnz*sizeof(QDLDL_int), cudaMemcpyDeviceToHost));
+    }
 
     
     const QDLDL_int An = state_size*knot_points;
@@ -172,30 +178,36 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     QDLDL_int  sumLnz;
     QDLDL_int *etree;
 	QDLDL_int *Lnz;
-    etree = (QDLDL_int*)malloc(sizeof(QDLDL_int)*An);
-	Lnz   = (QDLDL_int*)malloc(sizeof(QDLDL_int)*An);
+    etree = workspace.host<QDLDL_int>(An);
+	Lnz = workspace.host<QDLDL_int>(An);
     
     QDLDL_int *Lp;
 	QDLDL_float *D;
 	QDLDL_float *Dinv;
-    Lp    = (QDLDL_int*)malloc(sizeof(QDLDL_int)*(An+1));
-	D     = (QDLDL_float*)malloc(sizeof(QDLDL_float)*An);
-	Dinv  = (QDLDL_float*)malloc(sizeof(QDLDL_float)*An);
+    Lp = workspace.host<QDLDL_int>((An+1));
+	D = workspace.host<QDLDL_float>(An);
+	Dinv = workspace.host<QDLDL_float>(An);
 
     //working data for factorisation
 	QDLDL_int   *iwork;
 	QDLDL_bool  *bwork;
 	QDLDL_float *fwork;
-    iwork = (QDLDL_int*)malloc(sizeof(QDLDL_int)*(3*An));
-	bwork = (QDLDL_bool*)malloc(sizeof(QDLDL_bool)*An);
-	fwork = (QDLDL_float*)malloc(sizeof(QDLDL_float)*An);
+    iwork = workspace.host<QDLDL_int>((3*An));
+	bwork = workspace.host<QDLDL_bool>(An);
+	fwork = workspace.host<QDLDL_float>(An);
 
-    sumLnz = QDLDL_etree(An,h_col_ptr,h_row_ind,iwork,Lnz,etree);
+    if (!workspace.symbolic_ready) {
+        sumLnz = QDLDL_etree(An,h_col_ptr,h_row_ind,iwork,Lnz,etree);
+        if (sumLnz < 0) throw std::runtime_error("QDLDL symbolic factorization failed");
+        workspace.symbolic_nnz = sumLnz;
+        workspace.symbolic_ready = true;
+    }
+    sumLnz = workspace.symbolic_nnz;
     
     QDLDL_int *Li;
 	QDLDL_float *Lx;
-    Li    = (QDLDL_int*)malloc(sizeof(QDLDL_int)*sumLnz);
-	Lx    = (QDLDL_float*)malloc(sizeof(QDLDL_float)*sumLnz);
+    Li = workspace.host<QDLDL_int>(sumLnz);
+	Lx = workspace.host<QDLDL_float>(sumLnz);
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
@@ -203,7 +215,7 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     struct timespec linsys_start, linsys_end;
     double linsys_time;
 #endif
-#if CONST_UPDATE_FREQ
+#if CONST_UPDATE_FREQ && !defined(MPCGPU_CORRECTNESS)
     struct timespec sqp_cur;
     auto sqpTimecheck = [&]() {
         clock_gettime(CLOCK_MONOTONIC, &sqp_cur);
@@ -405,44 +417,16 @@ auto sqpSolveQdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
     
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
+#ifndef MPCGPU_CORRECTNESS
     clock_gettime(CLOCK_MONOTONIC, &sqp_solve_end);
+#endif
 
-    cublasDestroy(handle);
-
-    for(uint32_t st=0; st < num_alphas; st++){
-        gpuErrchk(cudaStreamDestroy(streams[st]));
-    }
-
-
-
-
-    gpuErrchk(cudaFree(d_merit_initial));
-    gpuErrchk(cudaFree(d_merit_news));
-    gpuErrchk(cudaFree(d_merit_temp));
-    gpuErrchk(cudaFree(d_G_dense));
-    gpuErrchk(cudaFree(d_C_dense));
-    gpuErrchk(cudaFree(d_g));
-    gpuErrchk(cudaFree(d_c));
-    gpuErrchk(cudaFree(d_S));
-    gpuErrchk(cudaFree(d_gamma));
-    gpuErrchk(cudaFree(d_dz));
-    gpuErrchk(cudaFree(d_xs));
-    gpuErrchk(cudaFree(d_col_ptr));
-    gpuErrchk(cudaFree(d_row_ind));
-    gpuErrchk(cudaFree(d_val));
-    gpuErrchk(cudaFree(d_lambda_double));
-	free(etree);
-	free(Lnz);
-    free(Lp);
-	free(D);
-	free(Dinv);
-	free(iwork);
-	free(bwork);
-	free(fwork);
-	free(Li);
-	free(Lx);
-
+    // Ownership stays with the reusable workspace; a local fallback is RAII.
+#ifdef MPCGPU_CORRECTNESS
+    double sqp_solve_time = 0;
+#else
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
+#endif
 
     return std::make_tuple(linsys_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, linsys_exit_vec);
 }

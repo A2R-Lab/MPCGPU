@@ -26,31 +26,31 @@ void compute_dz_kernel(uint32_t state_size, uint32_t control_size, uint32_t knot
             T *s_scratch = s_BkT + states_p_controls;
 
             // load Rkinv from G
-            glass::copy<T>(controls_sq, d_G_dense+set*(states_sq+controls_sq)+states_sq, s_Rk_i);
+            glass::block::copy<T>(controls_sq, d_G_dense+set*(states_sq+controls_sq)+states_sq, s_Rk_i);
 
             // load Bk from C
-            glass::copy<T>(states_p_controls, d_C_dense+set*(states_sq+states_p_controls)+states_sq, s_BkT);
+            glass::block::copy<T>(states_p_controls, d_C_dense+set*(states_sq+states_p_controls)+states_sq, s_BkT);
 
             __syncthreads();
 
             // // compute BkT*lkp1
-            glass::gemv<T, true, false>(state_size, control_size, static_cast<T>(1),
+            glass::block::gemv<T, true, false>(state_size, control_size, static_cast<T>(1),
                     s_BkT, d_lambda+(set+1)*state_size, s_scratch);
             __syncthreads();
 
             // subtract from rk
-            glass::axpby<T>(control_size, static_cast<T>(1), d_g_val+set*(states_s_controls)+state_size,
+            glass::block::axpby<T>(control_size, static_cast<T>(1), d_g_val+set*(states_s_controls)+state_size,
                         static_cast<T>(-1), s_scratch, s_scratch);
             __syncthreads();
 
             // multiply Rk_i*scratch in scratch + C
-            glass::gemv<T, false, false>(control_size, control_size, static_cast<T>(1), s_Rk_i,
+            glass::block::gemv<T, false, false>(control_size, control_size, static_cast<T>(1), s_Rk_i,
                                                             s_scratch,
                                                             s_scratch+control_size);
             __syncthreads();
             
             // store in d_dz
-            glass::copy<T>(control_size, s_scratch+control_size, d_dz+set*(states_s_controls)+state_size);
+            glass::block::copy<T>(control_size, s_scratch+control_size, d_dz+set*(states_s_controls)+state_size);
 
         }
         else{   // state row
@@ -65,16 +65,16 @@ void compute_dz_kernel(uint32_t state_size, uint32_t control_size, uint32_t knot
 
             /// TODO: error check
             // load Qkinv from G
-            glass::copy<T>(states_sq, d_G_dense+set*(states_sq+controls_sq), s_Qk_i);
+            glass::block::copy<T>(states_sq, d_G_dense+set*(states_sq+controls_sq), s_Qk_i);
 
                         ///TODO: linsys solver hasn't been checked with this change
             if(set != knot_points-1){
                 // load Ak from C
-                glass::copy<T>(states_sq, d_C_dense+set*(states_sq+states_p_controls), s_AkT);
+                glass::block::copy<T>(states_sq, d_C_dense+set*(states_sq+states_p_controls), s_AkT);
                 __syncthreads();
                             
                 // // compute AkT*lkp1 in scratch
-                glass::gemv<T, true, false>(state_size, state_size, static_cast<T>(1),
+                glass::block::gemv<T, true, false>(state_size, state_size, static_cast<T>(1),
                         s_AkT, d_lambda+(set+1)*state_size, s_scratch);
                 __syncthreads();
             }
@@ -86,24 +86,24 @@ void compute_dz_kernel(uint32_t state_size, uint32_t control_size, uint32_t knot
             
 
             // add lk to scratch
-            glass::axpby<T>(state_size, static_cast<T>(1), d_lambda+set*state_size,
+            glass::block::axpby<T>(state_size, static_cast<T>(1), d_lambda+set*state_size,
                         static_cast<T>(1), s_scratch, s_scratch);
             __syncthreads();
 
             // subtract from qk in scratch
-            glass::axpby<T>(state_size, static_cast<T>(1), d_g_val+set*(states_s_controls),
+            glass::block::axpby<T>(state_size, static_cast<T>(1), d_g_val+set*(states_s_controls),
                         static_cast<T>(-1), s_scratch, s_scratch);
             __syncthreads();
 
 
             // multiply Qk_i(scratch) in Akt
-            glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Qk_i,
+            glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Qk_i,
                                                         s_scratch,
                                                         s_AkT);
             __syncthreads();
 
             // store in dz
-            glass::copy<T>(state_size, s_AkT, d_dz+set*(states_s_controls));
+            glass::block::copy<T>(state_size, s_AkT, d_dz+set*(states_s_controls));
         }
     }
 }

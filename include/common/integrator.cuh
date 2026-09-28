@@ -168,7 +168,7 @@ void integratorAndGradient(uint32_t state_size, uint32_t control_size, T *s_xux,
     T *s_q = s_xux; 	
     T *s_qd = s_q + state_size/2; 		
     T *s_u = s_qd + state_size/2;
-    gato_plant::forwardDynamicsAndGradient<T>(s_dqdd, s_qdd, s_q, s_qd, s_u, s_extra_temp, d_dynMem_const);
+    mpcgpu_plant::forwardDynamicsAndGradient<T>(s_dqdd, s_qdd, s_q, s_qd, s_u, s_extra_temp, d_dynMem_const);
     block.sync();
     // first compute xnew or error
     if (COMPUTE_INTEGRATOR_ERROR){
@@ -197,7 +197,7 @@ T integratorError(uint32_t state_size, T *s_xuk, T *s_xkp1, T *s_temp, void *d_d
     T *s_qdd = s_temp; 					
     T *s_err = s_qdd + state_size/2;
     T *s_extra_temp = s_err + state_size/2;
-    gato_plant::forwardDynamics<T>(s_qdd, s_q, s_qd, s_u, s_extra_temp, d_dynMem_const, block);
+    mpcgpu_plant::forwardDynamics<T>(s_qdd, s_q, s_qd, s_u, s_extra_temp, d_dynMem_const, block);
     block.sync();
     // if(blockIdx.x == 0 && threadIdx.x==0){
     //     printf("\n");
@@ -212,7 +212,7 @@ T integratorError(uint32_t state_size, T *s_xuk, T *s_xkp1, T *s_temp, void *d_d
     block.sync();
 
     // finish off forming the error
-    glass::reduce<T>(state_size, s_err);
+    glass::block::reduce<T>(state_size, s_err);
     block.sync();
     // if(GATO_LEAD_THREAD){printf("in integratorError with reduced error of [%f]\n",s_err[0]);}
     return s_err[0];
@@ -227,7 +227,7 @@ void integrator(uint32_t state_size, T *s_xkp1, T *s_xuk, T *s_temp, void *d_dyn
     T *s_q = s_xuk; 					T *s_qd = s_q + state_size/2; 				T *s_u = s_qd + state_size/2;
     T *s_qkp1 = s_xkp1; 				T *s_qdkp1 = s_qkp1 + state_size/2;
     T *s_qdd = s_temp; 					T *s_extra_temp = s_qdd + state_size/2;
-    gato_plant::forwardDynamics<T>(s_qdd, s_q, s_qd, s_u, s_extra_temp, d_dynMem_const, block);
+    mpcgpu_plant::forwardDynamics<T>(s_qdd, s_q, s_qd, s_u, s_extra_temp, d_dynMem_const, block);
     block.sync();
     exec_integrator<T,INTEGRATOR_TYPE,ANGLE_WRAP>(state_size, s_qkp1, s_qdkp1, s_q, s_qd, s_qdd, dt, block);
 }
@@ -269,7 +269,7 @@ void integrator_host(uint32_t state_size, uint32_t control_size, T *d_xs, T *d_x
     // gpuErrchk(cudaMemcpy(d_xu + state_size, h_xu + state_size, control_size*sizeof(T), cudaMemcpyHostToDevice));
     //TODO: needs sync?
 
-    const size_t integrator_kernel_smem_size = sizeof(T)*(2*state_size + control_size + state_size/2 + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared());
+    const size_t integrator_kernel_smem_size = sizeof(T)*(2*state_size + control_size + state_size/2 + mpcgpu_plant::forwardDynamicsAndGradient_TempMemSize_Shared());
     //TODO: one block one thread? Why?
     integrator_kernel<T><<<1,1, integrator_kernel_smem_size>>>(state_size, control_size, d_xs, d_xu, d_dynMem_const, dt);
 
@@ -328,7 +328,7 @@ void simple_simulate(uint32_t state_size, uint32_t control_size, uint32_t knot_p
     double sim_time = sim_time_us * 1e-6;
 
     const T sim_step_time = 2e-4;
-    const size_t simple_integrator_kernel_smem_size = sizeof(T)*(2*state_size + control_size + state_size/2 + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared());
+    const size_t simple_integrator_kernel_smem_size = sizeof(T)*(2*state_size + control_size + state_size/2 + mpcgpu_plant::forwardDynamicsAndGradient_TempMemSize_Shared());
     const uint32_t states_s_controls = state_size + control_size;
     uint32_t control_offset = static_cast<uint32_t>((time_offset) / timestep);
     T *control = &d_xu[control_offset * states_s_controls + state_size];

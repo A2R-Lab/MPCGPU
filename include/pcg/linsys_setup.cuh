@@ -97,9 +97,9 @@ void complete_SS_Pinv_blockrow(uint32_t state_size, uint32_t knot_points, T *d_S
     if(blockrow!=0){
 
         // compute left off diag    
-        glass::gemm<T>(state_size, state_size, state_size                           , static_cast<T>(1.0), s_thetaInv_k, s_phi_k, s_scratch);
+        glass::block::gemm<T>(state_size, state_size, state_size                           , static_cast<T>(1.0), s_thetaInv_k, s_phi_k, s_scratch);
         __syncthreads();//----------------------------------------------------------------
-        glass::gemm<T>(state_size, state_size, state_size, static_cast<T>(1.0), s_scratch, s_thetaInv_km1, s_PhiInv_k_L);
+        glass::block::gemm<T>(state_size, state_size, state_size, static_cast<T>(1.0), s_scratch, s_thetaInv_km1, s_PhiInv_k_L);
         __syncthreads();//----------------------------------------------------------------
 
         // store left diagonal in Phi
@@ -118,9 +118,9 @@ void complete_SS_Pinv_blockrow(uint32_t state_size, uint32_t knot_points, T *d_S
     if(blockrow!=lastrow){
 
         // calculate Phi right diag
-        glass::gemm<T>(state_size, state_size, state_size                           , static_cast<T>(1.0), s_thetaInv_k, s_phi_kp1_T, s_scratch);
+        glass::block::gemm<T>(state_size, state_size, state_size                           , static_cast<T>(1.0), s_thetaInv_k, s_phi_kp1_T, s_scratch);
         __syncthreads();//----------------------------------------------------------------
-        glass::gemm<T>(state_size, state_size, state_size, static_cast<T>(1.0), s_scratch, s_thetaInv_kp1, s_PhiInv_k_R);
+        glass::block::gemm<T>(state_size, state_size, state_size, static_cast<T>(1.0), s_scratch, s_thetaInv_kp1, s_PhiInv_k_R);
         __syncthreads();//----------------------------------------------------------------
 
         // store Phi right diag
@@ -170,20 +170,20 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
         __syncthreads();//----------------------------------------------------------------
 
-        glass::copy<T>(state_size*state_size, d_G, s_Q0);
-        glass::copy<T>(state_size*state_size, d_G+(knot_points-1)*(state_size*state_size+control_size*control_size), s_QN);
-        glass::copy<T>(state_size, d_g, s_q0);
-        glass::copy<T>(state_size, d_g+(knot_points-1)*(state_size+control_size), s_qN);
+        glass::block::copy<T>(state_size*state_size, d_G, s_Q0);
+        glass::block::copy<T>(state_size*state_size, d_G+(knot_points-1)*(state_size*state_size+control_size*control_size), s_QN);
+        glass::block::copy<T>(state_size, d_g, s_q0);
+        glass::block::copy<T>(state_size, d_g+(knot_points-1)*(state_size+control_size), s_qN);
 
         __syncthreads();//----------------------------------------------------------------
 
 #ifdef GATO_REG_PATTERN
         // GATO convention: rho on the POSITION half of Q only; R unregularized.
-        glass::add_identity_partial<T>(state_size, s_Q0, rho, state_size/2);
-        glass::add_identity_partial<T>(state_size, s_QN, rho, state_size/2);
+        glass::block::add_identity_partial<T>(state_size, s_Q0, rho, state_size/2);
+        glass::block::add_identity_partial<T>(state_size, s_QN, rho, state_size/2);
 #else
-        glass::add_identity<T>(state_size, s_Q0, rho);
-        glass::add_identity<T>(state_size, s_QN, rho);
+        glass::block::add_identity<T>(state_size, s_Q0, rho);
+        glass::block::add_identity<T>(state_size, s_QN, rho);
 #endif
         // if(PRINT_THREAD){
         //     printf("Q0\n");
@@ -218,9 +218,9 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
 
         // invert Q_N, Q_0
-        glass::set_identity<T>(state_size, s_Q0_i); glass::set_identity<T>(state_size, s_QN_i);
+        glass::block::set_identity<T>(state_size, s_Q0_i); glass::block::set_identity<T>(state_size, s_QN_i);
         __syncthreads();//----------------------------------------------------------------
-        glass::inv<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
+        glass::block::inv<T>( state_size,state_size,state_size,s_Q0, s_QN, s_extra_temp);
         
         __syncthreads();//----------------------------------------------------------------
 
@@ -243,7 +243,7 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         
 
         // compute gamma
-        glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_gamma_k);
+        glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_gamma_k);
         __syncthreads();//----------------------------------------------------------------
         
 
@@ -259,7 +259,7 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
 
         // compute Q0^{-1}q0
-        glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_Q0);
+        glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Q0_i, s_q0, s_Q0);
         __syncthreads();//----------------------------------------------------------------
 
 
@@ -313,26 +313,26 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
         __syncthreads();//----------------------------------------------------------------
 
-        glass::copy<T>(state_size*state_size, d_C+      (blockrow-1)*C_set_size, s_Ak);
-        glass::copy<T>(state_size*control_size, d_C+      (blockrow-1)*C_set_size+state_size*state_size, s_Bk);
-        glass::copy<T>(state_size*state_size, d_G+      (blockrow-1)*G_set_size, s_Qk);
-        glass::copy<T>(state_size*state_size, d_G+    (blockrow*G_set_size), s_Qkp1);
-        glass::copy<T>(control_size*control_size, d_G+      ((blockrow-1)*G_set_size+state_size*state_size), s_Rk);
-        glass::copy<T>(state_size, d_g+      (blockrow-1)*(state_size+control_size), s_qk);
-        glass::copy<T>(state_size, d_g+    (blockrow)*(state_size+control_size), s_qkp1);
-        glass::copy<T>(control_size, d_g+      ((blockrow-1)*(state_size+control_size)+state_size), s_rk);
+        glass::block::copy<T>(state_size*state_size, d_C+      (blockrow-1)*C_set_size, s_Ak);
+        glass::block::copy<T>(state_size*control_size, d_C+      (blockrow-1)*C_set_size+state_size*state_size, s_Bk);
+        glass::block::copy<T>(state_size*state_size, d_G+      (blockrow-1)*G_set_size, s_Qk);
+        glass::block::copy<T>(state_size*state_size, d_G+    (blockrow*G_set_size), s_Qkp1);
+        glass::block::copy<T>(control_size*control_size, d_G+      ((blockrow-1)*G_set_size+state_size*state_size), s_Rk);
+        glass::block::copy<T>(state_size, d_g+      (blockrow-1)*(state_size+control_size), s_qk);
+        glass::block::copy<T>(state_size, d_g+    (blockrow)*(state_size+control_size), s_qkp1);
+        glass::block::copy<T>(control_size, d_g+      ((blockrow-1)*(state_size+control_size)+state_size), s_rk);
 
         __syncthreads();//----------------------------------------------------------------
 
 #ifdef GATO_REG_PATTERN
         // GATO convention: rho on the POSITION half of Q only; R unregularized.
-        glass::add_identity_partial<T>(state_size, s_Qk, rho, state_size/2);
-        glass::add_identity_partial<T>(state_size, s_Qkp1, rho, state_size/2);
+        glass::block::add_identity_partial<T>(state_size, s_Qk, rho, state_size/2);
+        glass::block::add_identity_partial<T>(state_size, s_Qkp1, rho, state_size/2);
         // R unregularized (GATO convention)
 #else
-        glass::add_identity<T>(state_size, s_Qk, rho);
-        glass::add_identity<T>(state_size, s_Qkp1, rho);
-        glass::add_identity<T>(control_size, s_Rk, rho);
+        glass::block::add_identity<T>(state_size, s_Qk, rho);
+        glass::block::add_identity<T>(state_size, s_Qkp1, rho);
+        glass::block::add_identity<T>(control_size, s_Rk, rho);
 #endif
 
 #if DEBUG_MODE    
@@ -359,9 +359,9 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 #endif /* #if DEBUG_MODE */
         
         // Invert Q, Qp1, R 
-        glass::set_identity<T>(state_size, s_Qk_i); glass::set_identity<T>(state_size, s_Qkp1_i); glass::set_identity<T>(control_size, s_Rk_i);
+        glass::block::set_identity<T>(state_size, s_Qk_i); glass::block::set_identity<T>(state_size, s_Qkp1_i); glass::block::set_identity<T>(control_size, s_Rk_i);
         __syncthreads();//----------------------------------------------------------------
-        glass::inv<T>( state_size,state_size,control_size,state_size,
+        glass::block::inv<T>( state_size,state_size,control_size,state_size,
             s_Qk, 
             s_Qkp1, 
             s_Rk, 
@@ -370,14 +370,14 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         __syncthreads();//----------------------------------------------------------------
 
         // save Qk_i into G (now Ginv) for calculating dz
-        glass::copy<T>(state_size*state_size, s_Qk_i, d_G+(blockrow-1)*G_set_size);
+        glass::block::copy<T>(state_size*state_size, s_Qk_i, d_G+(blockrow-1)*G_set_size);
 
         // save Rk_i into G (now Ginv) for calculating dz
-        glass::copy<T>(control_size*control_size, s_Rk_i, d_G+(blockrow-1)*G_set_size+state_size*state_size);
+        glass::block::copy<T>(control_size*control_size, s_Rk_i, d_G+(blockrow-1)*G_set_size+state_size*state_size);
 
         if(blockrow==knot_points-1){
             // save Qkp1_i into G (now Ginv) for calculating dz
-            glass::copy<T>(state_size*state_size, s_Qkp1_i, d_G+(blockrow)*G_set_size);
+            glass::block::copy<T>(state_size*state_size, s_Qkp1_i, d_G+(blockrow)*G_set_size);
         }
         __syncthreads();//----------------------------------------------------------------
 
@@ -396,7 +396,7 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
 
         // Compute -AQ^{-1} in phi
-        glass::gemm<T>(state_size, state_size, state_size, static_cast<T>(1.0), s_Ak, s_Qk_i, s_phi_k);
+        glass::block::gemm<T>(state_size, state_size, state_size, static_cast<T>(1.0), s_Ak, s_Qk_i, s_phi_k);
         // for(int i = threadIdx.x; i < state_size*state_size; i++){
         //     s_phi_k[i] *= -1;
         // }
@@ -404,25 +404,25 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         __syncthreads();//----------------------------------------------------------------
 
         // Compute -BR^{-1} in Qkp1
-        glass::gemm<T>(state_size, control_size, control_size, static_cast<T>(1.0), s_Bk, s_Rk_i, s_Qkp1);
+        glass::block::gemm<T>(state_size, control_size, control_size, static_cast<T>(1.0), s_Bk, s_Rk_i, s_Qkp1);
 
         __syncthreads();//----------------------------------------------------------------
 
         // compute Q_{k+1}^{-1}q_{k+1} - IntegratorError in gamma
-        glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Qkp1_i, s_qkp1, s_gamma_k);
+        glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_Qkp1_i, s_qkp1, s_gamma_k);
         for(unsigned i = threadIdx.x; i < state_size; i += blockDim.x){
             s_gamma_k[i] -= d_c[(blockrow*state_size)+i];
         }
         __syncthreads();//----------------------------------------------------------------
 
         // compute -AQ^{-1}q for gamma         temp storage in extra temp
-        glass::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_phi_k, s_qk, s_extra_temp);
+        glass::block::gemv<T, false, false>(state_size, state_size, static_cast<T>(1), s_phi_k, s_qk, s_extra_temp);
         
 
         __syncthreads();//----------------------------------------------------------------
         
         // compute -BR^{-1}r for gamma           temp storage in extra temp + states
-        glass::gemv<T, false, false>(state_size, control_size, static_cast<T>(1), s_Qkp1, s_rk, s_extra_temp + state_size);
+        glass::block::gemv<T, false, false>(state_size, control_size, static_cast<T>(1), s_Qkp1, s_rk, s_extra_temp + state_size);
 
         __syncthreads();//----------------------------------------------------------------
         
@@ -437,7 +437,7 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         // so this must be gemm<T,false,true> — the old gemm<T,true> transposes the FIRST operand
         // (Q^{-1} A^T @ A), which is the wrong product and left theta asymmetric+wrong (the glass
         // transpose-flag convention changed under the modernization; symmetrizing theta only masked it).
-        glass::gemm<T, false, true>(
+        glass::block::gemm<T, false, true>(
             state_size,
             state_size,
             state_size,
@@ -468,7 +468,7 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         // WRONG operand AND had n,k swapped, so it wrote a state x control slab (contracting over state,
         // reading past B's control columns) and accumulated garbage over the stale Q_{k+1}^{-1} in the
         // scratch — corrupting the dominant (stiff-joint) term of theta. This is THE Schur-formation bug.
-        glass::gemm<T, false, true>(
+        glass::block::gemm<T, false, true>(
             state_size,
             state_size,
             control_size,
@@ -526,12 +526,12 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
         // EE-only cost makes Q^{-1}~1/rho huge and the dynamics (Minv~392) drive theta~1e8, so an
         // unregularized invert overflows to NaN. S already holds the un-regularized theta (stored
         // above), so only the preconditioner inverse sees the +rho; the solved system is unchanged.
-        glass::add_identity_partial<T>(state_size, s_theta_k, rho, state_size/2);
+        glass::block::add_identity_partial<T>(state_size, s_theta_k, rho, state_size/2);
         __syncthreads();//----------------------------------------------------------------
         // invert theta
-        glass::set_identity<T>(state_size, s_thetaInv_k);
+        glass::block::set_identity<T>(state_size, s_thetaInv_k);
         __syncthreads();//----------------------------------------------------------------
-        glass::inv<T>(state_size,s_theta_k, s_extra_temp);
+        glass::block::inv<T>(state_size,s_theta_k, s_extra_temp);
         __syncthreads();//----------------------------------------------------------------
 
 
@@ -556,7 +556,7 @@ void form_S_gamma_and_jacobi_Pinv_blockrow(uint32_t state_size, uint32_t control
 
         // transpose phi_k -> s_Qkp1 (the right off-diagonal of block k-1 must be EXACTLY the transpose of
         // block k's left off-diagonal phi_k, or S is non-symmetric and CG breaks down). The old
-        // glass::gemm<T,true>(I, phi_k) transpose left a ~6% inconsistency; an explicit element transpose
+        // glass::block::gemm<T,true>(I, phi_k) transpose left a ~6% inconsistency; an explicit element transpose
         // is exact. Col-major: dst(c,r) = src(r,c)  =>  s_Qkp1[ind] = s_phi_k[(ind%d)*d + ind/d].
         for(unsigned ind = threadIdx.x; ind < state_size*state_size; ind += blockDim.x){
             s_Qkp1[ind] = s_phi_k[(ind % state_size) * state_size + (ind / state_size)];

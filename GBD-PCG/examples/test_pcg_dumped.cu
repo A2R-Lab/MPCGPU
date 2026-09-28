@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <string>
 #include "gpu_pcg.cuh"
 #include "gpuassert.cuh"
 
@@ -21,11 +22,13 @@ static inline int sidx(int i,int slot,int r,int c,int d){ return i*3*d*d+slot*d*
 
 int main(int argc, char** argv){
     const int d=STATE_SIZE, N=KNOT_POINTS; const uint32_t ss=d*d;
-    float rel = (argc>1)? atof(argv[1]) : 1e-4f;
-    int maxit = (argc>2)? atoi(argv[2]) : 500;
-    auto h_S    = loadbin("/tmp/mpc_S.bin",    3*ss*N);
-    auto h_Pinv = loadbin("/tmp/mpc_Pinv.bin", 3*ss*N);
-    auto h_gamma= loadbin("/tmp/mpc_gamma.bin", d*N);
+    if (argc != 2) { fprintf(stderr,"Usage: test_pcg_dumped <owned-dump-directory>\n"); return 2; }
+    const std::string prefix=std::string(argv[1])+"/";
+    float rel = 1e-5f;
+    int maxit = 500;
+    auto h_S    = loadbin((prefix+"mpc_S.bin").c_str(),    3*ss*N);
+    auto h_Pinv = loadbin((prefix+"mpc_Pinv.bin").c_str(), 3*ss*N);
+    auto h_gamma= loadbin((prefix+"mpc_gamma.bin").c_str(), d*N);
     std::vector<float> h_lambda(d*N,0.0f);
 
     float *d_S,*d_Pinv,*d_gamma,*d_lambda,*d_r,*d_p,*d_v,*d_eta;
@@ -38,7 +41,7 @@ int main(int argc, char** argv){
     gpuErrchk(cudaMemcpy(d_gamma,h_gamma.data(),d*N*sizeof(float),cudaMemcpyHostToDevice));
     gpuErrchk(cudaMemcpy(d_lambda,h_lambda.data(),d*N*sizeof(float),cudaMemcpyHostToDevice));
 
-    pcg_config<float> config; config.pcg_exit_tol=1e-6f; config.pcg_rel_tol=rel; config.pcg_max_iter=maxit;
+    pcg_config<float> config; config.pcg_exit_tol=1e-20f; config.pcg_rel_tol=rel; config.pcg_max_iter=maxit;
     uint32_t iters = solvePCG<float>(d,N,d_S,d_Pinv,d_gamma,d_lambda,d_r,d_p,d_v,d_eta,&config);
     gpuErrchk(cudaMemcpy(h_lambda.data(),d_lambda,d*N*sizeof(float),cudaMemcpyDeviceToHost));
 
@@ -55,5 +58,9 @@ int main(int argc, char** argv){
     }
     printf("GBD-PCG on dumped Schur: iters=%u  ||gamma-S*lambda||/||gamma|| = %.3e  (rel_tol=%.0e maxit=%d)\n",
            iters, std::sqrt(res/(gn+1e-30)), rel, maxit);
+    const double residual=std::sqrt(res/(gn+1e-30));
+    for (auto ptr : {d_S,d_Pinv,d_gamma,d_lambda,d_r,d_p,d_v,d_eta}) cudaFree(ptr);
+    if (!std::isfinite(residual) || residual > 1e-3) return 1;
+    printf("PASS real Schur residual\\n");
     return 0;
 }

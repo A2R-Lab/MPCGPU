@@ -1,11 +1,10 @@
-# pytest-gpu-proof verification policy for MPCGPU.
-#
-# allow_dirty:false is load-bearing: the fingerprint hashes the tracked sources
-# (include/, tools/, examples/, test/, Makefile, GBD-PCG/ — in-tree since the
-# 2026-08 fold) but cannot descend into the GLASS / GRiD / qdldl submodule
-# gitlinks — those are pinned by the parent tree, and a clean tree is what
-# guarantees the receipt's commit SHA faithfully describes the solver + linalg
-# code that was exercised. (Untracked content inside a submodule, or gitignored
-# .exe build debris, does not count as dirty.)
+# Producer and verifier are pinned together at pytest-gpu-proof 0.4.0.
 allow_dirty: false
 max_age_days: 30
+min_schema: 3
+signer_mode: restricted
+allowed_signers: [plancherb1]
+required_fingerprint_paths: [include, tools, examples, test, Makefile, GBD-PCG, GRiD, GLASS, qdldl, pyproject.toml, requirements-dev.txt, .gitmodules, .github, website]
+required_fingerprint_excluded_paths: [gpu-proof.json]
+allow_carried: false
+required_test_manifest: test/expected_tests.txt

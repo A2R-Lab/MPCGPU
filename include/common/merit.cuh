@@ -13,8 +13,8 @@ size_t get_merit_smem_size(uint32_t state_size, uint32_t control_size)
     // value adapter (trackingCostValue_TempMemCt, which includes the EE-pose arena).
     return sizeof(T) * ((6 + 2 * state_size + control_size) +
                         state_size +          // s_x_goal_k: per-knot state goal
-                        max((size_t)(state_size + gato_plant::forwardDynamics_TempMemSize_Shared()),
-                            (size_t)gato_plant::trackingCostValue_TempMemCt<T>()));
+                        max((size_t)(state_size + mpcgpu_plant::forwardDynamics_TempMemSize_Shared()),
+                            (size_t)mpcgpu_plant::trackingCostValue_TempMemCt<T>()));
 }
 
 // cost compute for line search
@@ -63,10 +63,10 @@ void ls_gato_compute_merit(uint32_t state_size,
                 s_eePos_k_traj[i] = d_eePos_traj[knot*6+i];
             }
         }
-        if(d_xs_goal != nullptr){ glass::copy<T>(state_size, &d_xs_goal[knot*state_size], s_x_goal_k); }
+        if(d_xs_goal != nullptr){ glass::block::copy<T>(state_size, &d_xs_goal[knot*state_size], s_x_goal_k); }
         block.sync();
 
-        Jk = gato_plant::trackingcost<T>(state_size, control_size, knot_points, s_xux_k, s_eePos_k_traj, s_x_goal_ptr, s_temp, d_robotModel);
+        Jk = mpcgpu_plant::trackingcost<T>(state_size, control_size, knot_points, s_xux_k, s_eePos_k_traj, s_x_goal_ptr, s_temp, d_robotModel);
         
         block.sync();
         if(knot < knot_points-1){
@@ -78,7 +78,7 @@ void ls_gato_compute_merit(uint32_t state_size,
                 s_temp[i] = abs((d_xu[i] + alpha *d_dz[i]) - d_xs[i]);
             }
             block.sync();
-            glass::reduce<T>(state_size, s_temp);
+            glass::block::reduce<T>(state_size, s_temp);
             block.sync();
             ck = s_temp[0];
         }
@@ -92,7 +92,7 @@ void ls_gato_compute_merit(uint32_t state_size,
     }
     cooperative_groups::this_grid().sync();
     if(block_id == 0){
-        glass::reduce<T>(knot_points, &d_merit_temp[alpha_multiplier*knot_points]);
+        glass::block::reduce<T>(knot_points, &d_merit_temp[alpha_multiplier*knot_points]);
     
         if(thread_id == 0){
             d_merits_out[alpha_multiplier] = d_merit_temp[alpha_multiplier*knot_points];
@@ -130,10 +130,10 @@ void compute_merit(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
                 s_eePos_k_traj[i] = d_eePos_traj[knot*6+i];
             }
         }
-        if(d_xs_goal != nullptr){ glass::copy<T>(state_size, &d_xs_goal[knot*state_size], s_x_goal_k); }
+        if(d_xs_goal != nullptr){ glass::block::copy<T>(state_size, &d_xs_goal[knot*state_size], s_x_goal_k); }
 
         block.sync();
-        Jk = gato_plant::trackingcost<T>(state_size, control_size, knot_points, s_xux_k, s_eePos_k_traj, s_x_goal_ptr, s_temp, d_robotModel);
+        Jk = mpcgpu_plant::trackingcost<T>(state_size, control_size, knot_points, s_xux_k, s_eePos_k_traj, s_x_goal_ptr, s_temp, d_robotModel);
 
 
         block.sync();
@@ -160,7 +160,7 @@ template <typename T>
 __global__
 void reduce_merit(uint32_t knot_points, T *d_merit_temp, T *d_merit_out)
 {
-    glass::reduce<T>(knot_points, d_merit_temp);
+    glass::block::reduce<T>(knot_points, d_merit_temp);
     __syncthreads();
     if(threadIdx.x == 0){ d_merit_out[0] = d_merit_temp[0]; }
 }

@@ -1,48 +1,6 @@
 #!/usr/bin/env bash
-# FAIR 3-way iiwa14 fig8 tracking check (GATO / MPCGPU / BatchThneed) on the IDENTICAL problem:
-#   robot iiwa14 (URDF eeb7d4ff), q0=readyC, EE = grid end_effector_pose = the URDF "EE" fixed
-#   joint (post 2026-07-30 named-target regen; +0.04m beyond L7 — old L7-frame numbers are NOT
-#   comparable), fig8 A=0.15 T=6 centered at EE(q0), warm-start = zero controls, config = SQP=1 /
-#   PCG cap 200 / rho=0.01 / cost EE2 qd1e-2 u2e-6 N50 mu10. Tracking measured (L2) at the EE
-#   frame for all three. NOT a timing run.
-# MPCGPU PCG uses GATO_REG_PATTERN (rho on the position half of Q only, R unregularized —
-#   GATO's convention). Under MPCGPU's historic full-Q+R rho the SAME stair preconditioner
-#   sees cond(Pinv*S)~3e4 (eta-exit lies ~500x -> tracking 0.19 at native exit, or uniform
-#   200 iters forced -> 1.155ms/solve); under GATO's reg cond(Pinv*S)~2e2 and the native
-#   eta-exit is honest: avg ~1 PCG iter/solve, 0.218ms, tracking 0.0315. Benchmark decision
-#   2026-07-07 (supersedes the 07-06 uniform-200 config; that row kept in docs for reference).
-# Usage: tools/run_3way_iiwa.sh [sim_time]   (run from MPCGPU repo root; GPU needed for GATO+MPCGPU)
-set -uo pipefail
-SIM=${1:-6.0}
-MPCGPU=/home/plancher/Desktop/MPCGPU
-GATO=/home/plancher/Desktop/GATO
-GRIDVENV=/home/plancher/Desktop/GRiD/.venv
-PY=$GRIDVENV/bin/python
-LD=$MPCGPU/qdldl/build/out
-CF="--compiler-options -Wall -O3 -DNDEBUG -arch=sm_120 -Iinclude -Iinclude/common -IGRiD/grid_codegen/collision -IGLASS -IGBD-PCG/include -lqdldl -Iqdldl/include -Lqdldl/build/out -lcublas"
-FAIR="-DKNOT_POINTS=64 -DPCG_MAX_ITER=200 -DPCG_RES_TOL=1e-4 -DGATO_REG_PATTERN -DRHO_INIT=0.01 -DSQP_MAX_ITER=1 -DSQP_MAX_TIME_US=100000000"
-
-cd "$MPCGPU" || exit 1
-echo "==================== MPCGPU ===================="
-echo "[build] gen_reference + validate_track (fair flags)"
-nvcc $CF tools/gen_reference.cu   -o tools/gen_reference.exe   || { echo "gen_reference build FAILED"; }
-nvcc $CF $FAIR tools/validate_track.cu -o tools/validate_track.exe || { echo "validate_track build FAILED"; }
-echo "[gen] fig8 A=0.15 T=6 -> examples/trajfiles/0_0 (zero-control warm-start)"
-LD_LIBRARY_PATH=$LD ./tools/gen_reference.exe examples/trajfiles/0_0 0.15 6 | sed 's/^/  /'
-echo "[run] validate_track"
-LD_LIBRARY_PATH=$LD ./tools/validate_track.exe examples/trajfiles/0_0 2>&1 | grep -E "RESULT|trace" | sed 's/^/  MPCGPU /'
-
-echo "==================== GATO ===================="
-PYTHONPATH=$GATO/python timeout 600 "$PY" "$GATO/examples/benchmarks/track_iiwa_fig8_gato.py" "$SIM" 2>&1 \
-  | grep -viE "warn|deprecat" | grep -E "RESULT_GATO|trace|iiwa14 GATO" | sed 's/^/  /'
-
-echo "==================== BatchThneed (CPU) ===================="
-SQPCPU=$GATO/examples/benchmarks/baselines/sqpcpu; PREFIX=$SQPCPU/deps/install
-CMEEL=$GRIDVENV/lib/python3.12/site-packages/cmeel.prefix/lib
-LD_LIBRARY_PATH="$SQPCPU/build:$PREFIX/lib:$CMEEL:${LD_LIBRARY_PATH:-}" \
-PYTHONPATH="$SQPCPU/build:$GATO/python:${PYTHONPATH:-}" \
-  timeout 400 "$PY" "$GATO/examples/benchmarks/baselines/track_iiwa_fig8_bt.py" "$SIM" 2>&1 \
-  | grep -viE "warn|deprecat" | grep -E "RESULT_BT|trace|iiwa14 BatchThneed" | sed 's/^/  /'
-
-echo "==============================================="
-echo "Compare EE_mean/max/final across the three (all track the identical fig8 at the EE frame)."
+# Historical integration entry point: never launch mutable sibling projects.
+set -euo pipefail
+echo 'The old three-project runner is retired. MPCGPU needs no GATO checkout.' >&2
+echo 'Use tools/run_gates.sh for local correctness; see docs/timing.md for timing.' >&2
+exit 2

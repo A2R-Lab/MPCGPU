@@ -17,8 +17,8 @@ size_t get_kkt_smem_size(uint32_t state_size, uint32_t control_size){
                                   3 * control_size +
                                   2*6 +                     // s_eePos_traj: references for knots k AND k+1
                                   state_size*control_size +
-                                  max((state_size/2)*(state_size + control_size + 1) + gato_plant::forwardDynamicsAndGradient_TempMemSize_Shared(),
-                                      controls_sq + control_size + gato_plant::trackingCostGradHess_TempMemCt<T>()));
+                                  max((state_size/2)*(state_size + control_size + 1) + mpcgpu_plant::forwardDynamicsAndGradient_TempMemSize_Shared(),
+                                      controls_sq + control_size + mpcgpu_plant::trackingCostGradHess_TempMemCt<T>()));
 
     return smem_size;
 }
@@ -72,9 +72,9 @@ void generate_kkt_submatrices(uint32_t state_size,
 
     for(unsigned k = block_id; k < knot_points-1; k += num_blocks){
 
-        glass::copy<T>(2*state_size + control_size, &d_xu[k*states_s_controls], s_xux);
-        glass::copy<T>(2 * 6, &d_eePos_traj[k*6], s_eePos_traj);
-        if(d_xs_goal != nullptr){ glass::copy<T>(2*state_size, &d_xs_goal[k*state_size], s_x_goal); }
+        glass::block::copy<T>(2*state_size + control_size, &d_xu[k*states_s_controls], s_xux);
+        glass::block::copy<T>(2 * 6, &d_eePos_traj[k*6], s_eePos_traj);
+        if(d_xs_goal != nullptr){ glass::block::copy<T>(2*state_size, &d_xs_goal[k*state_size], s_x_goal); }
 
         __syncthreads();
 
@@ -100,7 +100,7 @@ void generate_kkt_submatrices(uint32_t state_size,
             );
             __syncthreads();
             
-            gato_plant::trackingCostGradientAndHessian_lastblock<T>(
+            mpcgpu_plant::trackingCostGradientAndHessian_lastblock<T>(
                 state_size,
                 control_size,
                 s_xux,
@@ -120,15 +120,15 @@ void generate_kkt_submatrices(uint32_t state_size,
             for(int i = thread_id; i < state_size; i+=num_threads){
                 d_c[i] = d_xu[i] - d_xs[i];
             }
-            glass::copy<T>(states_sq, s_Qk, &d_G_dense[(states_sq+controls_sq)*k]);
-            glass::copy<T>(controls_sq, s_Rk, &d_G_dense[(states_sq+controls_sq)*k+states_sq]);
-            glass::copy<T>(states_sq, s_Qkp1, &d_G_dense[(states_sq+controls_sq)*(k+1)]);
-            glass::copy<T>(state_size, s_qk, &d_g[states_s_controls*k]);
-            glass::copy<T>(control_size, s_rk, &d_g[states_s_controls*k+state_size]);
-            glass::copy<T>(state_size, s_qkp1, &d_g[states_s_controls*(k+1)]);
-            glass::copy<T>(states_sq, static_cast<T>(-1), s_Ak, &d_C_dense[(states_sq+states_p_controls)*k]);
-            glass::copy<T>(states_p_controls, static_cast<T>(-1), s_Bk, &d_C_dense[(states_sq+states_p_controls)*k+states_sq]);
-            glass::copy<T>(state_size, s_integrator_error, &d_c[state_size*(k+1)]);
+            glass::block::copy<T>(states_sq, s_Qk, &d_G_dense[(states_sq+controls_sq)*k]);
+            glass::block::copy<T>(controls_sq, s_Rk, &d_G_dense[(states_sq+controls_sq)*k+states_sq]);
+            glass::block::copy<T>(states_sq, s_Qkp1, &d_G_dense[(states_sq+controls_sq)*(k+1)]);
+            glass::block::copy<T>(state_size, s_qk, &d_g[states_s_controls*k]);
+            glass::block::copy<T>(control_size, s_rk, &d_g[states_s_controls*k+state_size]);
+            glass::block::copy<T>(state_size, s_qkp1, &d_g[states_s_controls*(k+1)]);
+            glass::block::copy<T>(states_sq, static_cast<T>(-1), s_Ak, &d_C_dense[(states_sq+states_p_controls)*k]);
+            glass::block::copy<T>(states_p_controls, static_cast<T>(-1), s_Bk, &d_C_dense[(states_sq+states_p_controls)*k+states_sq]);
+            glass::block::copy<T>(state_size, s_integrator_error, &d_c[state_size*(k+1)]);
 
         }
         else{                               // not last knot
@@ -153,7 +153,7 @@ void generate_kkt_submatrices(uint32_t state_size,
                                   block);
             __syncthreads();
            
-            gato_plant::trackingCostGradientAndHessian<T>(state_size,
+            mpcgpu_plant::trackingCostGradientAndHessian<T>(state_size,
                                                   control_size,
                                                   s_xux,
                                                   s_eePos_traj,
@@ -166,13 +166,13 @@ void generate_kkt_submatrices(uint32_t state_size,
                                                   d_dynMem_const);
             __syncthreads();
  
-            glass::copy<T>(states_sq, s_Qk, &d_G_dense[(states_sq+controls_sq)*k]);
-            glass::copy<T>(controls_sq, s_Rk, &d_G_dense[(states_sq+controls_sq)*k+states_sq]);
-            glass::copy<T>(state_size, s_qk, &d_g[states_s_controls*k]);
-            glass::copy<T>(control_size, s_rk, &d_g[states_s_controls*k+state_size]);
-            glass::copy<T>(states_sq, static_cast<T>(-1), s_Ak, &d_C_dense[(states_sq+states_p_controls)*k]);
-            glass::copy<T>(states_p_controls, static_cast<T>(-1), s_Bk, &d_C_dense[(states_sq+states_p_controls)*k+states_sq]);
-            glass::copy<T>(state_size, s_integrator_error, &d_c[state_size*(k+1)]);
+            glass::block::copy<T>(states_sq, s_Qk, &d_G_dense[(states_sq+controls_sq)*k]);
+            glass::block::copy<T>(controls_sq, s_Rk, &d_G_dense[(states_sq+controls_sq)*k+states_sq]);
+            glass::block::copy<T>(state_size, s_qk, &d_g[states_s_controls*k]);
+            glass::block::copy<T>(control_size, s_rk, &d_g[states_s_controls*k+state_size]);
+            glass::block::copy<T>(states_sq, static_cast<T>(-1), s_Ak, &d_C_dense[(states_sq+states_p_controls)*k]);
+            glass::block::copy<T>(states_p_controls, static_cast<T>(-1), s_Bk, &d_C_dense[(states_sq+states_p_controls)*k+states_sq]);
+            glass::block::copy<T>(state_size, s_integrator_error, &d_c[state_size*(k+1)]);
         }
     }
 }

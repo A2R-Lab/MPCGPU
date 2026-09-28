@@ -1,3 +1,6 @@
+> Historical checkpoint, not current instructions or candidate performance evidence.
+> See [current documentation](README.md) and [implementation status](implementation-status-2026-09-28.md).
+
 # MPCGPU modernization onto GRiD + GLASS (Part 2 of the A2R-Lab unification)
 
 This documents the rewire of MPCGPU and GBD-PCG (a submodule at the time; folded in-tree 2026-08) to defer dynamics to GRiD (a regenerated

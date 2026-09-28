@@ -5,13 +5,13 @@
 
 // The in-block linear-algebra primitives that used to live here (gato_ATx, gato_vec_dif/sum,
 // mat_vec_prod, add_identity, set_identity, inv) have been migrated to GLASS:
-//   gato_ATx(out,A,x,m,n)        -> glass::gemv<T, /*TRANSPOSE*/true,  /*ROW_MAJOR*/false>(m, n, 1, A, x, out)
-//   mat_vec_prod(r,c,A,x,out)    -> glass::gemv<T, /*TRANSPOSE*/false, /*ROW_MAJOR*/false>(r, c, 1, A, x, out)
-//   gato_vec_dif(out,a,b,n)      -> glass::axpby(n, 1, a, -1, b, out)
-//   gato_vec_sum(out,a,b,n)      -> glass::axpby(n, 1, a,  1, b, out)
-//   add_identity(A,dim,f)        -> glass::add_identity(dim, A, f)             (arg reorder)
-//   set_identity(dim,A)          -> glass::set_identity(dim, A)        (fused multi-matrix -> N calls)
-//   inv(...)            -> glass::inv(...)           (identical signatures)
+//   gato_ATx(out,A,x,m,n)        -> glass::block::gemv<T, /*TRANSPOSE*/true,  /*ROW_MAJOR*/false>(m, n, 1, A, x, out)
+//   mat_vec_prod(r,c,A,x,out)    -> glass::block::gemv<T, /*TRANSPOSE*/false, /*ROW_MAJOR*/false>(r, c, 1, A, x, out)
+//   gato_vec_dif(out,a,b,n)      -> glass::block::axpby(n, 1, a, -1, b, out)
+//   gato_vec_sum(out,a,b,n)      -> glass::block::axpby(n, 1, a,  1, b, out)
+//   add_identity(A,dim,f)        -> glass::block::add_identity(dim, A, f)             (arg reorder)
+//   set_identity(dim,A)          -> glass::block::set_identity(dim, A)        (fused multi-matrix -> N calls)
+//   inv(...)            -> glass::block::inv(...)           (identical signatures)
 // All replacements were validated bit-exact against the hand-rolled versions. Only the host-side
 // debug dumper is kept here.
 
