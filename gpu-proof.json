@@ -1,106 +1,690 @@
 {
   "environment": {
     "gpu_info": {
-      "driver_version": "610.43.02",
-      "memory": "32607 MiB",
-      "name": "NVIDIA GeForce RTX 5090"
+      "cuda_visible_devices": null,
+      "devices": [
+        {
+          "compute_capability": "12.0",
+          "driver_version": "615.71.09",
+          "index": "0",
+          "memory": "32607 MiB",
+          "name": "NVIDIA GeForce RTX 5090",
+          "uuid": "GPU-bf781ab0-9632-4b9a-497b-c3b846aae70c"
+        }
+      ]
     },
-    "platform": "linux",
-    "plugin_version": "0.1.0",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "plugin_version": "0.4.0",
     "pytest_version": "9.1.1",
     "python_version": "3.12.3"
   },
   "fingerprint": {
-    "algorithm": "sha256",
-    "digest": "2084b41f940d61d423a17039003bfb2f337281d26760b1bc37660a254de71dcc",
-    "file_count": 78,
+    "algorithm": "sha256-manifest-v2",
+    "digest": "2b27e1cd3c288361daac39e51c404ea25e2ba707b32a63c760f83df537c60735",
+    "excluded_paths": [
+      "gpu-proof.json"
+    ],
+    "extra_paths": [],
+    "file_count": 103,
     "included_paths": [
+      ".github",
+      ".gitmodules",
       "GBD-PCG",
+      "GLASS",
+      "GRiD",
       "Makefile",
       "examples",
       "include",
+      "pyproject.toml",
+      "qdldl",
+      "requirements-dev.txt",
       "test",
-      "tools"
+      "tools",
+      "website"
     ]
   },
   "mode": "local",
   "repo": {
     "branch": "modernize-grid-glass",
-    "commit_sha": "9493e25a589113523052fc04b6e3f048e3159fb9",
+    "commit_sha": "0e2550fa8336e98a6dff18c623664293f1367044",
     "dirty": false,
     "github_username": "plancherb1",
     "remote_url": "git@github.com:A2R-Lab/MPCGPU.git"
   },
-  "schema_version": "1",
+  "schema_version": "3",
   "session": {
-    "ended_at": "2026-08-03T01:22:07Z",
+    "ended_at": "2026-09-28T20:52:37Z",
     "node_ids": [
-      "test/test_gates.py::test_gate[single_cost_test]",
-      "test/test_gates.py::test_gate[test_terminal_cost]",
-      "test/test_gates.py::test_gate[validate_track_pcg]",
-      "test/test_gates.py::test_gate[validate_track_qdldl]",
-      "test/test_gates.py::test_gate_runner_exit",
+      "test/test_gates.py::test_single_cost",
+      "test/test_gates.py::test_terminal_cost",
+      "test/test_gates.py::test_tracking[pcg]",
+      "test/test_gates.py::test_tracking[qdldl]",
       "test/test_gates.py::test_fd_parity",
-      "test/test_gates.py::test_grid_cuh_matches_gato",
-      "test/test_gates.py::test_gbdpcg_gates"
+      "test/test_gates.py::test_gbd_spd[dims0]",
+      "test/test_gates.py::test_gbd_spd[dims1]",
+      "test/test_gates.py::test_gbd_spd[dims2]",
+      "test/test_gates.py::test_gbd_api[host-dims0-float]",
+      "test/test_gates.py::test_gbd_api[host-dims1-float]",
+      "test/test_gates.py::test_gbd_api[host-dims2-float]",
+      "test/test_gates.py::test_gbd_api[host-dims3-float]",
+      "test/test_gates.py::test_gbd_api[host-dims4-double]",
+      "test/test_gates.py::test_gbd_api[device-dims0-float]",
+      "test/test_gates.py::test_gbd_api[device-dims1-float]",
+      "test/test_gates.py::test_gbd_api[device-dims2-float]",
+      "test/test_gates.py::test_gbd_api[device-dims3-float]",
+      "test/test_gates.py::test_gbd_api[device-dims4-double]",
+      "test/test_gates.py::test_gbd_api[zero-dims0-float]",
+      "test/test_gates.py::test_gbd_api[zero-dims1-float]",
+      "test/test_gates.py::test_gbd_api[zero-dims2-float]",
+      "test/test_gates.py::test_gbd_api[zero-dims3-float]",
+      "test/test_gates.py::test_gbd_api[zero-dims4-double]",
+      "test/test_gates.py::test_gbd_api[zero-exact-dims0-float]",
+      "test/test_gates.py::test_gbd_api[zero-exact-dims1-float]",
+      "test/test_gates.py::test_gbd_api[zero-exact-dims2-float]",
+      "test/test_gates.py::test_gbd_api[zero-exact-dims3-float]",
+      "test/test_gates.py::test_gbd_api[zero-exact-dims4-double]",
+      "test/test_gates.py::test_gbd_api[warm-dims0-float]",
+      "test/test_gates.py::test_gbd_api[warm-dims1-float]",
+      "test/test_gates.py::test_gbd_api[warm-dims2-float]",
+      "test/test_gates.py::test_gbd_api[warm-dims3-float]",
+      "test/test_gates.py::test_gbd_api[warm-dims4-double]",
+      "test/test_gates.py::test_gbd_api[cap-dims0-float]",
+      "test/test_gates.py::test_gbd_api[cap-dims1-float]",
+      "test/test_gates.py::test_gbd_api[cap-dims2-float]",
+      "test/test_gates.py::test_gbd_api[cap-dims3-float]",
+      "test/test_gates.py::test_gbd_api[cap-dims4-double]",
+      "test/test_gates.py::test_gbd_api[invalid-dims0-float]",
+      "test/test_gates.py::test_gbd_api[invalid-dims1-float]",
+      "test/test_gates.py::test_gbd_api[invalid-dims2-float]",
+      "test/test_gates.py::test_gbd_api[invalid-dims3-float]",
+      "test/test_gates.py::test_gbd_api[invalid-dims4-double]",
+      "test/test_gates.py::test_gbd_matvec",
+      "test/test_gates.py::test_workspace_tracking_parity[pcg]",
+      "test/test_gates.py::test_workspace_tracking_parity[qdldl]",
+      "test/test_gates.py::test_workspace_contract",
+      "test/test_gates.py::test_independent_model_oracle",
+      "test/test_gates.py::test_gbd_residual_modes[-DPCG_TRUE_EXIT_CHECK_PERIOD=2]",
+      "test/test_gates.py::test_gbd_residual_modes[-DPCG_RESIDUAL_REPLACE_PERIOD=2]",
+      "test/test_gates.py::test_real_schur_fixture",
+      "test/test_host.py::test_codegen_reproducible",
+      "test/test_host.py::test_dependency_pins",
+      "test/test_host.py::test_receipt_policy",
+      "test/test_host.py::test_trajectory_validation[valid]",
+      "test/test_host.py::test_trajectory_validation[missing]",
+      "test/test_host.py::test_trajectory_validation[empty]",
+      "test/test_host.py::test_trajectory_validation[ragged]",
+      "test/test_host.py::test_trajectory_validation[nan]",
+      "test/test_host.py::test_trajectory_validation[inf]",
+      "test/test_host.py::test_trajectory_validation[short]",
+      "test/test_host.py::test_trajectory_validation[mismatch]",
+      "test/test_host.py::test_trajectory_validation[trailing]",
+      "test/test_host.py::test_trajectory_validation[garbage]",
+      "test/test_host.py::test_builder_configuration_cache",
+      "test/test_host.py::test_receipt_refuses_partial_collection",
+      "test/test_host.py::test_expected_collection_manifest",
+      "test/test_host.py::test_website_local_links_and_assets",
+      "test/test_timing.py::test_timing_metrics[none]",
+      "test/test_timing.py::test_timing_metrics[nan]",
+      "test/test_timing.py::test_timing_metrics[short]",
+      "test/test_timing.py::test_timing_metrics[missing]",
+      "test/test_timing.py::test_timing_metrics[divergent]",
+      "test/test_timing.py::test_dry_run_and_authorization",
+      "test/test_timing.py::test_binary_tamper",
+      "test/test_timing.py::test_qdldl_empty_pcg_metrics"
     ],
-    "started_at": "2026-08-03T01:21:13Z"
+    "outcome": "passed",
+    "pytest_args": [
+      "test/",
+      "-q",
+      "--gpu-proof-enable",
+      "--gpu-proof-out",
+      "gpu-proof.json",
+      "--gpu-proof-github-user",
+      "plancherb1"
+    ],
+    "started_at": "2026-09-28T20:50:15Z"
   },
   "signature": {
+    "value": "nIo5fOcDab6LgEqXwqu1GSI/3emNTQqv9EJMDyS79pLp86Lh4RBo3PDsUsDL7c2begeazYsrHOJWJFaZi5DDCg=="
+  },
+  "signer": {
     "algorithm": "ed25519",
     "backend": "ssh-local",
-    "key_fingerprint": "SHA256:hfyUcDJTDLry3j7nJ9V2X8iEIgNFmFJQKGQirOdyWtY",
-    "signer": "plancherb1",
-    "value": "cF7DSCK68Qbxc0dY4/xPAqrhFKBDATdAUkJ5YbmWpOe5RYF6cXZ3qC+qI1TJyjSNvrEucb5QQIMJlJn6oXlfBg=="
+    "github_user": "plancherb1",
+    "key_fingerprint": "SHA256:hfyUcDJTDLry3j7nJ9V2X8iEIgNFmFJQKGQirOdyWtY"
   },
   "tests": [
     {
       "checks": [],
-      "duration_s": 0.0002,
-      "node_id": "test/test_gates.py::test_gate[single_cost_test]",
-      "outcome": "passed"
+      "duration_s": 9.9752,
+      "node_id": "test/test_gates.py::test_single_cost",
+      "outcome": "passed",
+      "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0001,
-      "node_id": "test/test_gates.py::test_gate[test_terminal_cost]",
-      "outcome": "passed"
+      "duration_s": 4.0981,
+      "node_id": "test/test_gates.py::test_terminal_cost",
+      "outcome": "passed",
+      "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0001,
-      "node_id": "test/test_gates.py::test_gate[validate_track_pcg]",
-      "outcome": "passed"
+      "duration_s": 13.8654,
+      "node_id": "test/test_gates.py::test_tracking[pcg]",
+      "outcome": "passed",
+      "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0001,
-      "node_id": "test/test_gates.py::test_gate[validate_track_qdldl]",
-      "outcome": "passed"
+      "duration_s": 14.0583,
+      "node_id": "test/test_gates.py::test_tracking[qdldl]",
+      "outcome": "passed",
+      "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0,
-      "node_id": "test/test_gates.py::test_gate_runner_exit",
-      "outcome": "passed"
-    },
-    {
-      "checks": [],
-      "duration_s": 3.6877,
+      "duration_s": 3.8605,
       "node_id": "test/test_gates.py::test_fd_parity",
-      "outcome": "passed"
+      "outcome": "passed",
+      "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0024,
-      "node_id": "test/test_gates.py::test_grid_cuh_matches_gato",
-      "outcome": "passed"
+      "duration_s": 2.3636,
+      "node_id": "test/test_gates.py::test_gbd_spd[dims0]",
+      "outcome": "passed",
+      "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 8.8211,
-      "node_id": "test/test_gates.py::test_gbdpcg_gates",
-      "outcome": "passed"
+      "duration_s": 2.5183,
+      "node_id": "test/test_gates.py::test_gbd_spd[dims1]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 2.5984,
+      "node_id": "test/test_gates.py::test_gbd_spd[dims2]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 2.3547,
+      "node_id": "test/test_gates.py::test_gbd_api[host-dims0-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 2.6283,
+      "node_id": "test/test_gates.py::test_gbd_api[host-dims1-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 2.5647,
+      "node_id": "test/test_gates.py::test_gbd_api[host-dims2-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 2.7938,
+      "node_id": "test/test_gates.py::test_gbd_api[host-dims3-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 2.5574,
+      "node_id": "test/test_gates.py::test_gbd_api[host-dims4-double]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.241,
+      "node_id": "test/test_gates.py::test_gbd_api[device-dims0-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2918,
+      "node_id": "test/test_gates.py::test_gbd_api[device-dims1-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2916,
+      "node_id": "test/test_gates.py::test_gbd_api[device-dims2-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2946,
+      "node_id": "test/test_gates.py::test_gbd_api[device-dims3-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2411,
+      "node_id": "test/test_gates.py::test_gbd_api[device-dims4-double]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2408,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-dims0-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2406,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-dims1-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2387,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-dims2-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2411,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-dims3-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2886,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-dims4-double]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2404,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims0-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2895,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims1-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2933,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims2-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2917,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims3-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2404,
+      "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims4-double]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2899,
+      "node_id": "test/test_gates.py::test_gbd_api[warm-dims0-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2398,
+      "node_id": "test/test_gates.py::test_gbd_api[warm-dims1-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2415,
+      "node_id": "test/test_gates.py::test_gbd_api[warm-dims2-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.291,
+      "node_id": "test/test_gates.py::test_gbd_api[warm-dims3-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2911,
+      "node_id": "test/test_gates.py::test_gbd_api[warm-dims4-double]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2391,
+      "node_id": "test/test_gates.py::test_gbd_api[cap-dims0-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2399,
+      "node_id": "test/test_gates.py::test_gbd_api[cap-dims1-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2395,
+      "node_id": "test/test_gates.py::test_gbd_api[cap-dims2-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2405,
+      "node_id": "test/test_gates.py::test_gbd_api[cap-dims3-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.2885,
+      "node_id": "test/test_gates.py::test_gbd_api[cap-dims4-double]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0018,
+      "node_id": "test/test_gates.py::test_gbd_api[invalid-dims0-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0014,
+      "node_id": "test/test_gates.py::test_gbd_api[invalid-dims1-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0012,
+      "node_id": "test/test_gates.py::test_gbd_api[invalid-dims2-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0011,
+      "node_id": "test/test_gates.py::test_gbd_api[invalid-dims3-float]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0011,
+      "node_id": "test/test_gates.py::test_gbd_api[invalid-dims4-double]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 2.1685,
+      "node_id": "test/test_gates.py::test_gbd_matvec",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 17.537,
+      "node_id": "test/test_gates.py::test_workspace_tracking_parity[pcg]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 18.8454,
+      "node_id": "test/test_gates.py::test_workspace_tracking_parity[qdldl]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 1.6562,
+      "node_id": "test/test_gates.py::test_workspace_contract",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 5.1299,
+      "node_id": "test/test_gates.py::test_independent_model_oracle",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 3.05,
+      "node_id": "test/test_gates.py::test_gbd_residual_modes[-DPCG_TRUE_EXIT_CHECK_PERIOD=2]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 2.9528,
+      "node_id": "test/test_gates.py::test_gbd_residual_modes[-DPCG_RESIDUAL_REPLACE_PERIOD=2]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 16.6531,
+      "node_id": "test/test_gates.py::test_real_schur_fixture",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.5588,
+      "node_id": "test/test_host.py::test_codegen_reproducible",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0037,
+      "node_id": "test/test_host.py::test_dependency_pins",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0008,
+      "node_id": "test/test_host.py::test_receipt_policy",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0015,
+      "node_id": "test/test_host.py::test_trajectory_validation[valid]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0011,
+      "node_id": "test/test_host.py::test_trajectory_validation[missing]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0011,
+      "node_id": "test/test_host.py::test_trajectory_validation[empty]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.001,
+      "node_id": "test/test_host.py::test_trajectory_validation[ragged]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0009,
+      "node_id": "test/test_host.py::test_trajectory_validation[nan]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.001,
+      "node_id": "test/test_host.py::test_trajectory_validation[inf]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0011,
+      "node_id": "test/test_host.py::test_trajectory_validation[short]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0011,
+      "node_id": "test/test_host.py::test_trajectory_validation[mismatch]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.001,
+      "node_id": "test/test_host.py::test_trajectory_validation[trailing]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.001,
+      "node_id": "test/test_host.py::test_trajectory_validation[garbage]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0034,
+      "node_id": "test/test_host.py::test_builder_configuration_cache",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0022,
+      "node_id": "test/test_host.py::test_receipt_refuses_partial_collection",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.184,
+      "node_id": "test/test_host.py::test_expected_collection_manifest",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0234,
+      "node_id": "test/test_host.py::test_website_local_links_and_assets",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0004,
+      "node_id": "test/test_timing.py::test_timing_metrics[none]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0002,
+      "node_id": "test/test_timing.py::test_timing_metrics[nan]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0002,
+      "node_id": "test/test_timing.py::test_timing_metrics[short]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0002,
+      "node_id": "test/test_timing.py::test_timing_metrics[missing]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0001,
+      "node_id": "test/test_timing.py::test_timing_metrics[divergent]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0002,
+      "node_id": "test/test_timing.py::test_dry_run_and_authorization",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0002,
+      "node_id": "test/test_timing.py::test_binary_tamper",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0002,
+      "node_id": "test/test_timing.py::test_qdldl_empty_pcg_metrics",
+      "outcome": "passed",
+      "phase": "call"
     }
   ]
 }
