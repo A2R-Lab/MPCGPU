@@ -52,8 +52,9 @@ Intermediate evidence (not the final signed receipt):
   device memcheck, zero reported errors/hazards. Broader exhaustive sanitizer
   coverage is not claimed.
 - Full inventory: 76 tests (51 GPU, 25 host/harness), all passed. One upstream
-  hppfcl-to-coal deprecation warning, no skips. Source commit 0e2550f;
-  signed schema-3 receipt commit 6b973de verified against public signing keys,
+  hppfcl-to-coal deprecation warning, no skips. Core source commit 0e2550f,
+  final Make override regression fix f61d1ec; signed schema-3 receipt c5cff26
+  (attesting f61d1ec) verified against public signing keys,
   exact source/dependency fingerprint, ancestry and complete node manifest.
 - Isolated candidate clone at /tmp/mpcgpu-clean-Emt4eh/repo: recursive public
   HTTPS submodules fetched with global/system Git configuration and credential
@@ -65,6 +66,21 @@ Intermediate evidence (not the final signed receipt):
 - Current workspace memcheck and model-oracle initcheck: zero errors.
   Source build warnings remain for unused correctness-profile timer variables
   and a feature-gated goal pointer; no warnings were suppressed to pass gates.
+- Additional timer-disabled correctness passes completed both backends at
+  N=32/128/256/512 (N=64 was already in the signed suite). Every point returned
+  1202 offsets and finite tracking. Supplementary log:
+  /tmp/mpcgpu-horizon-correctness-20260928.log.
+
+| Horizon | PCG mean L2 EE error (m) | QDLDL mean L2 EE error (m) |
+| --- | ---: | ---: |
+| 32 | 0.027370 | 0.027527 |
+| 64 | 0.028717 | 0.029387 |
+| 128 | 0.030148 | 0.030208 |
+| 256 | 0.030290 | 0.030329 |
+| 512 | 0.030330 | 0.030322 |
+
+These are figure-eight correctness observations, not timing or paper-reproduction
+results. Pinocchio is test-only; it does not link into either native solver.
 
 Local evidence logs are /tmp/mpcgpu-*-20260928.log. The signed gpu-proof.json,
 once refreshed, is the portable clean-source record; temporary logs are not.
@@ -88,7 +104,11 @@ once refreshed, is the portable clean-source record; temporary logs are not.
 
 ## Next checkpoint
 
-Clean-source receipt/fresh-clone checks are complete. Prepare immutable timing
-binaries and dry-run the handoff. Then stop at timing-ready. Reserve 30–45 minutes for
-runtime collection, optional separately prepared compile timing 15–30 minutes.
-Only after analysis should new speed claims or website result panels be added.
+**Locally timing-ready.** Clean-source receipt/fresh-clone checks are complete.
+All 20 immutable timing binaries are prepared under
+tmp/timing-prepared/candidate-20260928; dry-run validated the 60-repeat plan.
+The runtime batch was not executed. See [coordinator handoff](HANDOFF_codex_2026-09-28.md).
+Reserve 30–45 minutes for runtime collection; optional compile timing requires
+a separate prepared leg and 15–30 minutes. Only after analysis should new speed
+claims or website result panels be added. Push/remote CI, merge and publication
+are still pending their validation/authorization. All owned workers are stopped.

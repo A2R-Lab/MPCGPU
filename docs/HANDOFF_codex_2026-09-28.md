@@ -14,7 +14,8 @@ deployment and old-GBD remote archival remain separate decisions.
 
 ## Verified candidate
 
-- Branch: modernize-grid-glass. Source 0e2550f; receipt 6b973de.
+- Branch: modernize-grid-glass. Core source 0e2550f, final build fix f61d1ec;
+  current verified receipt c5cff26 (attests f61d1ec).
 - GRiD 65fd051, GLASS 8ce68a2, QDLDL df48100; proof tooling 0.4.0.
 - Full clean-source suite: 76 passed, zero skipped; signed schema-3 receipt
   verified. The Pinocchio dependency emits one upstream deprecation warning.
@@ -24,6 +25,13 @@ deployment and old-GBD remote archival remain separate decisions.
   deterministic real-Schur replay, small-dimension API and sanitizer gates pass.
 - Website draft: website/index.html; preview instructions in website/README.md.
   Desktop/mobile reviewed; local preview server stopped. Not deployed.
+- All 20 timing binaries prepared; dry-run validated all 60 planned repeats.
+  Additional timer-disabled correctness passes succeeded for both backends at
+  N=32/128/256/512. N=64 is covered by the full signed suite.
+- Test host: RTX 5090, Core Ultra 9 285K, CUDA 13.2.86, driver 615.71.09.
+  Do not compare its raw latency directly with the paper's 4090/12900K setup.
+- At handoff: no owned build, correctness or timing worker remains. No pushes,
+  main changes, deployment or timing occurred; remote CI is not yet refreshed.
 
 The two remote development names historically point to the same implementation;
 they are not different solver designs. Do not force-push either. Recheck remote
@@ -33,7 +41,7 @@ heads and authorization before publishing this local candidate and receipt.
 
 | Required field | Value |
 | --- | --- |
-| Launcher | `MPCGPU_QUIET_WINDOW=1 .venv/bin/python tools/timing.py run tmp/timing-prepared/candidate-20260928/plan.json tmp/timing/<new-window-id>` |
+| Launcher | `MPCGPU_QUIET_WINDOW=1 .venv/bin/python tools/timing.py run tmp/timing-prepared/candidate-20260928/plan.json tmp/timing/mpcgpu-next-window` |
 | Working directory | `/home/plancher/Desktop/MPCGPU` |
 | Estimated reservation | 30–45 minutes, release early; provisional, not measured. |
 | Prerequisites | Plan.json exists and dry-run succeeds; clean tree; current verified receipt; exact matching binaries/inputs; explicit exclusive slot; no competing CPU/GPU work; advisory /tmp/a2rlab-timing.lock available. |
@@ -51,6 +59,7 @@ This does not acquire a timing slot or launch a GPU workload. Record CPU model,
 current governors, other workers and toolchain at the assigned window too;
 the launcher records NVIDIA state and commit/receipt hashes, and preparation
 stores compiler commands. A lock alone cannot establish a quiet machine.
+Choose a different unique output directory if mpcgpu-next-window already exists.
 
 Batch: horizons 32/64/128/256/512 × PCG/QDLDL × reused/fresh workspace × three
 process repeats, alternating workload order. Fresh is a same-source workspace
@@ -71,7 +80,8 @@ git log -4 --oneline
 .venv/bin/python tools/timing.py run tmp/timing-prepared/candidate-20260928/plan.json tmp/timing/check-only --dry-run
 ```
 
-Local evidence: /tmp/mpcgpu-{signed-receipt,clean-clone,clean-install,clean-host,
+Local evidence: /tmp/mpcgpu-{final-signed-receipt,clean-clone,clean-install,clean-host,
 clean-quickstart,workspace-memcheck,model-initcheck,timing-prepare}-20260928.log.
+Additional sweep: /tmp/mpcgpu-horizon-correctness-20260928.log.
 The isolated clone is disposable test output, not another maintained checkout.
 No main/release/deployment action is implied by this handoff.
