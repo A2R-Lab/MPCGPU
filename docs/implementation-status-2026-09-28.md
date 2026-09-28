@@ -52,8 +52,19 @@ Intermediate evidence (not the final signed receipt):
   device memcheck, zero reported errors/hazards. Broader exhaustive sanitizer
   coverage is not claimed.
 - Full inventory: 76 tests (51 GPU, 25 host/harness), all passed. One upstream
-  hppfcl-to-coal deprecation warning, no skips. Clean-source receipt and
-  isolated-clone quickstart verification are being finalized.
+  hppfcl-to-coal deprecation warning, no skips. Source commit 0e2550f;
+  signed schema-3 receipt commit 6b973de verified against public signing keys,
+  exact source/dependency fingerprint, ancestry and complete node manifest.
+- Isolated candidate clone at /tmp/mpcgpu-clean-Emt4eh/repo: recursive public
+  HTTPS submodules fetched with global/system Git configuration and credential
+  helper disabled; fresh venv installation succeeded; 25 host checks passed.
+  Both documented MPC demos and float/double GBD examples built and passed.
+  No sibling GATO checkout or preexisting executable was available to that clone.
+  PCG mean/max/final L2: 0.028717/0.063881/0.008735; QDLDL:
+  0.029387/0.064911/0.010898, both 1202 offsets. These are not timing results.
+- Current workspace memcheck and model-oracle initcheck: zero errors.
+  Source build warnings remain for unused correctness-profile timer variables
+  and a feature-gated goal pointer; no warnings were suppressed to pass gates.
 
 Local evidence logs are /tmp/mpcgpu-*-20260928.log. The signed gpu-proof.json,
 once refreshed, is the portable clean-source record; temporary logs are not.
@@ -77,7 +88,7 @@ once refreshed, is the portable clean-source record; temporary logs are not.
 
 ## Next checkpoint
 
-Finish clean-source receipt/fresh-clone checks, prepare immutable timing binaries
-and dry-run the handoff. Then stop at timing-ready. Reserve 30–45 minutes for
+Clean-source receipt/fresh-clone checks are complete. Prepare immutable timing
+binaries and dry-run the handoff. Then stop at timing-ready. Reserve 30–45 minutes for
 runtime collection, optional separately prepared compile timing 15–30 minutes.
 Only after analysis should new speed claims or website result panels be added.

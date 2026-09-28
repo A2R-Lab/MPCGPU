@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -71,6 +72,11 @@ def test_trajectory_validation(parser_binary, tmp_path, case):
 
 
 def test_builder_configuration_cache(tmp_path, monkeypatch):
+    # A single -D flag must remain the value of --extra, not a new CLI option.
+    commands=subprocess.check_output(['make','--dry-run','examples','EXTRA_FLAGS=-DUNIT_TEST'],cwd=ROOT,text=True)
+    build_commands=[command for command in commands.splitlines() if 'tools/build.py' in command]
+    assert len(build_commands) == 2
+    assert all('--extra=-DUNIT_TEST' in shlex.split(command) for command in build_commands)
     spec = importlib.util.spec_from_file_location("test_builder", ROOT / "tools/build.py")
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)

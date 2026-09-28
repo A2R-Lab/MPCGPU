@@ -6,7 +6,7 @@ ARCH ?= sm_120
 KNOT_POINTS ?= 64
 PROFILE ?= correctness
 EXTRA_FLAGS ?=
-BUILD = $(PYTHON) tools/build.py --nvcc "$(NVCC)" --arch "$(ARCH)" --knots $(KNOT_POINTS) --profile $(PROFILE) --extra "$(EXTRA_FLAGS)"
+BUILD = $(PYTHON) tools/build.py --nvcc "$(NVCC)" --arch "$(ARCH)" --knots $(KNOT_POINTS) --profile $(PROFILE) --extra="$(EXTRA_FLAGS)"
 
 .PHONY: examples test_fd_parity gen_ref submodules regen check-codegen build_qdldl test FORCE clean
 examples: examples/pcg.exe examples/qdldl.exe
