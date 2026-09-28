@@ -1,8 +1,8 @@
 # MPCGPU agent guide
 
 Read docs/README.md, docs/development.md and docs/audit-and-plan-2026-09-28.md.
-This repository owns MPCGPU and its in-tree GBD-PCG implementation. No GATO
-checkout, generated file, environment, benchmark or sibling import is required.
+This repository contains MPCGPU and its in-tree GBD-PCG implementation.
+Model inputs, code generation and tests are self-contained.
 GRiD and GLASS are pinned submodules; do not edit their upstream code here.
 
 ## Standing rules

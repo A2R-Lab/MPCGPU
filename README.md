@@ -4,11 +4,10 @@ CUDA/C++ nonlinear model predictive control with cooperative GPU-wide PCG,
 from [MPCGPU (ICRA 2024)](https://arxiv.org/abs/2309.08079).
 The maintained GBD-PCG implementation lives [in this repository](GBD-PCG/).
 Dynamics come from **GRiD**; block linear algebra comes from **GLASS**.
-Neither MPCGPU nor GBD-PCG depends on GATO.
 
 The development branch modernizes the iiwa14 implementation, validation and
-builds. Published paper results and historical benchmark notes are **not**
-measurements of this candidate. New performance measurements are pending.
+builds. The ICRA 2024 paper reports the original experiments; updated performance
+measurements will follow validation in a dedicated timing window.
 
 ## Quickstart
 
@@ -64,16 +63,17 @@ Other legacy trajectory files are historical, not current model validation.
 
 ## Scope and documentation
 
-This is specialized iiwa14 CUDA/C++ research software, not a general robot
-configuration API. There is no supported Python/Julia solver binding; Python
-is tooling. Contact/locomotion, collision constraints and batched MPC are not
-features of this candidate. GBD-PCG requires SPD systems and cooperative
-co-residency; its relative eta criterion is not a true-residual guarantee.
+MPCGPU provides CUDA/C++ solvers and fixed-base iiwa14 tracking examples.
+Python supports code generation and validation. See the API notes for the
+supported solver configurations and interfaces. GBD-PCG requires SPD systems
+and cooperative co-residency; its relative eta criterion is not a true-residual
+guarantee.
 
 - [Current documentation and limitations](docs/README.md)
 - [C++ ownership and solver contracts](docs/api.md)
 - [Development and signed correctness receipts](docs/development.md)
 - [Quiet-window timing handoff](docs/timing.md)
+- [ICRA example replication plan](docs/icra-replication.md)
 - [Audit and implementation plan](docs/audit-and-plan-2026-09-28.md)
 - [Local project website](website/README.md)
 
@@ -88,5 +88,5 @@ co-residency; its relative eta criterion is not a true-residual guarantee.
 }
 ```
 
-Owned code and website are [MIT licensed](LICENSE). Submodules and paper
-figures retain their respective licenses/attribution; see [NOTICE](NOTICE).
+MPCGPU code, documentation, website and paper figures are [MIT licensed](LICENSE).
+Dependency license notices are listed in [NOTICE](NOTICE).

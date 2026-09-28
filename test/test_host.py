@@ -129,3 +129,9 @@ def test_website_local_links_and_assets():
     for image in page.find_all('img'):
         assert image.get('alt') and (ROOT/'website'/image['src']).is_file()
     assert not page.find_all('script')
+    assert 'GATO' not in page.get_text()
+    citation = page.find('pre', id='bibtex')
+    assert citation and '@inproceedings{adabag2024mpcgpu' in citation.get_text()
+    assert citation.find_parent('details') is None
+    assert not citation.has_attr('hidden')
+    assert 'MIT license' in page.footer.get_text()

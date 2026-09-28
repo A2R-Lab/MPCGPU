@@ -51,8 +51,8 @@ timestamps. Those times exclude some public-call setup/cleanup: report them as
 internal SQP time, not complete control-loop latency.
 
 Build modes share mathematical flags; `MPCGPU_NO_REUSE` is a diagnostic fresh
-workspace baseline. Historical `GATO_REG_PATTERN` is a compatibility macro
-name for position-only regularization, not a dependency on that repository.
+workspace baseline. The shared builder selects position-only regularization
+for the reviewed example configuration.
 
 Shared orchestration across PCG/QDLDL still has duplication. Deliberately avoid
 a generic backend framework during this safety update; further extraction

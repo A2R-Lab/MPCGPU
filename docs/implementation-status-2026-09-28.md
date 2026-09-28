@@ -1,14 +1,14 @@
 # Modernization implementation status — September 28, 2026
 
-Scope: MPCGPU plus in-tree GBD-PCG only. GATO and upstream dependency code were
-not changed. No timing, clock/governor changes, main merge, release or deployment.
+Scope: MPCGPU plus in-tree GBD-PCG only. Other projects and upstream dependency
+code were not changed. No timing, clock/governor changes, main merge, release or deployment.
 
 ## Implemented
 
 - Published pins: GRiD 65fd051198e4ccc6f609238bca4cfa780eb2b55a,
   GLASS 8ce68a29bceb30c7764c9391d517a182d061697d; QDLDL unchanged df48100.
   HTTPS URLs; exact dependency manifest; pytest-gpu-proof 0.4.0.
-- Owned URDF/codegen recipe, no GATO or mesh dependency. Explicit minimal GRiD
+- Self-contained URDF/codegen recipe with mesh-independent dynamics. Minimal GRiD
   algorithms, shared GLASS instead of embedded copies. Header 39,629 -> 13,410
   lines. Compile-time benefit is not measured. Owned calls pin glass::block::.
 - Safe identity-preconditioned host GBD wrapper; actual iteration result;
@@ -30,8 +30,8 @@ not changed. No timing, clock/governor changes, main merge, release or deploymen
   evidence, exact node manifest, actual dependency gitlinks and website bound.
   CPU CI exercises host contracts; missing/partial/stale receipts fail.
 - Refreshed root/GBD READMEs, API/development/docs index, standing agent guide,
-  MIT owned-code license and third-party/paper NOTICE.
-- Static website draft with attributed paper Figures 2/3/4; separate published
+  MIT license for code, documentation, website and our paper figures; dependency notices.
+- Static website draft with our paper Figures 2/3/4; separate published
   evidence/current-software status; desktop/mobile preview checked. No framework,
   remote fonts or scripts. Higher-resolution originals/video remain optional.
 - Timing harness with prepare-only builds, dry-run, explicit quiet-window flag,
@@ -60,7 +60,7 @@ Intermediate evidence (not the final signed receipt):
   HTTPS submodules fetched with global/system Git configuration and credential
   helper disabled; fresh venv installation succeeded; 25 host checks passed.
   Both documented MPC demos and float/double GBD examples built and passed.
-  No sibling GATO checkout or preexisting executable was available to that clone.
+  The clone used self-contained model inputs and freshly built executables.
   PCG mean/max/final L2: 0.028717/0.063881/0.008735; QDLDL:
   0.029387/0.064911/0.010898, both 1202 offsets. These are not timing results.
 - Current workspace memcheck and model-oracle initcheck: zero errors.
@@ -104,11 +104,17 @@ once refreshed, is the portable clean-source record; temporary logs are not.
 
 ## Next checkpoint
 
-**Locally timing-ready.** Clean-source receipt/fresh-clone checks are complete.
+**Runtime preparation complete; receipt refresh pending after website edits.**
+The 76-test clean-source receipt and fresh-clone checks above record the preceding
+implementation checkpoint. Subsequent website/licensing/copy edits change the
+fingerprint; the old receipt does not attest them. Only host checks run while
+the box is busy. Refresh and verify the full receipt before launching timing.
 All 20 immutable timing binaries are prepared under
 tmp/timing-prepared/candidate-20260928; dry-run validated the 60-repeat plan.
 The runtime batch was not executed. See [coordinator handoff](HANDOFF_codex_2026-09-28.md).
 Reserve 30–45 minutes for runtime collection; optional compile timing requires
 a separate prepared leg and 15–30 minutes. Only after analysis should new speed
 claims or website result panels be added. Push/remote CI, merge and publication
-are still pending their validation/authorization. All owned workers are stopped.
+are still pending their validation/authorization. See the
+[ICRA replication plan](icra-replication.md) for the paper-example milestone after
+timing. No GPU or timing work is launched for the copy update.

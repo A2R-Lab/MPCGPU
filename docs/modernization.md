@@ -4,7 +4,7 @@
 # MPCGPU modernization onto GRiD + GLASS (Part 2 of the A2R-Lab unification)
 
 This documents the rewire of MPCGPU and GBD-PCG (a submodule at the time; folded in-tree 2026-08) to defer dynamics to GRiD (a regenerated
-`grid.cuh`) and in-block linear algebra to GLASS, mirroring GATO. Goal: future GRiD/GLASS bumps are a
+`grid.cuh`) and in-block linear algebra to GLASS. Goal: future GRiD/GLASS bumps are a
 `regen` + pin bump instead of constant sm_120/smem/GLASS-API hand-patches.
 
 ## What changed

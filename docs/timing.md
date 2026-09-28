@@ -63,4 +63,7 @@ the website's *current software* panel. Published paper plots remain labeled as
 published and are not replaced by nonmatching figure-eight experiments.
 
 The old `time_persolve.sh` and sibling-dependent `run_3way_iiwa.sh` now fail
-with migration instructions. No GATO workload is included in this reservation.
+with migration instructions. This reservation covers MPCGPU runtime collection.
+
+After this batch, follow [the ICRA example replication plan](icra-replication.md).
+The paper-task runs need a separate prepared batch and assigned timing slot.

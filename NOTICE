@@ -1,11 +1,11 @@
-MPCGPU owned code and new website: MIT, see LICENSE.
+MPCGPU code, documentation, website and paper figures are released under the
+MIT license in LICENSE.
 
-GRiD, GLASS, QDLDL and recursively included third-party components retain their
-own licenses and notices. Their presence as submodules does not relicense them.
-
-Website paper figures are attributed to:
+The project and figures are our work:
 Emre Adabag, Miloni Atal, William Gerard and Brian Plancher,
 “MPCGPU: Real-Time Nonlinear Model Predictive Control through Preconditioned
 Conjugate Gradient on the GPU”, ICRA 2024, arXiv:2309.08079.
-See website/README.md for figure numbers and provenance. These source figures
-are not covered by the new website-code license.
+See website/README.md for figure numbers and source details.
+
+Dependency distributions (including GRiD, GLASS, QDLDL and their bundled
+components) retain the license and copyright notices supplied with them.

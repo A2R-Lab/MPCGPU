@@ -14,10 +14,10 @@ decision. Branch-linked quickstart files must be pushed before publication.
 ## Assets and provenance
 
 `assets/architecture.png`, `pick-place.png`, and `published-scaling.png` are
-unaltered figure-region renders of Figures 2, 3, and 4 from the authors' paper,
-arXiv:2309.08079v3 (https://arxiv.org/pdf/2309.08079). Their captions remain
-attributed. The new owned HTML/CSS is MIT; paper figures retain their source
-attribution and are not a new experimental result or a third-party relicensing.
+figure-region renders of Figures 2, 3, and 4 from our ICRA 2024 paper,
+arXiv:2309.08079v3 (https://arxiv.org/pdf/2309.08079). The MPCGPU code,
+documentation, website and these figures are released under the repository's
+MIT license. Figure numbers identify the experiments and explain the visuals.
 
 Replace `pick-place.png` with a higher-resolution original when supplied. An
 optional video should have controls, a static poster, no forced autoplay, and
@@ -26,7 +26,9 @@ labels legible on mobile and use original vector exports where available.
 
 ## Result updates
 
-Keep the published-study panel separate from a future current-software panel.
+Present the published results with their ICRA 2024 methodology. Add updated
+measurements with their own hardware and protocol description after validation.
 New results need source and dependency SHAs, hardware/toolchain, reference and
 protocol hashes, repeat distributions, accuracy/quality checks, and a link to
-the run record. Do not replace paper plots with nonmatching figure-eight data.
+the run record. Follow [the ICRA replication plan](../docs/icra-replication.md) to restore the
+paper examples and document comparisons. Keep BibTeX visible without interaction.

@@ -2,7 +2,7 @@
 
 Cooperative, GPU-wide preconditioned conjugate gradient for symmetric positive
 definite block-tridiagonal systems. Maintained **in-tree in MPCGPU**, using its
-top-level GLASS submodule for block primitives. No GATO dependency.
+top-level GLASS submodule for block primitives.
 
 One CUDA block owns one knot/block row; cooperative grid synchronization joins
 the iterations. This differs from GLASS's single-block PCG and is intentional.

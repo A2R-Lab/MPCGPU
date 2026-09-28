@@ -2,10 +2,10 @@
 
 ## Boundary
 
-GATO remains untouched and paused at its own handoff. This candidate requires
-no GATO checkout, environment or generated file. GBD-PCG remains in-tree and
-shares top-level GLASS. MIT is approved for owned code/website, not third-party
-relicensing. Shared GPU correctness and capped sequential builds were allowed;
+GBD-PCG remains in-tree and shares top-level GLASS. Model inputs, code generation
+and validation are self-contained. MPCGPU code, documentation, website and paper
+figures are MIT licensed. Dependency notices remain intact.
+Shared GPU correctness and capped sequential builds were previously allowed;
 **no timing or clock/governor changes were performed**.
 
 Read CLAUDE.md and docs/implementation-status-2026-09-28.md. Preserve all
@@ -15,7 +15,8 @@ deployment and old-GBD remote archival remain separate decisions.
 ## Verified candidate
 
 - Branch: modernize-grid-glass. Core source 0e2550f, final build fix f61d1ec;
-  current verified receipt c5cff26 (attests f61d1ec).
+  previous verified receipt c5cff26 (attests f61d1ec). Website/copy edits after
+  that checkpoint require a receipt refresh before timing or push.
 - GRiD 65fd051, GLASS 8ce68a2, QDLDL df48100; proof tooling 0.4.0.
 - Full clean-source suite: 76 passed, zero skipped; signed schema-3 receipt
   verified. The Pinocchio dependency emits one upstream deprecation warning.
@@ -70,6 +71,24 @@ be reviewed per horizon. No paper figure is refreshed by this batch alone.
 Optional compile-speed measurements need a separately prepared protocol/launcher
 and another 15–30-minute reservation. They are **not** included in this launcher.
 Old-development-baseline reproduction is also separate from fresh/reuse A/B.
+
+## Copy update and next steps
+
+The website uses direct product/research statements, a permanently visible BibTeX
+block, and MIT licensing for the entire MPCGPU project, including our paper
+figures. Public copy presents MPCGPU as the original ICRA 2024 work.
+Only host checks run for these edits; the busy GPU is left untouched.
+All 25 host/harness checks pass, including always-visible citation and website
+copy assertions. Timing dry-run still validates all 60 repeats. The browser
+preview tool rejected local-file navigation, so this revision has static
+HTML/CSS checks rather than a new rendered visual sign-off.
+
+Website and host-test changes are fingerprinted: **the previous receipt no longer
+attests the current tree**. When GPU correctness access is available, commit the
+changes, run the full receipt workflow, verify and commit the receipt, then use
+the timing preflight. Do not bypass this check or run timing on the shared box.
+The prepared runtime code and binaries are unchanged; dry-run checks their hashes.
+After timing, follow [ICRA example replication](icra-replication.md).
 
 ## Arrival checks
 
