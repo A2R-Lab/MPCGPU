@@ -34,6 +34,18 @@ a reference prefix and an output prefix. Invalid/missing trajectories fail
 before GPU allocation. The build cache checks source, headers, dependency
 pins, compiler, flags, architecture and binary contents.
 
+### ICRA 2024 pick-and-place task
+
+```bash
+make icra BACKEND=pcg KNOT_POINTS=64      # or BACKEND=qdldl; horizons 32 to 512
+```
+
+This builds and runs the paper's five-goal circuit under its recovered protocol,
+including zero gravity, then checks goal visits, final hold and tracking error.
+Output lands in `tmp/icra/<backend>-N<knots>/` with a trajectory plot. It is a
+correctness run with simulated 500 Hz control, not a timing measurement. See
+[the replication notes](docs/icra-replication.md) for sources and differences.
+
 ## Validation and configuration
 
 ```bash
@@ -58,8 +70,9 @@ LD_LIBRARY_PATH="$PWD/qdldl/build/out" ./tools/gen_reference.exe tmp/references/
 LD_LIBRARY_PATH="$PWD/qdldl/build/out" ./examples/pcg.exe tmp/references/fig8
 ```
 
-Only the paired `0_0`–`0_2` figure-eight references are supported shipped inputs.
-Other legacy trajectory files are historical, not current model validation.
+The supported shipped inputs are the paired `0_0`–`0_2` figure-eight references
+and the ICRA circuit in `examples/icra/`. Other legacy trajectory files are
+historical, not current model validation.
 
 ## Scope and documentation
 
@@ -73,7 +86,7 @@ guarantee.
 - [C++ ownership and solver contracts](docs/api.md)
 - [Development and signed correctness receipts](docs/development.md)
 - [Quiet-window timing handoff](docs/timing.md)
-- [ICRA example replication plan](docs/icra-replication.md)
+- [ICRA example replication](docs/icra-replication.md)
 - [Audit and implementation plan](docs/audit-and-plan-2026-09-28.md)
 - [Local project website](website/README.md)
 

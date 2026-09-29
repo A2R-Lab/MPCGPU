@@ -49,6 +49,9 @@ test/test_gates.py::test_independent_model_oracle
 test/test_gates.py::test_gbd_residual_modes[-DPCG_TRUE_EXIT_CHECK_PERIOD=2]
 test/test_gates.py::test_gbd_residual_modes[-DPCG_RESIDUAL_REPLACE_PERIOD=2]
 test/test_gates.py::test_real_schur_fixture
+test/test_gates.py::test_icra_reference_targets
+test/test_gates.py::test_icra_pick_place[pcg]
+test/test_gates.py::test_icra_pick_place[qdldl]
 test/test_host.py::test_codegen_reproducible
 test/test_host.py::test_dependency_pins
 test/test_host.py::test_receipt_policy
@@ -66,6 +69,7 @@ test/test_host.py::test_builder_configuration_cache
 test/test_host.py::test_receipt_refuses_partial_collection
 test/test_host.py::test_expected_collection_manifest
 test/test_host.py::test_website_local_links_and_assets
+test/test_host.py::test_icra_fixture_provenance
 test/test_timing.py::test_timing_metrics[none]
 test/test_timing.py::test_timing_metrics[nan]
 test/test_timing.py::test_timing_metrics[short]

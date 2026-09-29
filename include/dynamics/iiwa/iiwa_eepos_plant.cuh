@@ -48,10 +48,10 @@ namespace mpcgpu_plant{
 	constexpr T PI() {return static_cast<T>(3.14159);}
 	template<class T>
 	__host__ __device__
-	// Physical gravity, matching GATO and the pinocchio sim convention (GRiD applies +g as an
-	// upward base accel, so -9.81 = physical downward gravity). The solver and the sim both use
-	// this value, and the shared reference trajectory is generated with it, so all are consistent.
-	constexpr T GRAVITY() {return static_cast<T>(-9.81);}
+	// Physical gravity by default (GRiD applies +g as an upward base acceleration, so -9.81 is
+	// downward gravity). The solver and the simulator both use this value. The ICRA 2024
+	// pick-and-place experiments ran with zero gravity; their task build sets MPCGPU_GRAVITY=0.
+	constexpr T GRAVITY() {return static_cast<T>(MPCGPU_GRAVITY);}
 
 	// Dimension aliases for the grid_plant::tracking_cost adapters (mirror GATO's plant).
 	inline constexpr int NQ  = grid::NUM_JOINTS;      // joints

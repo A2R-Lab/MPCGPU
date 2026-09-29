@@ -143,10 +143,25 @@ void print_test_config(){
 }
 
 
+namespace mpcgpu {
+// Optional per-run record for task-quality analysis (examples/icra_pick_place.cu). Filled only when a
+// caller passes a non-null pointer; the default tracking path does not allocate or copy anything extra.
+template <typename T> struct TrackingLog {
+    std::vector<T> ee, ee_goal;              // 3 per reference offset, sampled when the goal window shifts
+    std::vector<T> states, controls;         // per control update: state after simulation, control applied
+    std::vector<uint32_t> sqp_iters;         // per control update
+    std::vector<bool> sqp_exits;             // per control update (false = rho exceeded RHO_MAX)
+    std::vector<int> linsys_iters;           // per linear-system solve (PCG only)
+    std::vector<bool> linsys_exits;          // per linear-system solve (PCG only; true = hit max iterations)
+    std::vector<double> sqp_times, linsys_times;  // microseconds; populated by timing builds only
+    uint32_t control_updates = 0;
+};
+} // namespace mpcgpu
+
 template <typename T, typename return_type>
 std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> simulateMPC(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, const uint32_t traj_steps, 
             float timestep, T *d_eePos_traj, T *d_xu_traj, T *d_xs, uint32_t start_state_ind, uint32_t goal_state_ind, uint32_t test_iter, T linsys_exit_tol,
-            std::string test_output_prefix){
+            std::string test_output_prefix, mpcgpu::TrackingLog<T>* log = nullptr){
 
     const uint32_t traj_len = (state_size+control_size)*knot_points-control_size;
 
@@ -263,6 +278,9 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     // d_xu to d_xu_traj — that left tracking starting cold.)
     for(int j = 0; j < 100; j++){
         sqpSolvePcg<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, config, rho, RHO_INIT, d_xs_goal, workspace_ptr);
+#if WARMUP_RESET
+        gpuErrchk(cudaMemcpy(d_xu, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
+#endif
     }
     rho = RHO_INIT;
     config.pcg_exit_tol = linsys_exit_tol;
@@ -271,6 +289,9 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
 	#else
     for(int j = 0; j < 100; j++){
         sqpSolveQdldl<T>(state_size, control_size, knot_points, timestep, d_eePos_goal, d_lambda, d_xu, d_dynmem, rho, RHO_INIT, d_xs_goal, workspace_ptr);
+#if WARMUP_RESET
+        gpuErrchk(cudaMemcpy(d_xu, d_xu_traj, traj_len*sizeof(T), cudaMemcpyDeviceToDevice));
+#endif
     }
     rho = RHO_INIT;
 	#endif
@@ -327,6 +348,13 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
         // applies the PREVIOUS solve's trajectory at a fixed one-period offset).
         simple_simulate<T>(state_size, control_size, knot_points, d_xs, d_xu, d_dynmem, timestep, time_since_timestep*1e6, simulation_time);
 #else
+        if (log) {
+            // The simulation interval starts in knot floor(prev_simulation_time/timestep) of the previous solve.
+            const uint32_t knot = static_cast<uint32_t>(prev_simulation_time * 1e-6 / timestep);
+            T h_u[64];
+            gpuErrchk(cudaMemcpy(h_u, &d_xu_old[knot*(state_size+control_size) + state_size], control_size*sizeof(T), cudaMemcpyDeviceToHost));
+            log->controls.insert(log->controls.end(), h_u, h_u + control_size);
+        }
         simple_simulate<T>(state_size, control_size, knot_points, d_xs, d_xu_old, d_dynmem, timestep, prev_simulation_time, simulation_time);
 #endif
 
@@ -353,6 +381,10 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
             cur_tracking_error = sqrt(cur_tracking_error);
             // std::cout << cur_tracking_error << std::endl;;
             tracking_errors.push_back(cur_tracking_error);
+            if (log) {
+                log->ee.insert(log->ee.end(), h_eePos, h_eePos + 3);
+                log->ee_goal.insert(log->ee_goal.end(), h_eePos_goal, h_eePos_goal + 3);
+            }
 #if JOINT_COST_MODE
             // joint-space tracking error: |q_actual - q_ref| over the NQ positions, vs the reference
             // state at the current goal index (d_xs_goal_full holds the per-step q_ref/qd_ref).
@@ -374,6 +406,23 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
             // duplicated tail. (Previously the tail was refilled from the reference d_xu_traj; with a
             // static-hold reference that re-seeded "hold" every step and prevented cost-driven tracking.)
             just_shift<T>(state_size, control_size, knot_points, d_xu);
+#if REFERENCE_TAIL_FILL
+            // Paper protocol: refill the new last stage [u_{N-2}, x_{N-1}] from the reference. The 2024
+            // code copied the reference at the CURRENT offset into the horizon tail; this uses the row
+            // that the tail actually represents, offset+N-1. Past the reference end, hold the final
+            // configuration with zero velocity and zero control, as the paper code did.
+            {
+                const uint32_t ssc = state_size + control_size;
+                const uint32_t tail = traj_offset + knot_points - 1;
+                if (tail < traj_steps) {
+                    gpuErrchk(cudaMemcpy(&d_xu[traj_len - ssc], &d_xu_traj[tail*ssc - control_size], ssc*sizeof(T), cudaMemcpyDeviceToDevice));
+                } else {
+                    gpuErrchk(cudaMemcpy(&d_xu[traj_len - state_size], &d_xu_traj[(traj_steps-1)*ssc], (state_size/2)*sizeof(T), cudaMemcpyDeviceToDevice));
+                    gpuErrchk(cudaMemset(&d_xu[traj_len - state_size/2], 0, (state_size/2)*sizeof(T)));
+                    gpuErrchk(cudaMemset(&d_xu[traj_len - ssc], 0, control_size*sizeof(T)));
+                }
+            }
+#endif
 #ifdef CONSISTENT_SHIFT_TAIL
             // Overwrite the duplicated tail state with a dynamically-consistent rollout
             // x_{N-1} = f(x_{N-2}, u_{N-2}) under the SOLVER's integrator, so the warm start
@@ -511,6 +560,16 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
     }
 
     cur_tracking_error = sqrt(cur_tracking_error);
+    if (log) {
+        for (const auto& state : tracking_path) log->states.insert(log->states.end(), state.begin(), state.end());
+        log->sqp_iters = sqp_iters;
+        log->sqp_exits = sqp_exits;
+        log->linsys_iters = linsys_iters;
+        log->linsys_exits = linsys_exits;
+        log->sqp_times = sqp_times;
+        log->linsys_times = linsys_times;
+        log->control_updates = control_update_step;
+    }
     mpcgpu_plant::freeDynamicsConstMem<T>(d_dynmem);
 
     gpuErrchk(cudaFree(d_lambda));

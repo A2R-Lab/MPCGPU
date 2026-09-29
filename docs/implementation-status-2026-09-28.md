@@ -85,6 +85,18 @@ results. Pinocchio is test-only; it does not link into either native solver.
 Local evidence logs are /tmp/mpcgpu-*-20260928.log. The signed gpu-proof.json,
 once refreshed, is the portable clean-source record; temporary logs are not.
 
+## ICRA pick-and-place correctness (added later on September 28)
+
+The paper's five-goal circuit is restored from the 2024 code as `examples/icra/`
+with its recovered protocol, including the zero gravity the original experiments
+used. `make icra` builds, runs and checks it for either backend at any paper
+horizon. Both backends pass every task check at N = 64 through 512 and QDLDL at
+N = 32; PCG at N = 32 needs a tighter tolerance from the paper's own sweep. The
+signed suite gains four gates. The figure-eight results are unchanged. Details,
+differences from 2024 and the evidence table are in the
+[ICRA replication notes](icra-replication.md). The header changes invalidate the
+previously prepared timing plan, so it must be prepared again before timing.
+
 ## Deliberate limits, not hidden completion claims
 
 - No general robot/contact/locomotion/batch API and no Python/Julia solver

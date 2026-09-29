@@ -69,6 +69,23 @@ typedef float linsys_t;
 #define REMOVE_JITTERS  1
 #endif
 
+// Gravity along GRiD's base z axis for the solver model and simulator (-9.81 = physical gravity).
+#ifndef MPCGPU_GRAVITY
+#define MPCGPU_GRAVITY -9.81
+#endif
+
+// WARMUP_RESET = 1 restores the reference trajectory after each warm-up solve, as the ICRA 2024 code
+// did (the warm-up then only settles duals and caches). 0 keeps the converged warm-up trajectory.
+#ifndef WARMUP_RESET
+#define WARMUP_RESET 0
+#endif
+
+// REFERENCE_TAIL_FILL = 1 refills the horizon's new last stage from the reference trajectory on each
+// shift (ICRA 2024 protocol, with the tail index corrected). 0 duplicates the previous last stage.
+#ifndef REFERENCE_TAIL_FILL
+#define REFERENCE_TAIL_FILL 0
+#endif
+
 // this constant controls when xu and goal will be shifted, should be a fraction of a timestep
 #ifndef SHIFT_THRESHOLD
 #define SHIFT_THRESHOLD (1 * timestep)

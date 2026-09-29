@@ -1,5 +1,9 @@
 # MPCGPU / GBD-PCG handoff — September 28, 2026
 
+> Latest takeover: [Claude handoff](HANDOFF_claude_2026-09-28.md). The user now
+> wants ICRA correctness work before timing; timing remains forbidden on the
+> shared box. The newer handoff also records the pending hero-copy edit.
+
 ## Boundary
 
 GBD-PCG remains in-tree and shares top-level GLASS. Model inputs, code generation
@@ -88,7 +92,8 @@ attests the current tree**. When GPU correctness access is available, commit the
 changes, run the full receipt workflow, verify and commit the receipt, then use
 the timing preflight. Do not bypass this check or run timing on the shared box.
 The prepared runtime code and binaries are unchanged; dry-run checks their hashes.
-After timing, follow [ICRA example replication](icra-replication.md).
+Start [ICRA example replication](icra-replication.md) correctness now; only its
+performance collection waits for timing permission.
 
 ## Arrival checks
 

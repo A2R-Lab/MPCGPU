@@ -135,3 +135,18 @@ def test_website_local_links_and_assets():
     assert citation.find_parent('details') is None
     assert not citation.has_attr('hidden')
     assert 'MIT license' in page.footer.get_text()
+
+
+def test_icra_fixture_provenance():
+    # Verbatim paper-code files (examples/trajfiles/0_0_* at commits 077252e and c556b19).
+    icra = ROOT / "examples/icra"
+    digests = {"pick_place_traj.csv": "ca3a68cb3cc715f7f647f487ab1a9a812ed2a6f52297d24a36441a22f9fff3bb",
+               "pick_place_eepos_2024.traj": "b01a0d151d4b449d61de94920cc3b873d31a387958a3ab5651d2b9284beb1199"}
+    for name, digest in digests.items():
+        assert hashlib.sha256((icra / name).read_bytes()).hexdigest() == digest, name
+    import numpy as np
+    current = np.loadtxt(icra / "pick_place_eepos.traj", delimiter=",")
+    original = np.loadtxt(icra / "pick_place_eepos_2024.traj", delimiter=",")
+    assert current.shape == original.shape == (666, 6)
+    # The named flange frame sits 4.0 cm beyond the old link-7 origin at every configuration.
+    np.testing.assert_allclose(np.linalg.norm(current[:, :3] - original[:, :3], axis=1), 0.04, atol=2e-4)

@@ -143,3 +143,22 @@ def test_real_schur_fixture(binary, tmp_path, monkeypatch):
         values=np.fromfile(tmp_path/f"mpc_{name}.bin",dtype=np.float32)
         assert values.size==count and np.isfinite(values).all()
     assert "PASS" in run(binary("gbd-dumped",knots=32,extra="-DPCG_TRUE_EXIT_CHECK_PERIOD=1"),tmp_path)
+
+
+def test_icra_reference_targets(binary, tmp_path):
+    # The tracked ICRA targets must equal FK of the verbatim joint reference under the current model.
+    regenerated = tmp_path / "pick_place_eepos.traj"
+    run(binary("ee-from-joints"), "examples/icra/pick_place_traj.csv", regenerated)
+    np.testing.assert_allclose(np.loadtxt(regenerated, delimiter=","),
+                               np.loadtxt(ROOT / "examples/icra/pick_place_eepos.traj", delimiter=","),
+                               rtol=0, atol=1e-6)
+
+
+@pytest.mark.parametrize("backend", ["pcg", "qdldl"])
+def test_icra_pick_place(binary, backend, tmp_path):
+    # Deterministic ICRA 2024 circuit at N=64: two identical trials and every task-quality check.
+    out = tmp_path / "icra"
+    run(binary(f"icra-{backend}"), "--out", out, "--trials", 2)
+    result = subprocess.run([sys.executable, "tools/icra_report.py", str(out)], cwd=ROOT,
+                            capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stdout + result.stderr
