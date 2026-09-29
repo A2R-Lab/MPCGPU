@@ -113,7 +113,9 @@ error; every configuration here stays below that.
 - [x] Shared PCG/QDLDL task build with a one-command example and machine-readable output.
 - [x] Deterministic single-trial and repeated-trial checks; signed-suite gates at N = 64.
 - [x] Trajectory plot from each run (`trajectory.svg`).
-- [ ] Refresh the full signed receipt with the new gates, then fresh-clone verification.
+- [x] Signed receipt `513a9a4` (86 passed, no skips) and a fresh-clone quickstart:
+  public HTTPS submodules, a new virtual environment, host tests, both demos and
+  `make icra` for both backends reproduced the numbers above exactly.
 - [ ] Optional variant with joint-limit terms, if physically valid motion is wanted.
 - [x] Paper-task timing manifest: `tools/timing.py prepare --task icra` builds the
   Figure 4, 5 and 6 workloads (see [timing](timing.md)). Nothing has been executed.
