@@ -129,3 +129,10 @@ maintained working tree. The older handoff lists specific logs and timing fields
 The last copy revision had static host checks only: browser navigation to the
 local file was policy-blocked. Codex did not route around it through localhost
 or another browser. Do not describe it as newly visually verified.
+
+## Combined timing chain (Claude, September 28 evening)
+
+All three batches (GATO seed A/B, MPCGPU figure-eight, MPCGPU ICRA) run from one launcher:
+`/home/plancher/Desktop/a2rlab-timing-chain/run_chain.sh`. Read its README. `--dry-run` checks
+both receipts, the prepared binaries and plans without measuring. A real run needs
+`A2RLAB_QUIET_WINDOW=1` in an assigned slot. Nothing has been measured yet.
