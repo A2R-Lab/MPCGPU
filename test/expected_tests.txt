@@ -78,3 +78,9 @@ test/test_timing.py::test_timing_metrics[divergent]
 test/test_timing.py::test_dry_run_and_authorization
 test/test_timing.py::test_binary_tamper
 test/test_timing.py::test_qdldl_empty_pcg_metrics
+test/test_timing.py::test_icra_timing_metrics[none]
+test/test_timing.py::test_icra_timing_metrics[untimed]
+test/test_timing.py::test_icra_timing_metrics[partial]
+test/test_timing.py::test_icra_timing_metrics[divergent]
+test/test_timing.py::test_icra_timing_metrics[nan]
+test/test_timing.py::test_icra_timing_metrics[samples]

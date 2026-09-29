@@ -36,12 +36,17 @@ FIG8_FLAGS = ["-DPCG_MAX_ITER=200", "-DPCG_RES_TOL=1e-4", "-DGATO_REG_PATTERN",
               "-DRHO_INIT=0.01", "-DSQP_MAX_ITER=1", "-DSQP_MAX_TIME_US=100000000"]
 
 
-def icra_flags(knots: int) -> list[str]:
-    """ICRA 2024 pick-and-place protocol; see docs/icra-replication.md for sources and changes."""
-    return ["-DTIMESTEP=0.015625", "-DEE_COST=1", "-DN_COST=1", "-DQ_COST=0", "-DQD_COST=1e-4",
-            f"-DU_COST={1e-3 if knots == 64 else 1e-4}", "-DQ_LIM_COST=0", "-DVEL_LIM_COST=0",
-            "-DCTRL_LIM_COST=0", "-DRHO_INIT=1e-3", "-DPCG_RES_TOL=0", "-DSQP_MAX_ITER=20",
-            "-DWARMUP_RESET=1", "-DREFERENCE_TAIL_FILL=1", "-DMPCGPU_GRAVITY=0"]
+def icra_flags(knots: int, profile: str) -> list[str]:
+    """ICRA 2024 pick-and-place protocol; see docs/icra-replication.md for sources and changes.
+
+    Timing builds keep the 2024 SQP caps, which follow TIME_LINSYS (20 when timing linear systems,
+    40 when counting iterations). Correctness builds have no wall clock and use the cap of 20.
+    """
+    flags = ["-DTIMESTEP=0.015625", "-DEE_COST=1", "-DN_COST=1", "-DQ_COST=0", "-DQD_COST=1e-4",
+             f"-DU_COST={1e-3 if knots == 64 else 1e-4}", "-DQ_LIM_COST=0", "-DVEL_LIM_COST=0",
+             "-DCTRL_LIM_COST=0", "-DRHO_INIT=1e-3", "-DPCG_RES_TOL=0",
+             "-DWARMUP_RESET=1", "-DREFERENCE_TAIL_FILL=1", "-DMPCGPU_GRAVITY=0"]
+    return flags + (["-DSQP_MAX_ITER=20"] if profile == "correctness" else [])
 
 
 def source_digest() -> str:
@@ -77,7 +82,7 @@ def build(target: str, *, knots=64, states=14, dtype="float", arch=None,
             raise ValueError("MPCGPU requires 14 iiwa states and a horizon >=2")
         if dtype != "float":
             raise ValueError("MPCGPU's QDLDL ABI is float; double is supported by GBD-PCG only")
-        flags += icra_flags(knots) if target.startswith("icra-") else FIG8_FLAGS
+        flags += icra_flags(knots, profile) if target.startswith("icra-") else FIG8_FLAGS
         flags += ["-Lqdldl/build/out", "-lqdldl", "-lcublas"]
         if target in {"qdldl", "icra-qdldl"}:
             flags += ["-DLINSYS_SOLVE=0"]

@@ -65,5 +65,28 @@ published and are not replaced by nonmatching figure-eight experiments.
 The old `time_persolve.sh` and sibling-dependent `run_3way_iiwa.sh` now fail
 with migration instructions. This reservation covers MPCGPU runtime collection.
 
-After this batch, follow [the ICRA example replication plan](icra-replication.md).
-The paper-task runs need a separate prepared batch and assigned timing slot.
+## ICRA paper-task batch (separate reservation)
+
+The pick-and-place circuit has its own plan. It passed correctness first; see
+[the ICRA replication notes](icra-replication.md). Prepare it like the batch above:
+
+```bash
+systemd-run --user --scope -p MemoryMax=36G -p MemorySwapMax=0 --same-dir \
+  .venv/bin/python tools/timing.py prepare tmp/timing-prepared/icra --task icra
+.venv/bin/python tools/timing.py run tmp/timing-prepared/icra/plan.json \
+  tmp/timing/icra-check-only --dry-run
+```
+
+| Workloads | Protocol | Paper figure |
+| --- | --- | --- |
+| `linsys`, PCG and QDLDL, N = 32…512 | 500 Hz, 2000 µs SQP budget, cap 20, per-solve linear-system timers | Figure 4 |
+| `linsys`, PCG, N = 128, ε = 5·10⁻⁵ and 10⁻⁵ | As above, beside the default 10⁻⁴ | Figure 5 |
+| `iters`, PCG and QDLDL, N = 32…512, 250/500/1000 Hz | Budget equal to the control period, cap 40, iterations per control step | Figure 6 |
+
+That is 42 workloads, or 126 runs at the minimum three repeats. Each run spends
+at most 10.4 s of SQP budget plus warm-up and simulation overhead. The duration
+is not measured; reserve roughly **60–90 minutes**, provisionally. Pass
+`--horizons` to split it across windows. Each run keeps raw per-solve samples in
+`<case>/icra/trial_0_*.result` and a summary with tracking quality. Compare the
+current results with the published ones by trend and ratio, not raw latency:
+the host, CUDA version and corrected model all differ from 2024.

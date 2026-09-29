@@ -115,11 +115,13 @@ error; every configuration here stays below that.
 - [x] Trajectory plot from each run (`trajectory.svg`).
 - [ ] Refresh the full signed receipt with the new gates, then fresh-clone verification.
 - [ ] Optional variant with joint-limit terms, if physically valid motion is wanted.
-- [ ] Paper-task timing: prepare immutable binaries and a manifest, then collect
-  linear-system time, controller time and task quality for both backends in an
-  assigned quiet window. Report them separately and label the RTX 5090 /
-  Core Ultra 9 285K / CUDA 13.2 host against the paper's RTX 4090 / i9-12900K /
-  CUDA 12.1. Exact old latency values are not the replication target.
+- [x] Paper-task timing manifest: `tools/timing.py prepare --task icra` builds the
+  Figure 4, 5 and 6 workloads (see [timing](timing.md)). Nothing has been executed.
+- [ ] Paper-task timing collection: linear-system time, controller iterations and
+  task quality for both backends in an assigned quiet window. Report them
+  separately and label the RTX 5090 / Core Ultra 9 285K / CUDA 13.2 host against
+  the paper's RTX 4090 / i9-12900K / CUDA 12.1. Exact old latency values are not
+  the replication target.
 - [ ] Add current results beside the published ones on the website, labeled by
   hardware and method, only from matching experiment data.
 

@@ -43,6 +43,17 @@ uint64_t state_hash(const std::vector<linsys_t>& states) {
 template<class V> double mean(const V& values) {
     return values.empty() ? 0.0 : std::accumulate(values.begin(), values.end(), 0.0) / values.size();
 }
+
+// {"count", "mean", "median", "p10", "p90", "max"} of timer samples in microseconds.
+std::string distribution(std::vector<double> values) {
+    if (values.empty()) return "{\"count\": 0}";
+    std::sort(values.begin(), values.end());
+    auto at = [&](double q) { return values[std::min(values.size() - 1, static_cast<size_t>(q * (values.size() - 1) + 0.5))]; };
+    char text[256];
+    snprintf(text, sizeof(text), "{\"count\": %zu, \"mean\": %.6g, \"median\": %.6g, \"p10\": %.6g, \"p90\": %.6g, \"max\": %.6g}",
+             values.size(), mean(values), at(0.5), at(0.1), at(0.9), values.back());
+    return text;
+}
 }
 
 int main(int argc, char** argv) try {
@@ -136,10 +147,11 @@ int main(int argc, char** argv) try {
                   "\"control_period_us\": %d, \"sqp_max_iter\": %d, \"pcg_max_iter\": %d, \"pcg_exit_tol\": %.9g, "
                   "\"ee_cost\": %.9g, \"terminal_ee_cost\": %.9g, \"qd_cost\": %.9g, \"u_cost\": %.9g, "
                   "\"rho_init\": %.9g, \"rho_max\": %.9g, \"warmup_reset\": %d, \"reference_tail_fill\": %d, "
-                  "\"timers\": %s},\n",
+                  "\"gravity\": %.9g, \"time_linsys\": %d, \"sqp_max_time_us\": %d, \"timers\": %s},\n",
             LINSYS_SOLVE ? "pcg" : "qdldl", knot_points, (double)TIMESTEP, SIMULATION_PERIOD, SQP_MAX_ITER,
             (int)PCG_MAX_ITER, LINSYS_SOLVE ? (double)tolerance : -1.0, (double)EE_COST, (double)N_COST,
             (double)QD_COST, (double)U_COST, (double)RHO_INIT, (double)RHO_MAX, WARMUP_RESET, REFERENCE_TAIL_FILL,
+            (double)MPCGPU_GRAVITY, TIME_LINSYS, (int)SQP_MAX_TIME_US,
 #ifdef MPCGPU_CORRECTNESS
             "false"
 #else
@@ -154,6 +166,11 @@ int main(int argc, char** argv) try {
             mean(errors), *std::max_element(errors.begin(), errors.end()), errors.back());
     fprintf(json, "  \"sqp\": {\"mean_iters\": %.6g, \"max_iters\": %u, \"rho_exits\": %zu},\n",
             mean(log.sqp_iters), *std::max_element(log.sqp_iters.begin(), log.sqp_iters.end()), rho_exits);
+#ifndef MPCGPU_CORRECTNESS
+    // Timing builds: trial-0 distributions (all trials' raw samples are in DIR/trial_<k>_*.result).
+    fprintf(json, "  \"timing_us\": {\"linsys\": %s, \"sqp\": %s},\n",
+            distribution(log.linsys_times).c_str(), distribution(log.sqp_times).c_str());
+#endif
     fprintf(json, "  \"linsys\": {\"solves\": %zu, \"mean_pcg_iters\": %.6g, \"max_pcg_iters\": %d, \"pcg_max_iter_exits\": %zu}\n}\n",
             LINSYS_SOLVE ? log.linsys_iters.size() : 0, mean(log.linsys_iters),
             log.linsys_iters.empty() ? 0 : *std::max_element(log.linsys_iters.begin(), log.linsys_iters.end()), pcg_capped);

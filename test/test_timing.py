@@ -55,3 +55,18 @@ def test_qdldl_empty_pcg_metrics(tmp_path):
         Path(str(prefix)+f'_0_{name}.result').write_text('' if name.startswith('pcg') else '1\n'*100)
     result=timing.metrics('RESULT offsets=1202 mean=.03 max=.05 final=.01',prefix,'qdldl')
     assert result['pcg_iters_mean'] is None
+
+
+@pytest.mark.parametrize('failure',['none','untimed','partial','divergent','nan','samples'])
+def test_icra_timing_metrics(tmp_path,failure):
+    summary={'config':{'timers':failure!='untimed'},'offsets':666,'reference_rows':666 if failure!='partial' else 667,
+             'control_updates':5204,'l2_error_m':{'mean':.02,'max':.1 if failure!='divergent' else 2,'final':.001},
+             'sqp':{'mean_iters':8,'rho_exits':0},'linsys':{'mean_pcg_iters':6},
+             'timing_us':{'linsys':{'count':40000 if failure!='samples' else 3,'median':50},
+                          'sqp':{'count':5204,'median':1900}}}
+    if failure=='nan': summary['l2_error_m']['mean']=float('nan')
+    path=tmp_path/'summary.json'; path.write_text(json.dumps(summary))
+    workload={'kind':'linsys','backend':'pcg'}
+    if failure=='none': assert timing.icra_metrics(path,workload)['median_us']==1900
+    else:
+        with pytest.raises(ValueError): timing.icra_metrics(path,workload)
