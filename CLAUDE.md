@@ -1,6 +1,7 @@
 # MPCGPU agent guide
 
-Read docs/README.md, docs/development.md and docs/audit-and-plan-2026-09-28.md.
+Read docs/README.md, docs/development.md and the local, gitignored docs/open-tasks/
+(todo list, handoffs, audit and timing notes; not in clones).
 This repository contains MPCGPU and its in-tree GBD-PCG implementation.
 Model inputs, code generation and tests are self-contained.
 GRiD and GLASS are pinned submodules; do not edit their upstream code here.
@@ -21,7 +22,8 @@ GRiD and GLASS are pinned submodules; do not edit their upstream code here.
   `docs/open-tasks/open_todos_2026-10-01.md`.
 - Commit source -> full clean-source GPU receipt -> receipt commit -> authorized
   push -> green CI. Do not edit receipts, carry old results, or sign subsets.
-- Never reuse timing output after a failed run. Read docs/timing.md before timing.
+- Never reuse timing output after a failed run. Read the timing section of docs/development.md
+  (and docs/open-tasks/timing.md, if present locally) before timing.
 
 ## Architecture and traps
 

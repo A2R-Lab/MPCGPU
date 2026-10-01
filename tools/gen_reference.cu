@@ -1,7 +1,7 @@
 // Generate the SHARED iiwa14 EE-space figure-8 tracking reference for the fair 3-way benchmark
 // (GATO / MPCGPU / the multi-threaded QDLDL-based CPU solver all track the IDENTICAL fig8). Authored directly in EE space so it
 // never commands joint motion (an EE-position-only cost has a 4-D nullspace incl. the stiff joint 7;
-// a joint-commanding reference excites it and diverges — see docs/modernization.md). The MPC discovers
+// a joint-commanding reference excites it and diverges). The MPC discovers
 // the joints that realize the EE path. Mirrors GATO's run_mpc_fig8:
 //   - goal:       ee(t) = center + [A*sin(wt), 0, 0.5*A*sin(2wt)]   (theta=0 vertical fig8, y=const)
 //                 center = FK(q0); so ee(0)=center => ZERO initial tracking error.

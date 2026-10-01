@@ -46,10 +46,20 @@ When adding/removing tests, review and regenerate test/expected_tests.txt from
 pytest collection. Receipt attestation is a signed keyholder statement, not
 cryptographic proof that a GPU executed arbitrary test code.
 
-## Merge gate
+## Timing
 
-Main integration is separate: exact candidate review, fresh-clone quickstart,
-complete receipt/green CI, no unexplained correctness/performance regression,
-accurate docs and final authorization. Website publishing and archival of the
-old GBD-PCG remote are separate actions. No current timing claim is justified
-until the exclusive-window collection and analysis are complete.
+Timing needs an otherwise idle machine; correctness builds disable all timers. `tools/timing.py`
+prepares immutable binaries, then runs them only when `MPCGPU_QUIET_WINDOW=1` is set:
+
+```bash
+.venv/bin/python tools/timing.py prepare tmp/timing-prepared/icra --task icra   # or --task fig8
+.venv/bin/python tools/timing.py run tmp/timing-prepared/icra/plan.json tmp/timing/check --dry-run
+MPCGPU_QUIET_WINDOW=1 .venv/bin/python tools/timing.py run tmp/timing-prepared/icra/plan.json tmp/timing/run1
+.venv/bin/python tools/plot_timing.py --icra tmp/timing/run1 --fig8 <fig8-run> --out tmp/plots
+```
+
+`--task icra` prepares the paper's Figure 4, 5 and 6 workloads; `--task fig8` the figure-eight
+workspace comparison. Any source change invalidates a prepared plan, and the runner verifies the
+signed receipt first. Each run directory keeps raw per-solve samples. The speedup attribution uses
+`tools/attribution/prepare.sh` (builds only) and `run.sh` (timing); see
+[speedup-attribution.md](speedup-attribution.md).

@@ -187,7 +187,7 @@ solve, approximating the earlier code. Tracking is identical between the two mod
   `make icra` for both backends reproduced the numbers above exactly (repeated October 1
   for the main integration candidate).
 - [x] Paper-task timing manifest: `tools/timing.py prepare --task icra` builds the
-  Figure 4, 5 and 6 workloads (see [timing](timing.md)).
+  Figure 4, 5 and 6 workloads (see the timing section of [development](development.md)).
 - [x] Paper-task timing collection on September 30 (tables above), labeled by host.
 - [x] Attribute the larger-than-published PCG speedups ([attribution](speedup-attribution.md), October 1).
 - [x] Website shows the current results with hardware and date; the paper holds the

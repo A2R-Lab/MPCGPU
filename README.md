@@ -86,9 +86,8 @@ guarantee.
 - [Current documentation and limitations](docs/README.md)
 - [C++ ownership and solver contracts](docs/api.md)
 - [Development and signed correctness receipts](docs/development.md)
-- [Quiet-window timing handoff](docs/timing.md)
+- [Speedup attribution](docs/speedup-attribution.md)
 - [ICRA example replication](docs/icra-replication.md)
-- [Audit and implementation plan](docs/audit-and-plan-2026-09-28.md)
 - [Project website source](docs/website.md)
 
 ## Citation and license
