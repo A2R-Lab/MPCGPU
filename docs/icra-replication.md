@@ -184,7 +184,8 @@ solve, approximating the earlier code. Tracking is identical between the two mod
 - [x] Trajectory plot from each run (`trajectory.svg`).
 - [x] Signed receipt `513a9a4` (86 passed, no skips) and a fresh-clone quickstart:
   public HTTPS submodules, a new virtual environment, host tests, both demos and
-  `make icra` for both backends reproduced the numbers above exactly.
+  `make icra` for both backends reproduced the numbers above exactly (repeated October 1
+  for the main integration candidate).
 - [x] Paper-task timing manifest: `tools/timing.py prepare --task icra` builds the
   Figure 4, 5 and 6 workloads (see [timing](timing.md)).
 - [x] Paper-task timing collection on September 30 (tables above), labeled by host.

@@ -4,6 +4,20 @@ Saved September 28, 2026 because Codex credits are running low. This is the
 current entry point and supersedes the ordering in the older Codex handoff:
 **start ICRA task correctness now; do not wait for timing to implement it.**
 
+## October 1 overnight: ready for user review
+
+- GRiD pinned to `main` (`0a14c0f`, iiwa14 header byte-identical); links and the quick start point
+  at `main`, which this branch fast-forwards. Joint-limit variant dropped at the user's direction.
+- Timing (exclusive window): ICRA Figures 4/5/6 and figure-eight A/B (September 30), PCG speedup
+  attribution (October 1). Review [speedup-attribution.md](speedup-attribution.md): the change
+  comes from fewer PCG iterations (Gauss-Newton Hessian, corrected horizon tail); GLASS makes each
+  iteration 0.7–4.6% cheaper; the published code on this GPU gives the published speedup range.
+- Website: current results replace the published Figure 4; the paper is cited for historical
+  results. Render locally with `python3 -m http.server --directory website`.
+- Plots: `tools/plot_timing.py`; attribution: `tools/attribution/{prepare,run,summarize}`.
+- Fresh-clone quickstart of the candidate reproduced every number. Final receipt follows the
+  last source commit. Nothing pushed, merged or deployed: those wait for the user's review.
+
 ## User's latest instructions
 
 - Continue MPCGPU and in-tree GBD-PCG stabilization, paper-example correctness,
