@@ -26,7 +26,7 @@ unused, default-off noise option. The table maps it onto the maintained task bui
 | Cost | ½‖p−p*‖² + ½·10⁻⁴‖q̇‖² + ½R‖u‖², R = 10⁻³ at N = 64, else 10⁻⁴; terminal knot without R | Same weights; Gauss-Newton JᵀJ position Hessian; terminal cost without the shared-memory alias |
 | Regularization | ρ starts at 10⁻³, adapts by 1.2 within [10⁻³, 10], added to Q and R | Same |
 | PCG | Absolute exit on η = rᵀP⁻¹r; iteration caps 173/167/167/118/67 for N = 32…512 | Same absolute test (`PCG_RES_TOL=0`) and caps |
-| PCG tolerance | Per-horizon sweeps of five values | Middle entry of each sweep: 5·10⁻⁶ (N = 32), 5·10⁻⁵ (N = 64), 10⁻⁴ (N ≥ 128); `--tol` overrides |
+| PCG tolerance | Per-horizon sweeps of five values | Middle entry of each sweep: 5·10⁻⁵ (N = 64), 10⁻⁴ (N ≥ 128); at N = 32 the next tighter sweep value, 2.5·10⁻⁶ (see below); `--tol` overrides |
 | Warm-up | 100 solves at η = 10⁻¹¹, trajectory reset to the reference after each | Same (`WARMUP_RESET=1`) |
 | Horizon shift | Refills the new last stage from the reference row at the current offset | Refills it from row offset + N − 1, the row the last stage represents (`REFERENCE_TAIL_FILL=1`) |
 | Metric | L1 position error, sampled once per reference offset | L2 primary; L1 also reported |
@@ -161,10 +161,13 @@ solve, approximating the earlier code. Tracking is identical between the two mod
   URDF velocity limits, and the closed loop drives joint 3 past its position limit in
   the cost's redundant directions. The report records these excursions without
   failing, because the replicated protocol never enforced them.
-- **PCG tolerance matters at short horizons.** At N = 32 with the default 5·10⁻⁶,
-  PCG passes within 11 cm of the second goal. The tighter values from the paper's
-  own N = 32 sweep, 2.5·10⁻⁶ and 10⁻⁶, bring every goal within 5 cm. This matches
-  the paper's observation that looser tolerances trade tracking for speed.
+- **PCG tolerance matters at short horizons.** At N = 32 with the sweep's middle value,
+  5·10⁻⁶, PCG passes within 11 cm of the second goal and fails the 5 cm visit check. The
+  tighter values from the paper's own N = 32 sweep, 2.5·10⁻⁶ and 10⁻⁶, bring every goal
+  within 5 cm, so 2.5·10⁻⁶ is the N = 32 default since October 1, 2026. The N = 32 timing
+  cells in the table above were collected at 5·10⁻⁶ and will be re-collected at the new
+  default in the next timing window. This matches the paper's observation that looser
+  tolerances trade tracking for speed.
 - **Inexact PCG steps end some SQP loops early.** The line search fails until ρ
   exceeds its maximum on 355 to 2110 of about 5200 control updates; QDLDL has none.
   Even so, PCG tracks more closely than QDLDL at N ≥ 128. The cause of that

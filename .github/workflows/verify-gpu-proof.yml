@@ -1,7 +1,7 @@
 name: correctness
 on:
   push:
-    branches: [main, modernizing-tests, modernize-grid-glass]
+    branches: [main]
   pull_request:
 
 jobs:

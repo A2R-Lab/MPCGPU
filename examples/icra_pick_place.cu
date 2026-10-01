@@ -27,9 +27,11 @@ constexpr uint32_t state_size = grid::NUM_JOINTS*2;
 constexpr uint32_t control_size = grid::NUM_JOINTS;
 constexpr uint32_t knot_points = KNOT_POINTS;
 
-// Default PCG exit tolerance on eta = r^T Pinv r: the middle entry of each 2024 tolerance sweep.
-// For N>=128 that is 1e-4, the tolerance the paper names for its N=128 results (Figures 4 and 5).
-float default_tolerance() { return knot_points == 32 ? 5e-6f : (knot_points == 64 ? 5e-5f : 1e-4f); }
+// Default PCG exit tolerance on eta = r^T Pinv r: the middle entry of each 2024 tolerance sweep,
+// except N=32, which uses the next tighter sweep value (2.5e-6) because 5e-6 leaves the second goal
+// 11 cm short of the 5 cm visit check. For N>=128 it is 1e-4, the tolerance the paper names for
+// its N=128 results (Figures 4 and 5).
+float default_tolerance() { return knot_points == 32 ? 2.5e-6f : (knot_points == 64 ? 5e-5f : 1e-4f); }
 
 uint64_t state_hash(const std::vector<linsys_t>& states) {
     uint64_t hash = 14695981039346656037ull;
