@@ -35,6 +35,8 @@ make check-codegen. Exactly pin dependencies in tools/dependencies.json; update
 the gitlinks too. Do not run parent submodule update before staging a new pin:
 it resets the submodule to the old index gitlink.
 
+The SQP loop is shared (include/common/sqp.cuh); pcg/sqp.cuh and qdldl/sqp.cuh are
+linear-system backends. Keep backend slot order fixed and check state hashes after edits.
 Owned CUDA uses glass::block:: explicitly. GBD-PCG stays cooperative/grid-wide;
 GLASS's single-block PCG is not a replacement. Scratch includes all three halo
 slots, including N=1. Device launch dimensions are compile-time specializations.

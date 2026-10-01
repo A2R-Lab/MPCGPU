@@ -54,6 +54,7 @@ Build modes share mathematical flags; `MPCGPU_NO_REUSE` is a diagnostic fresh
 workspace baseline. The shared builder selects position-only regularization
 for the reviewed example configuration.
 
-Shared orchestration across PCG/QDLDL still has duplication. Deliberately avoid
-a generic backend framework during this safety update; further extraction
-should preserve operation order and carry parity tests.
+The SQP loop lives once in `include/common/sqp.cuh`; `pcg/sqp.cuh` and `qdldl/sqp.cuh`
+supply the linear-system backend (workspace slots, Schur formation, solve) and keep the
+public `sqpSolvePcg`/`sqpSolveQdldl` signatures. Backend slot order is part of the workspace
+contract; changes must keep the state-hash parity gates and tracking hashes unchanged.
