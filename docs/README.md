@@ -1,6 +1,6 @@
 # Documentation
 
-MPCGPU and its GBD-PCG solver live in this repository; GRiD and GLASS are pinned dependencies.
+MPCGPU lives in this repository; GBD-PCG (its linear-system solver), GRiD and GLASS are pinned submodules.
 
 - [Quickstart](../README.md): correctness demos, prerequisites and configuration.
 - [API contracts](api.md): supported inputs, ownership, precision and limitations.

@@ -8,3 +8,7 @@
 	path = GRiD
 	url = https://github.com/A2R-Lab/GRiD.git
 	branch = main
+[submodule "GBD-PCG"]
+	path = GBD-PCG
+	url = https://github.com/A2R-Lab/GBD-PCG.git
+	branch = main

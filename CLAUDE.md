@@ -2,9 +2,11 @@
 
 Read docs/README.md, docs/development.md and the local, gitignored docs/open-tasks/
 (todo list, handoffs, audit and timing notes; not in clones).
-This repository contains MPCGPU and its in-tree GBD-PCG implementation.
-Model inputs, code generation and tests are self-contained.
-GRiD and GLASS are pinned submodules; do not edit their upstream code here.
+This repository contains MPCGPU. Model inputs, code generation and tests are self-contained.
+GBD-PCG, GRiD and GLASS are pinned submodules; do not edit their upstream code here.
+GBD-PCG is developed in A2R-Lab/GBD-PCG and compiled here against MPCGPU's top-level GLASS
+(`-IGLASS`); its nested `GBD-PCG/GLASS` pin must equal the top-level pin (host test), so bump
+both together. Change GBD-PCG upstream, then bump the pin here with a receipt.
 
 ## Standing rules
 
@@ -49,5 +51,4 @@ PCG eta can under-report true residual on poorly conditioned systems; do not
 silently loosen gates or describe eta convergence as a true-residual guarantee.
 
 See docs/development.md for builds/receipt commands. Python is tooling, not a
-high-level solver wrapper. GBD-PCG is maintained here; the old GitHub repository
-has not yet been remotely archived.
+high-level solver wrapper.

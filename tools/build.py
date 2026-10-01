@@ -56,7 +56,7 @@ def source_digest() -> str:
             if path.suffix in {".h", ".hpp", ".cuh"} and path.is_file():
                 digest.update(str(path.relative_to(ROOT)).encode())
                 digest.update(path.read_bytes())
-    for submodule in ("GLASS", "GRiD", "qdldl"):
+    for submodule in ("GBD-PCG", "GLASS", "GRiD", "qdldl"):
         digest.update(subprocess.check_output(["git", "-C", str(ROOT / submodule), "rev-parse", "HEAD"]))
     library = ROOT / "qdldl/build/out/libqdldl.so"
     if library.exists():

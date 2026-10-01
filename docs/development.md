@@ -4,6 +4,12 @@ Initialize recursive HTTPS submodules and install requirements-dev.txt into an
 owned venv. Exact reviewed gitlinks are recorded in tools/dependencies.json.
 Never import models, Python environments or generated files from a sibling repo.
 
+GBD-PCG is a submodule developed in [its own repository](https://github.com/A2R-Lab/GBD-PCG).
+MPCGPU compiles it against the top-level GLASS pin (`-IGLASS -IGBD-PCG/include`); the nested
+`GBD-PCG/GLASS` submodule is unused here and a host test requires its pin to equal the
+top-level one. To change GBD-PCG: commit upstream, bump the gitlink and
+tools/dependencies.json here, then run the receipt.
+
 ## Build and generation
 
 `tools/build.py` serializes compiler invocations and hashes the compiler,

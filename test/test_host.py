@@ -28,6 +28,14 @@ def test_dependency_pins():
         assert actual == expected, f"{name}: update the reviewed dependency manifest with the pin"
 
 
+def test_gbd_pcg_glass_pin_lockstep():
+    # MPCGPU compiles GBD-PCG against its own top-level GLASS; the submodule's nested GLASS pin
+    # must be the same commit so the standalone GBD-PCG build sees what the receipt attested.
+    nested = subprocess.check_output(["git", "-C", str(ROOT / "GBD-PCG"), "ls-tree", "HEAD", "GLASS"], text=True).split()[2]
+    top = subprocess.check_output(["git", "-C", str(ROOT / "GLASS"), "rev-parse", "HEAD"], text=True).strip()
+    assert nested == top, "bump GBD-PCG's GLASS submodule and MPCGPU's GLASS pin together"
+
+
 def test_receipt_policy():
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["gpu_proof"]
     policy = yaml.safe_load((ROOT / "test/gpu-proof-policy.yaml").read_text())

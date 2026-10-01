@@ -2,7 +2,7 @@
 
 CUDA/C++ nonlinear model predictive control with cooperative GPU-wide PCG,
 from [MPCGPU (ICRA 2024)](https://arxiv.org/abs/2309.08079).
-The maintained GBD-PCG implementation lives [in this repository](GBD-PCG/).
+The GBD-PCG solver is developed in [its own repository](https://github.com/A2R-Lab/GBD-PCG) and pinned here as the `GBD-PCG/` submodule.
 Dynamics come from **GRiD**; block linear algebra comes from **GLASS**.
 
 This version modernizes the iiwa14 implementation, validation and builds. The ICRA
@@ -53,7 +53,7 @@ correctness run with simulated 500 Hz control, not a timing measurement. See
 .venv/bin/python -m pytest test/test_host.py -q  # no GPU required
 tools/run_gates.sh                             # GPU correctness, no timing
 make check-codegen                            # pinned local model/recipe
-make -C GBD-PCG/examples test                  # float/double SPD examples
+GBD-PCG/test/run_gates.sh                     # GBD-PCG gates against this GLASS pin
 ```
 
 The default build profile uses float MPC, horizon 64, one SQP step, PCG cap 200,

@@ -30,7 +30,7 @@ cross-language ABI; some internal CUDA error helpers still terminate on errors.
 
 ## GBD-PCG
 
-See [its README](../GBD-PCG/README.md) for matrix layout and entry points.
+GBD-PCG is a pinned submodule; see [its README](../GBD-PCG/README.md) for matrix layout and entry points.
 Host convenience has an identity preconditioner; the device API accepts Pinv
 and caller-owned scratch. Float and double are tested. Invalid dimensions,
 tolerances, unsupported CSR/host Pinv modes and cooperative capacity are rejected.
