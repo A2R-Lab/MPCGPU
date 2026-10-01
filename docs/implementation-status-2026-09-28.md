@@ -97,6 +97,15 @@ differences from 2024 and the evidence table are in the
 [ICRA replication notes](icra-replication.md). The header changes invalidate the
 previously prepared timing plan, so it must be prepared again before timing.
 
+## Main integration candidate (October 1)
+
+GRiD is pinned to its `main` (`0a14c0f`); the iiwa14 header regenerates byte-identically.
+Links, the quick start and the GRiD submodule branch point at `main`, which this branch
+fast-forwards. Paper-task and figure-eight timing ran on September 30; the
+[speedup attribution](speedup-attribution.md) explains the change from the published results;
+the website shows the current results. All local; pushes, the main merge and website deployment
+await user review.
+
 ## Deliberate limits, not hidden completion claims
 
 - No general robot/contact/locomotion/batch API and no Python/Julia solver
