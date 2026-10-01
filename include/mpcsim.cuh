@@ -371,7 +371,7 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
             grid::end_effector_pose_kernel_EE<T><<<1,128,grid::END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT*sizeof(T)>>>(d_eePos, d_xs, grid::NUM_JOINTS, (grid::robotModel<T> *) d_dynmem, 1);
             gpuErrchk(cudaMemcpy(h_eePos, d_eePos, 6*sizeof(T), cudaMemcpyDeviceToHost));
             gpuErrchk(cudaMemcpy(h_eePos_goal, d_eePos_goal, 6*sizeof(T), cudaMemcpyDeviceToHost));
-            // L2 position error — MUST match the GATO/BatchThneed harnesses (np.linalg.norm)
+            // L2 position error — MUST match the GATO and QDLDL-based CPU baseline harnesses (np.linalg.norm)
             // for the 3-way comparison; the old L1 sum inflated MPCGPU's numbers 1.3-1.7x.
             cur_tracking_error = 0.0;
             for(uint32_t i=0; i < 3; i++){
