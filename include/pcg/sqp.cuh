@@ -1,476 +1,76 @@
 #pragma once
-#include <vector>
-#include "common/workspace.cuh"
-#include "utils/dump.hpp"
-#include <type_traits>
-#include <numeric>
+// GBD-PCG backend for the shared SQP driver (common/sqp.cuh): the Schur system is formed as
+// block-tridiagonal strips with its preconditioner and solved by the cooperative grid-wide PCG.
 #include <algorithm>
 #include <cstdint>
-#include <cublas_v2.h>
-#include <math.h>
-#include <cmath>
-#include <random>
-#include <iomanip>
-#include <cuda_runtime.h>
-#include <tuple>
-#include <time.h>
+#include <vector>
+#include "common/sqp.cuh"
 #include "linsys_setup.cuh"
-#include "common/kkt.cuh"
-#include "common/dz.cuh"
-#include "merit.cuh"
 #include "gpu_pcg.cuh"
-#include "settings.cuh"
 
-#ifdef PCG_DEBUG
-template <typename T>
-__global__ void k_count_nonfinite(const T* d, int n, int* d_cnt){
-    int c = 0;
-    for(int i = threadIdx.x + blockIdx.x*blockDim.x; i < n; i += blockDim.x*gridDim.x)
-        if(!isfinite((double)d[i])) c++;
-    atomicAdd(d_cnt, c);
-}
-template <typename T>
-static inline int count_nonfinite(const char* label, const T* d, int n){
-    static int* d_cnt = nullptr; if(!d_cnt) cudaMalloc(&d_cnt, sizeof(int));
-    cudaMemset(d_cnt, 0, sizeof(int));
-    k_count_nonfinite<T><<<32,128>>>(d, n, d_cnt);
-    int h=0; cudaMemcpy(&h, d_cnt, sizeof(int), cudaMemcpyDeviceToHost);
-    if(h) printf("[PCG_DEBUG] %s: %d / %d non-finite\n", label, h, n);
-    return h;
-}
-#endif
+namespace mpcgpu {
 
 template <typename T>
-auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep, T *d_eePos_traj, T *d_lambda, T *d_xu, void *d_dynMem_const, pcg_config<T>& config, T &rho, T rho_reset, T *d_xs_goal = nullptr, mpcgpu::SqpWorkspace* reuse = nullptr){
-    if (state_size != 14 || control_size != 7 || knot_points != KNOT_POINTS || knot_points < 2)
-        throw std::invalid_argument("MPCGPU requires iiwa14 dimensions and the compiled horizon");
-    struct timespec sqp_solve_start, sqp_solve_end;
-    gpuErrchk(cudaDeviceSynchronize());
-#ifndef MPCGPU_CORRECTNESS
-    clock_gettime(CLOCK_MONOTONIC, &sqp_solve_start);
-#endif
-    std::unique_ptr<mpcgpu::SqpWorkspace> owned;
-    if (!reuse) { owned = std::make_unique<mpcgpu::SqpWorkspace>(state_size, control_size, knot_points); reuse = owned.get(); }
-    auto& workspace = *reuse;
-    workspace.begin(state_size, control_size, knot_points);
+struct PcgBackend {
+    static constexpr int kind = 0;
+    pcg_config<T>& config;
+    uint32_t knot_points = 0;
+    size_t smem = 0;
+    T *d_S = nullptr, *d_gamma = nullptr, *d_lambda = nullptr;
+    T *d_Pinv = nullptr, *d_r = nullptr, *d_p = nullptr, *d_v_temp = nullptr, *d_eta_new_temp = nullptr;
+    uint32_t* d_pcg_iters = nullptr;
+    bool* d_pcg_exit = nullptr;
+    void* args[13];
 
-    
-    // data storage
-    std::vector<int> pcg_iter_vec;
-    std::vector<bool> pcg_exit_vec;
-    std::vector<double> linsys_time_vec;
-    bool sqp_time_exit = 1;     // for data recording, not a flag
-    
+    explicit PcgBackend(pcg_config<T>& c) : config(c) {}
 
-
-    // sqp timing
-    // Clock starts at entry; fresh workspace construction is part of this call.
-
-
-
-    const uint32_t states_sq = state_size*state_size;
-    const uint32_t states_p_controls = state_size * control_size;
-    const uint32_t controls_sq = control_size * control_size;
-    const uint32_t states_s_controls = state_size + control_size;
-    const uint32_t KKT_G_DENSE_SIZE_BYTES = static_cast<uint32_t>(((states_sq+controls_sq)*knot_points-controls_sq)*sizeof(T));
-    const uint32_t KKT_C_DENSE_SIZE_BYTES = static_cast<uint32_t>((states_sq+states_p_controls)*(knot_points-1)*sizeof(T));
-    const uint32_t KKT_g_SIZE_BYTES       = static_cast<uint32_t>(((state_size+control_size)*knot_points-control_size)*sizeof(T));
-    const uint32_t KKT_c_SIZE_BYTES       =   static_cast<uint32_t>((state_size*knot_points)*sizeof(T));     
-    const uint32_t DZ_SIZE_BYTES          =   static_cast<uint32_t>((states_s_controls*knot_points-control_size)*sizeof(T));
-
-
-    // line search things
-    const float mu = 10.0f;
-    const uint32_t num_alphas = 8;
-    T h_merit_news[num_alphas];
-    void *ls_merit_kernel = (void *) ls_gato_compute_merit<T>;
-    const size_t merit_smem_size = get_merit_smem_size<T>(state_size, control_size);
-    T h_merit_initial, min_merit;
-    T alphafinal;
-    T delta_merit_iter = 0;
-    T delta_merit_total = 0;
-    uint32_t line_search_step = 0;
-
-
-    auto& streams = workspace.streams;
-    auto handle = workspace.handle;
-    uint32_t sqp_iter = 0;
-
-
-
-    T *d_merit_initial, *d_merit_news, *d_merit_temp,
-          *d_G_dense, *d_C_dense, *d_g, *d_c, *d_Ginv_dense,
-          *d_S, *d_gamma,
-          *d_dz,
-          *d_xs;
-
-    
-    T drho = 1.0;
-    T rho_factor = RHO_FACTOR;
-    T rho_max = RHO_MAX;
-    T rho_min = RHO_MIN;
-
-    
-
-
-    d_G_dense = workspace.device<T>((KKT_G_DENSE_SIZE_BYTES) / sizeof(T));
-    d_C_dense = workspace.device<T>((KKT_C_DENSE_SIZE_BYTES) / sizeof(T));
-    d_g = workspace.device<T>((KKT_g_SIZE_BYTES) / sizeof(T));
-    d_c = workspace.device<T>((KKT_c_SIZE_BYTES) / sizeof(T));
-    d_Ginv_dense = d_G_dense;
-
-    d_S = workspace.device<T>((3*states_sq*knot_points*sizeof(T)) / sizeof(T));
-    d_gamma = workspace.device<T>((state_size*knot_points*sizeof(T)) / sizeof(T));
-    gpuErrchk(cudaPeekAtLastError());
-
-    
-    d_dz = workspace.device<T>((DZ_SIZE_BYTES) / sizeof(T));
-    d_xs = workspace.device<T>((state_size*sizeof(T)) / sizeof(T));
-    gpuErrchk(cudaMemcpy(d_xs, d_xu,  state_size*sizeof(T), cudaMemcpyDeviceToDevice));
-    d_merit_news = workspace.device<T>((8*sizeof(T)) / sizeof(T));
-    d_merit_temp = workspace.device<T>((8*knot_points*sizeof(T)) / sizeof(T));
-    // pcg iterates
-
-    d_merit_initial = workspace.device<T>((sizeof(T)) / sizeof(T));
-    gpuErrchk(cudaMemset(d_merit_initial, 0, sizeof(T)));
-    
-
-    // pcg things
-    T *d_Pinv;
-    d_Pinv = workspace.device<T>((3*states_sq*knot_points*sizeof(T)) / sizeof(T));
-    
-    /*   PCG vars   */
-    T  *d_r, *d_p, *d_v_temp, *d_eta_new_temp;// *d_r_tilde, *d_upsilon;
-    d_r = workspace.device<T>((state_size*knot_points*sizeof(T)) / sizeof(T));
-    d_p = workspace.device<T>((state_size*knot_points*sizeof(T)) / sizeof(T));
-    d_v_temp = workspace.device<T>((knot_points*sizeof(T)) / sizeof(T));
-    d_eta_new_temp = workspace.device<T>((knot_points*sizeof(T)) / sizeof(T));
-    
-    
-    
-    void *pcg_kernel = (void *) pcg<T, STATE_SIZE, KNOT_POINTS>;
-    uint32_t pcg_iters;
-    uint32_t *d_pcg_iters;
-    d_pcg_iters = workspace.device<uint32_t>((sizeof(uint32_t)) / sizeof(uint32_t));
-    bool pcg_exit;
-    bool *d_pcg_exit;
-    d_pcg_exit = workspace.device<bool>((sizeof(bool)) / sizeof(bool));
-    
-    void *pcgKernelArgs[] = {
-        (void *)&d_S,
-        (void *)&d_Pinv,
-        (void *)&d_gamma, 
-        (void *)&d_lambda,
-        (void *)&d_r,
-        (void *)&d_p,
-        (void *)&d_v_temp,
-        (void *)&d_eta_new_temp,
-        (void *)&d_pcg_iters,
-        (void *)&d_pcg_exit,
-        (void *)&config.pcg_max_iter,
-        (void *)&config.pcg_exit_tol,
-        (void *)&config.pcg_rel_tol
-    };
-    size_t ppcg_kernel_smem_size = pcgSharedMemSize<T>(state_size, knot_points);
-
-
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
-
-#if TIME_LINSYS
-    struct timespec linsys_start, linsys_end;
-    double linsys_time;
-#endif
-#if CONST_UPDATE_FREQ && !defined(MPCGPU_CORRECTNESS)
-    struct timespec sqp_cur;
-    auto sqpTimecheck = [&]() {
-        clock_gettime(CLOCK_MONOTONIC, &sqp_cur);
-        return time_delta_us_timespec(sqp_solve_start,sqp_cur) > SQP_MAX_TIME_US;
-    };
-#else
-    auto sqpTimecheck = [&]() { return false; };
-#endif
-
-
-    // Deterministic merit: per-knot temp (no atomicAdd) + fixed-order reduce.
-    compute_merit<T><<<knot_points, MERIT_THREADS, merit_smem_size>>>(
-        state_size, control_size, knot_points,
-        d_xu,
-        d_eePos_traj,
-        static_cast<T>(10),
-        timestep,
-        d_dynMem_const,
-        d_merit_temp,
-        d_xs_goal
-    );
-    reduce_merit<T><<<1, MERIT_THREADS>>>(knot_points, d_merit_temp, d_merit_initial);
-    gpuErrchk(cudaMemcpyAsync(&h_merit_initial, d_merit_initial, sizeof(T), cudaMemcpyDeviceToHost));
-    gpuErrchk(cudaPeekAtLastError());
-
-    //
-    //      SQP LOOP
-    //
-#ifdef DUMP_KKT
-    bool dump_this_solve = false;   // set by the pre-solve dump block; read by the post blocks
-#endif
-    for(uint32_t sqpiter = 0; sqpiter < SQP_MAX_ITER; sqpiter++){
-        
-        generate_kkt_submatrices<T, MPCGPU_INTEGRATOR><<<knot_points, KKT_THREADS, 2 * get_kkt_smem_size<T>(state_size, control_size)>>>(
-            state_size,
-            control_size,
-            knot_points,
-            d_G_dense, 
-            d_C_dense, 
-            d_g, 
-            d_c,
-            d_dynMem_const,
-            timestep,
-            d_eePos_traj,
-            d_xs,
-            d_xu,
-            d_xs_goal
-        );
-        gpuErrchk(cudaPeekAtLastError());
-        if (sqpTimecheck()){ break; }
-
-        form_schur_system<T>(
-            state_size, 
-            control_size, 
-            knot_points, 
-            d_G_dense, 
-            d_C_dense, 
-            d_g, 
-            d_c,
-            d_S, 
-            d_Pinv, 
-            d_gamma,
-            rho
-        );
-        gpuErrchk(cudaPeekAtLastError());
-#ifdef PCG_DEBUG
-        { static int dbg=0; if(dbg<2){ cudaDeviceSynchronize();
-            int b = 3*state_size*state_size*knot_points;
-            int nk = count_nonfinite("d_G_dense", d_G_dense, knot_points*(state_size*state_size+control_size*control_size));
-            int nc = count_nonfinite("d_C_dense", d_C_dense, knot_points*(state_size*state_size+state_size*control_size));
-            int ns = count_nonfinite("d_S", d_S, b);
-            int np = count_nonfinite("d_Pinv", d_Pinv, b);
-            int ng = count_nonfinite("d_gamma", d_gamma, state_size*knot_points);
-            printf("[PCG_DEBUG] solve %d after form_S: G=%d C=%d S=%d Pinv=%d gamma=%d\n", dbg, nk,nc,ns,np,ng); dbg++; } }
-#endif
-#ifdef DUMP_KKT
-// which solve (0-indexed, counted across the whole run) to dump — default first
-#ifndef DUMP_KKT_AT_SOLVE
-#define DUMP_KKT_AT_SOLVE 0
-#endif
-        { static int dumped=0; dump_this_solve = (dumped++==DUMP_KKT_AT_SOLVE); if(dump_this_solve){ gpuErrchk(cudaDeviceSynchronize());
-            auto dump=[](const char* fn, T* d, size_t n){
-                mpcgpu::dumpDevice(fn,d,n);
-            };
-            // G = [Q_k(states_sq) R_k(controls_sq)] per knot (last knot Q only); C = [A_k(states_sq) B_k(states*ctrl)] per non-terminal knot
-            dump("mpc_G.bin",     d_G_dense, (states_sq+controls_sq)*knot_points-controls_sq);
-            dump("mpc_C.bin",     d_C_dense, (states_sq+states_p_controls)*(knot_points-1));
-            dump("mpc_S.bin",     d_S,       3*states_sq*knot_points);   // [L|D|R] strips per knot
-            dump("mpc_Pinv.bin",  d_Pinv,    3*states_sq*knot_points);
-            dump("mpc_gamma.bin", d_gamma,   state_size*knot_points);
-            dump("mpc_g.bin",     d_g,       (state_size+control_size)*knot_points-control_size);
-            dump("mpc_c.bin",     d_c,       state_size*knot_points);
-            dump("mpc_lambda0.bin", d_lambda, state_size*knot_points);   // warm-start lambda (pre-solve)
-            dump("mpc_xu_pre.bin", d_xu, (state_size+control_size)*knot_points-control_size);  // warm-start trajectory
-            printf("[DUMP_KKT] wrote MPCGPU_DUMP_DIR/mpc_{G,C,S,Pinv,gamma}.bin (state=%u ctrl=%u N=%u rho=%g)\n",
-                   state_size, control_size, knot_points, (double)rho);
-        } }
-#endif
-        if (sqpTimecheck()){ break; }
-
-
-    #if TIME_LINSYS
-        gpuErrchk(cudaDeviceSynchronize());
-        if (sqpTimecheck()){ break; }
-        clock_gettime(CLOCK_MONOTONIC,&linsys_start);
-    #endif // #if TIME_LINSYS
-
-        gpuErrchk(cudaLaunchCooperativeKernel(pcg_kernel, knot_points, PCG_NUM_THREADS, pcgKernelArgs, ppcg_kernel_smem_size));    
-        gpuErrchk(cudaMemcpy(&pcg_iters, d_pcg_iters, sizeof(uint32_t), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(&pcg_exit, d_pcg_exit, sizeof(bool), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaPeekAtLastError());
-#ifdef PCG_DEBUG
-        { static int dbg2=0; if(dbg2<2){ cudaDeviceSynchronize();
-            int nl = count_nonfinite("d_lambda_after_pcg", d_lambda, state_size*knot_points);
-            printf("[PCG_DEBUG] solve %d after PCG: lambda=%d iters=%u\n", dbg2, nl, pcg_iters); dbg2++; } }
-#endif
-
-    #if TIME_LINSYS
-        gpuErrchk(cudaDeviceSynchronize());
-        clock_gettime(CLOCK_MONOTONIC,&linsys_end);
-        
-        linsys_time = time_delta_us_timespec(linsys_start,linsys_end);
-        linsys_time_vec.push_back(linsys_time);
-    #endif // #if TIME_LINSYS
-
-        pcg_iter_vec.push_back(pcg_iters);
-        pcg_exit_vec.push_back(pcg_exit);
-
-        
-        if (sqpTimecheck()){ break; }
-        
-        // recover dz
-        compute_dz(
-            state_size,
-            control_size,
-            knot_points,
-            d_Ginv_dense, 
-            d_C_dense, 
-            d_g, 
-            d_lambda, 
-            d_dz
-        );
-        gpuErrchk(cudaPeekAtLastError());
-        if (sqpTimecheck()){ break; }
-#ifdef DUMP_KKT
-        // post-solve state of the SAME dumped solve: lambda after PCG, Ginv, recovered dz
-        { if(dump_this_solve){ gpuErrchk(cudaDeviceSynchronize());
-            auto dump=[](const char* fn, T* d, size_t n){
-                mpcgpu::dumpDevice(fn,d,n);
-            };
-            dump("mpc_lambda1.bin", d_lambda,     state_size*knot_points);
-            dump("mpc_Ginv.bin",    d_Ginv_dense, (states_sq+controls_sq)*knot_points-controls_sq);
-            dump("mpc_dz.bin",      d_dz,         (state_size+control_size)*knot_points-control_size);
-            printf("[DUMP_KKT] wrote MPCGPU_DUMP_DIR/mpc_{lambda1,Ginv,dz}.bin (post-solve)\n");
-        } }
-#endif
-#ifdef SQP_DEBUG
-        {
-            uint32_t dzn = (state_size+control_size)*knot_points - control_size;
-            std::vector<T> hdz(dzn); cudaMemcpy(hdz.data(), d_dz, dzn*sizeof(T), cudaMemcpyDeviceToHost);
-            double nn=0; for(auto v:hdz) nn+=(double)v*(double)v;
-            std::vector<T> hg(dzn); cudaMemcpy(hg.data(), d_g, dzn*sizeof(T), cudaMemcpyDeviceToHost);
-            double gn=0; for(auto v:hg) gn+=(double)v*(double)v;
-            printf("[SQP_DEBUG] iter=%u ||dz||=%.4e ||d_g(cost grad)||=%.4e rho=%.3e\n", sqp_iter, sqrt(nn), sqrt(gn), (double)rho);
-        }
-#endif
-
-        // line search
-        for(uint32_t p = 0; p < num_alphas; p++){
-            void *kernelArgs[] = {
-                (void *)&state_size,
-                (void *)&control_size,
-                (void *)&knot_points,
-                (void *)&d_xs,
-                (void *)&d_xu,
-                (void *)&d_eePos_traj,
-                (void *)&mu, 
-                (void *)&timestep,
-                (void *)&d_dynMem_const,
-                (void *)&d_dz,
-                (void *)&p,
-                (void *)&d_merit_news,
-                (void *)&d_merit_temp,
-                (void *)&d_xs_goal
-            };
-            gpuErrchk(cudaLaunchCooperativeKernel(ls_merit_kernel, knot_points, MERIT_THREADS, kernelArgs, get_merit_smem_size<T>(state_size, knot_points), streams[p]));
-        }
-        if (sqpTimecheck()){ break; }
-        gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
-        
-        
-        cudaMemcpy(h_merit_news, d_merit_news, 8*sizeof(T), cudaMemcpyDeviceToHost);
-        if (sqpTimecheck()){ break; }
-
-
-        line_search_step = 0;
-        min_merit = h_merit_initial;
-        for(int i = 0; i < 8; i++){
-        //     std::cout << h_merit_news[i] << (i == 7 ? "\n" : " ");
-            ///TODO: reduction ratio
-            if(h_merit_news[i] < min_merit){
-                min_merit = h_merit_news[i];
-                line_search_step = i;
-            }
-        }
-#ifdef SQP_DEBUG
-        printf("[SQP_DEBUG] iter=%u merit_init=%.6e min_merit=%.6e step=%d news=[%.4e %.4e %.4e %.4e %.4e %.4e %.4e %.4e]\n",
-               sqp_iter, (double)h_merit_initial, (double)min_merit, line_search_step,
-               (double)h_merit_news[0],(double)h_merit_news[1],(double)h_merit_news[2],(double)h_merit_news[3],
-               (double)h_merit_news[4],(double)h_merit_news[5],(double)h_merit_news[6],(double)h_merit_news[7]);
-#endif
-
-
-        if(min_merit == h_merit_initial){
-            // line search failure
-            drho = max(drho*rho_factor, rho_factor);
-            rho = max(rho*drho, rho_min);
-            sqp_iter++;
-            if(rho > rho_max){
-                sqp_time_exit = 0;
-                rho = rho_reset;
-                break; 
-            }
-            continue;
-        }
-        // std::cout << "line search accepted\n";
-        alphafinal = -1.0 / (1 << line_search_step);        // alpha sign
-
-        drho = min(drho/rho_factor, 1/rho_factor);
-        rho = max(rho*drho, rho_min);
-        
-
-#if USE_DOUBLES
-        cublasDaxpy(
-            handle, 
-            DZ_SIZE_BYTES / sizeof(T),
-            &alphafinal,
-            d_dz, 1,
-            d_xu, 1
-        );
-#else
-        cublasSaxpy(
-            handle, 
-            DZ_SIZE_BYTES / sizeof(T),
-            &alphafinal,
-            d_dz, 1,
-            d_xu, 1
-        );
-#endif
-
-        gpuErrchk(cudaPeekAtLastError());
-        // if success increment after update
-        sqp_iter++;
-#ifdef DUMP_KKT
-        // inputs + accepted step of the SAME dumped solve, for cross-solver replay
-        { if(dump_this_solve){ gpuErrchk(cudaDeviceSynchronize());
-            auto dump=[](const char* fn, T* d, size_t n){
-                mpcgpu::dumpDevice(fn,d,n);
-            };
-            dump("mpc_xu_post.bin", d_xu, (state_size+control_size)*knot_points-control_size);
-            dump("mpc_goal.bin", d_eePos_traj, 6*knot_points);
-            printf("[DUMP_KKT] wrote MPCGPU_DUMP_DIR/mpc_{xu_post,goal}.bin (accepted alpha=%g)\n", (double)alphafinal);
-        } }
-#endif
-
-        if (sqpTimecheck()){ break; }
-
-
-        delta_merit_iter = h_merit_initial - min_merit;
-        delta_merit_total += delta_merit_iter;
-        
-
-        h_merit_initial = min_merit;
-    
+    void setup(SqpWorkspace& workspace, uint32_t state_size, uint32_t, uint32_t knots, T* S, T* gamma, T* lambda) {
+        knot_points = knots; d_S = S; d_gamma = gamma; d_lambda = lambda;
+        d_Pinv = workspace.device<T>(3*state_size*state_size*knots);
+        d_r = workspace.device<T>(state_size*knots);
+        d_p = workspace.device<T>(state_size*knots);
+        d_v_temp = workspace.device<T>(knots);
+        d_eta_new_temp = workspace.device<T>(knots);
+        d_pcg_iters = workspace.device<uint32_t>(1);
+        d_pcg_exit = workspace.device<bool>(1);
+        smem = pcgSharedMemSize<T>(state_size, knots);
+        void* a[13] = {(void*)&d_S, (void*)&d_Pinv, (void*)&d_gamma, (void*)&d_lambda, (void*)&d_r, (void*)&d_p,
+                       (void*)&d_v_temp, (void*)&d_eta_new_temp, (void*)&d_pcg_iters, (void*)&d_pcg_exit,
+                       (void*)&config.pcg_max_iter, (void*)&config.pcg_exit_tol, (void*)&config.pcg_rel_tol};
+        std::copy(a, a + 13, args);
     }
-    
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
-#ifndef MPCGPU_CORRECTNESS
-    clock_gettime(CLOCK_MONOTONIC, &sqp_solve_end);
-#endif
 
-    // Ownership stays with the reusable workspace; a local fallback is RAII.
-#ifdef MPCGPU_CORRECTNESS
-    double sqp_solve_time = 0;
-#else
-    double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
-#endif
+    void formSchur(uint32_t state_size, uint32_t control_size, uint32_t knots, T* d_G, T* d_C, T* d_g, T* d_c,
+                   T* S, T* gamma, T rho) {
+        form_schur_system<T>(state_size, control_size, knots, d_G, d_C, d_g, d_c, S, d_Pinv, gamma, rho);
+    }
 
-    return std::make_tuple(pcg_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, pcg_exit_vec);
+    void solve(T*, std::vector<int>& iter_vec, std::vector<bool>& exit_vec) {
+        gpuErrchk(cudaLaunchCooperativeKernel((void*) pcg<T, STATE_SIZE, KNOT_POINTS>, knot_points, PCG_NUM_THREADS, args, smem));
+        uint32_t iterations; bool exit;
+        gpuErrchk(cudaMemcpy(&iterations, d_pcg_iters, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaMemcpy(&exit, d_pcg_exit, sizeof(bool), cudaMemcpyDeviceToHost));
+        gpuErrchk(cudaPeekAtLastError());
+        iter_vec.push_back(iterations);
+        exit_vec.push_back(exit);
+    }
+
+#ifdef DUMP_KKT
+    template <class Dump> void dumpSchur(Dump dump) {
+        const size_t strips = 3*(size_t)STATE_SIZE*STATE_SIZE*knot_points;   // [L|D|R] per knot
+        dump("mpc_S.bin", d_S, strips);
+        dump("mpc_Pinv.bin", d_Pinv, strips);
+    }
+#endif
+};
+
+} // namespace mpcgpu
+
+template <typename T>
+auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const uint32_t knot_points, float timestep,
+                 T* d_eePos_traj, T* d_lambda, T* d_xu, void* d_dynMem_const, pcg_config<T>& config, T& rho, T rho_reset,
+                 T* d_xs_goal = nullptr, mpcgpu::SqpWorkspace* reuse = nullptr) {
+    mpcgpu::PcgBackend<T> backend(config);
+    return mpcgpu::sqpSolve<T>(state_size, control_size, knot_points, timestep, d_eePos_traj, d_lambda, d_xu,
+                               d_dynMem_const, backend, rho, rho_reset, d_xs_goal, reuse);
 }
