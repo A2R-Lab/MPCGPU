@@ -101,7 +101,8 @@ not raw latency.
 
 Across repeats, each mean varies by at most 4.5% for PCG and 3.5% for QDLDL, except QDLDL at
 N = 256 at 8.3%. GBD-PCG time stays nearly flat with horizon here, so the speedups are much
-larger than published. That difference between hosts and code versions is not yet attributed.
+larger than published. [The attribution](speedup-attribution.md) traces this to fewer PCG iterations
+per solve, from controller fixes; GLASS and the new GPU contribute little.
 
 ### Figure 5: solve-time distribution at N = 128
 
@@ -184,15 +185,14 @@ solve, approximating the earlier code. Tracking is identical between the two mod
 - [x] Signed receipt `513a9a4` (86 passed, no skips) and a fresh-clone quickstart:
   public HTTPS submodules, a new virtual environment, host tests, both demos and
   `make icra` for both backends reproduced the numbers above exactly.
-- [ ] Optional variant with joint-limit terms, if physically valid motion is wanted.
 - [x] Paper-task timing manifest: `tools/timing.py prepare --task icra` builds the
   Figure 4, 5 and 6 workloads (see [timing](timing.md)).
 - [x] Paper-task timing collection on September 30 (tables above), labeled by host.
-- [ ] Attribute the larger-than-published PCG speedups before claiming them publicly.
-- [ ] Add current results beside the published ones on the website, labeled by
-  hardware and method, only from matching experiment data.
+- [x] Attribute the larger-than-published PCG speedups ([attribution](speedup-attribution.md), October 1).
+- [x] Website shows the current results with hardware and date; the paper holds the
+  historical results.
 
 Exit criterion: the principal paper tasks are runnable and checked on the current
 stack; qualitative behavior and measured comparisons are explained and
 reproducible. Correctness and the first timing collection are complete for the
-pick-and-place circuit. The larger-than-published speedups are not yet attributed.
+pick-and-place circuit, and the change from the published speedups is attributed.
