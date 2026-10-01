@@ -1,0 +1,73 @@
+diff --git a/examples/track_iiwa_pcg.cu b/examples/track_iiwa_pcg.cu
+index 29a45e5..7ae02dd 100644
+--- a/examples/track_iiwa_pcg.cu
++++ b/examples/track_iiwa_pcg.cu
+@@ -70,6 +70,9 @@ int main(){
+ 
+         for (uint32_t pcg_exit_ind = 0; pcg_exit_ind < num_exit_vals; pcg_exit_ind++){
+ 
++#ifdef ONLY_TOL_INDEX
++            if (pcg_exit_ind != ONLY_TOL_INDEX) continue;
++#endif
+             float pcg_exit_tol = pcg_exit_vals[pcg_exit_ind];
+ 		std::vector<double> linsys_times;
+ 		std::vector<uint32_t> sqp_iters;
+diff --git a/include/dynamics/iiwa/iiwa_eepos_plant.cuh b/include/dynamics/iiwa/iiwa_eepos_plant.cuh
+index 1a49376..1b2e01d 100644
+--- a/include/dynamics/iiwa/iiwa_eepos_plant.cuh
++++ b/include/dynamics/iiwa/iiwa_eepos_plant.cuh
+@@ -360,7 +360,11 @@ namespace gato_plant{
+ 				//hessian
+ 				for(int j = 0; j < state_size; j++){
+ 					if(j < state_size / 2 && i < state_size / 2){
++#ifdef GN_HESSIAN
++						s_Qk[i*state_size + j] = s_eePos_grad[6*i+0]*s_eePos_grad[6*j+0] + s_eePos_grad[6*i+1]*s_eePos_grad[6*j+1] + s_eePos_grad[6*i+2]*s_eePos_grad[6*j+2];
++#else
+ 						s_Qk[i*state_size + j] = s_qk[i] * s_qk[j];
++#endif
+ 					}
+ 					else{
+ 						s_Qk[i*state_size + j] = (i == j) ? QD_cost : static_cast<T>(0);
+diff --git a/include/mpcsim.cuh b/include/mpcsim.cuh
+index 759c40c..356ffdf 100644
+--- a/include/mpcsim.cuh
++++ b/include/mpcsim.cuh
+@@ -313,7 +313,11 @@ std::tuple<std::vector<toplevel_return_type>, std::vector<linsys_t>, linsys_t> s
+             just_shift<T>(state_size, control_size, knot_points, d_xu);             // shift everything over one
+             if (traj_offset + knot_points < traj_steps){
+                 // if within precomputed traj, fill in last state, control with precompute
+-                gpuErrchk(cudaMemcpy(&d_xu[traj_len - (state_size + control_size)], &d_xu_traj[(state_size+control_size)*traj_offset - control_size], sizeof(T)*(state_size+control_size), cudaMemcpyDeviceToDevice));     // last state filled from precomputed trajectory
++                #ifdef FIX_TAIL_INDEX
++                gpuErrchk(cudaMemcpy(&d_xu[traj_len - (state_size + control_size)], &d_xu_traj[(state_size+control_size)*(traj_offset+knot_points-1) - control_size], sizeof(T)*(state_size+control_size), cudaMemcpyDeviceToDevice));
++#else
++                gpuErrchk(cudaMemcpy(&d_xu[traj_len - (state_size + control_size)], &d_xu_traj[(state_size+control_size)*traj_offset - control_size], sizeof(T)*(state_size+control_size), cudaMemcpyDeviceToDevice));
++#endif     // last state filled from precomputed trajectory
+             }
+             else{
+                 // fill in last state with goal position, zero velocity, last control with zero control
+diff --git a/include/pcg/sqp.cuh b/include/pcg/sqp.cuh
+index a32b339..1d0be9a 100644
+--- a/include/pcg/sqp.cuh
++++ b/include/pcg/sqp.cuh
+@@ -218,6 +218,21 @@ auto sqpSolvePcg(const uint32_t state_size, const uint32_t control_size, const u
+             rho
+         );
+         gpuErrchk(cudaPeekAtLastError());
++#ifdef DUMP_AT
++        { static int solve_count = 0;   // attribution scratch hook: capture one Schur system
++          if (solve_count++ == DUMP_AT) {
++            gpuErrchk(cudaDeviceSynchronize());
++            const char* dir = getenv("MPCGPU_DUMP_DIR");
++            auto dump = [&](const char* name, T* d, size_t n) {
++                std::vector<T> h(n); gpuErrchk(cudaMemcpy(h.data(), d, n*sizeof(T), cudaMemcpyDeviceToHost));
++                std::string path = std::string(dir) + "/" + name; FILE* f = fopen(path.c_str(), "wb");
++                fwrite(h.data(), sizeof(T), n, f); fclose(f); };
++            dump("mpc_S.bin", d_S, 3*states_sq*knot_points);
++            dump("mpc_Pinv.bin", d_Pinv, 3*states_sq*knot_points);
++            dump("mpc_gamma.bin", d_gamma, state_size*knot_points);
++            printf("[DUMP_AT] wrote solve %d\n", DUMP_AT);
++          } }
++#endif
+         if (sqpTimecheck()){ break; }
+         
+ 
