@@ -130,9 +130,10 @@ def icra_metrics(summary_path, workload):
     if not all(math.isfinite(v) and v >= 0 for v in error.values()):
         raise ValueError('Nonfinite tracking result')
     # Figure 6 marks rates a solver cannot sustain. When the budget per control step admits less than
-    # one SQP iteration on average, the controller cannot keep up and the arm drifts: that is a valid
-    # "rate not met" measurement for an iterations workload. Divergence anywhere else is a failure.
-    rate_not_met = workload['kind'] == 'iters' and summary['sqp']['mean_iters'] < 1
+    # one SQP iteration on average AND the arm drifts away (max L2 error above 1 m), the controller
+    # cannot keep up: that is a valid "rate not met" measurement for an iterations workload. Under one
+    # iteration while still tracking is a sustained rate; divergence anywhere else is a failure.
+    rate_not_met = workload['kind'] == 'iters' and summary['sqp']['mean_iters'] < 1 and error['max'] > 1
     if error['max'] > 1 and not rate_not_met:
         raise ValueError('Nonfinite/divergent tracking result')
     timing = summary['timing_us']

@@ -72,15 +72,19 @@ def test_icra_timing_metrics(tmp_path,failure):
         with pytest.raises(ValueError): timing.icra_metrics(path,workload)
 
 
-@pytest.mark.parametrize('kind,iters,ok',[('iters',0.0,True),('iters',1.0,False),('linsys',0.0,False)])
-def test_icra_rate_not_met(tmp_path,kind,iters,ok):
-    # Divergence is a valid Figure 6 outcome only when the budget admits under one SQP iteration.
+@pytest.mark.parametrize('kind,iters,max_error,expect',[
+    ('iters',0.0,1.6,'flagged'),      # budget admits <1 iteration and the arm drifted: rate not met
+    ('iters',0.0,0.018,'sustained'),  # <1 iteration on average but still tracking: a valid rate
+    ('iters',1.0,1.6,'error'),        # divergence with a full iteration per step is a failure
+    ('linsys',0.0,1.6,'error')])      # linear-system workloads never excuse divergence
+def test_icra_rate_not_met(tmp_path,kind,iters,max_error,expect):
     summary={'config':{'timers':True},'offsets':666,'reference_rows':666,'control_updates':10408,
-             'l2_error_m':{'mean':.8,'max':1.6,'final':1.0},'sqp':{'mean_iters':iters,'rho_exits':0},
+             'l2_error_m':{'mean':.8,'max':max_error,'final':1.0},'sqp':{'mean_iters':iters,'rho_exits':0},
              'linsys':{'mean_pcg_iters':0},'timing_us':{'linsys':{'count':500,'median':1200},
                                                         'sqp':{'count':10408,'median':1238}}}
     path=tmp_path/'summary.json'; path.write_text(json.dumps(summary))
     workload={'kind':kind,'backend':'qdldl'}
-    if ok: assert timing.icra_metrics(path,workload)['rate_not_met']
-    else:
+    if expect=='error':
         with pytest.raises(ValueError): timing.icra_metrics(path,workload)
+    else:
+        assert timing.icra_metrics(path,workload)['rate_not_met'] is (expect=='flagged')

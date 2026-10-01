@@ -73,9 +73,10 @@ test/test_host.py::test_trajectory_validation[valid]
 test/test_host.py::test_website_local_links_and_assets
 test/test_timing.py::test_binary_tamper
 test/test_timing.py::test_dry_run_and_authorization
-test/test_timing.py::test_icra_rate_not_met[iters-0.0-True]
-test/test_timing.py::test_icra_rate_not_met[iters-1.0-False]
-test/test_timing.py::test_icra_rate_not_met[linsys-0.0-False]
+test/test_timing.py::test_icra_rate_not_met[iters-0.0-0.018-sustained]
+test/test_timing.py::test_icra_rate_not_met[iters-0.0-1.6-flagged]
+test/test_timing.py::test_icra_rate_not_met[iters-1.0-1.6-error]
+test/test_timing.py::test_icra_rate_not_met[linsys-0.0-1.6-error]
 test/test_timing.py::test_icra_timing_metrics[divergent]
 test/test_timing.py::test_icra_timing_metrics[nan]
 test/test_timing.py::test_icra_timing_metrics[none]
