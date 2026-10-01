@@ -127,7 +127,13 @@ def icra_metrics(summary_path, workload):
     error = summary['l2_error_m']
     if not summary['config']['timers'] or summary['offsets'] != summary['reference_rows']:
         raise ValueError('Missing timers or incomplete circuit')
-    if not all(math.isfinite(v) and v >= 0 for v in error.values()) or error['max'] > 1:
+    if not all(math.isfinite(v) and v >= 0 for v in error.values()):
+        raise ValueError('Nonfinite tracking result')
+    # Figure 6 marks rates a solver cannot sustain. When the budget per control step admits less than
+    # one SQP iteration on average, the controller cannot keep up and the arm drifts: that is a valid
+    # "rate not met" measurement for an iterations workload. Divergence anywhere else is a failure.
+    rate_not_met = workload['kind'] == 'iters' and summary['sqp']['mean_iters'] < 1
+    if error['max'] > 1 and not rate_not_met:
         raise ValueError('Nonfinite/divergent tracking result')
     timing = summary['timing_us']
     if workload['kind'] == 'linsys' and timing['linsys']['count'] < 100:
@@ -137,7 +143,8 @@ def icra_metrics(summary_path, workload):
     return {'tracking_mean_l2': error['mean'], 'tracking_max_l2': error['max'], 'tracking_final_l2': error['final'],
             'sqp_iters_mean': summary['sqp']['mean_iters'], 'sqp_rho_exits': summary['sqp']['rho_exits'],
             'linsys_us': timing['linsys'], 'sqp_us': timing['sqp'], 'median_us': timing['sqp']['median'],
-            'pcg_iters_mean': summary['linsys']['mean_pcg_iters'] if workload['backend'] == 'pcg' else None}
+            'pcg_iters_mean': summary['linsys']['mean_pcg_iters'] if workload['backend'] == 'pcg' else None,
+            'rate_not_met': rate_not_met}
 
 
 def validate(plan):

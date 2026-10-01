@@ -70,3 +70,17 @@ def test_icra_timing_metrics(tmp_path,failure):
     if failure=='none': assert timing.icra_metrics(path,workload)['median_us']==1900
     else:
         with pytest.raises(ValueError): timing.icra_metrics(path,workload)
+
+
+@pytest.mark.parametrize('kind,iters,ok',[('iters',0.0,True),('iters',1.0,False),('linsys',0.0,False)])
+def test_icra_rate_not_met(tmp_path,kind,iters,ok):
+    # Divergence is a valid Figure 6 outcome only when the budget admits under one SQP iteration.
+    summary={'config':{'timers':True},'offsets':666,'reference_rows':666,'control_updates':10408,
+             'l2_error_m':{'mean':.8,'max':1.6,'final':1.0},'sqp':{'mean_iters':iters,'rho_exits':0},
+             'linsys':{'mean_pcg_iters':0},'timing_us':{'linsys':{'count':500,'median':1200},
+                                                        'sqp':{'count':10408,'median':1238}}}
+    path=tmp_path/'summary.json'; path.write_text(json.dumps(summary))
+    workload={'kind':kind,'backend':'qdldl'}
+    if ok: assert timing.icra_metrics(path,workload)['rate_not_met']
+    else:
+        with pytest.raises(ValueError): timing.icra_metrics(path,workload)
