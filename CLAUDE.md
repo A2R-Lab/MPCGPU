@@ -14,6 +14,8 @@ GRiD and GLASS are pinned submodules; do not edit their upstream code here.
 - Preserve other agents' files/processes. Do not run sibling project workloads.
 - Short single-line commits, no Co-Authored-By. Hold pushes, PRs, main merges,
   releases and website deployment until explicitly cleared.
+- The project page is `docs/index.html`; GitHub Pages serves `main` `/docs`, so any push to
+  `main` that touches `docs/` republishes http://a2r-lab.org/MPCGPU/ (see docs/website.md).
 - Commit source -> full clean-source GPU receipt -> receipt commit -> authorized
   push -> green CI. Do not edit receipts, carry old results, or sign subsets.
 - Never reuse timing output after a failed run. Read docs/timing.md before timing.
