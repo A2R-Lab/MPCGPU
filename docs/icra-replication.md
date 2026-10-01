@@ -81,6 +81,74 @@ Repeated trials are bit-identical: the signed-suite gates run two trials at N = 
 for each backend and compare state hashes. The paper reports about 10 cm average L1
 error; every configuration here stays below that.
 
+## Timing results (September 30, 2026)
+
+Collected in an assigned quiet window on the RTX 5090 / Core Ultra 9 285K / CUDA 13.2 host,
+source `04764ee`, receipt `bccb34a`, three independent repeats per workload. Raw samples,
+summaries and provenance are in `tmp/timing/mpcgpu-icra-20260930-205239` (local, not in Git).
+The paper used an RTX 4090, an i9-12900K and CUDA 12.1, and the model and EE frame have since been corrected. Compare ratios and trends,
+not raw latency.
+
+### Figure 4: average linear-system solve time at 500 Hz
+
+| N | QDLDL (µs) | GBD-PCG (µs) | Speedup | Paper speedup | PCG mean L2 error (m) |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 88 | 50 | 1.8× | 1.0× | 0.0486 |
+| 64 | 162 | 54 | 3.0× | 1.5× | 0.0639 |
+| 128 | 275 | 49 | 5.6× | 1.9× | 0.0107 |
+| 256 | 552 | 57 | 9.7× | 3.6× | 0.0111 |
+| 512 | 1099 | 64 | 17.2× | 3.3× | 0.0135 |
+
+Across repeats, each mean varies by at most 4.5% for PCG and 3.5% for QDLDL, except QDLDL at
+N = 256 at 8.3%. GBD-PCG time stays nearly flat with horizon here, so the speedups are much
+larger than published. That difference between hosts and code versions is not yet attributed.
+
+### Figure 5: solve-time distribution at N = 128
+
+QDLDL: median 273 µs, fastest 266 µs, 99.9th percentile 305 µs.
+Its single slowest solve, 4555 µs, is an isolated outlier, so tails are compared with
+its 99.9th percentile.
+
+| ε | Median (µs) | Mean (µs) | ≥10× faster than fastest QDLDL | Paper | Slowest / QDLDL p99.9 | ≥2× QDLDL p99.9 | Mean L2 error (m) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10⁻⁴ | 23 | 49 | 78% | 65% | 2.8× | 1.0% | 0.0107 |
+| 5·10⁻⁵ | 23 | 56 | 74% | 52% | 2.8× | 1.2% | 0.0118 |
+| 10⁻⁵ | 23 | 70 | 67% | 20% | 2.9× | 1.6% | 0.0140 |
+
+The paper's ordering holds: tighter tolerances shift mass out of the fast mode, and PCG
+keeps a slow mode near the QDLDL time.
+
+### Figure 6: average SQP iterations per control step
+
+| Solver | Rate | N = 32 | 64 | 128 | 256 | 512 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| QDLDL | 250 Hz | 19.5 (21) | 14.0 (14) | 9.0 (8) | 5.0 (4) | 2.0 (2) |
+| QDLDL | 500 Hz | 9.2 (10) | 7.0 (6.5) | 4.0 (4) | 2.0 (2) | 1.0 (1) |
+| QDLDL | 1000 Hz | 4.0 (4) | 3.0 (3) | 2.0 (1) | 1.0 (X) | lost (X) |
+| GBD-PCG | 250 Hz | 22.0 (22.2) | 21.4 (19.7) | 18.3 (15.4) | 16.0 (5.2) | 10.1 (4.4) |
+| GBD-PCG | 500 Hz | 11.2 (10.3) | 10.9 (10.6) | 9.8 (8) | 8.7 (4.6) | 5.2 (3) |
+| GBD-PCG | 1000 Hz | 5.4 (4.9) | 5.3 (5.2) | 5.0 (3.7) | 4.3 (2.4) | 2.6 (1.7) |
+
+Paper values are in parentheses. "lost" marks QDLDL at N = 512 and 1 kHz: one QDLDL solve
+exceeds the 1 ms budget, no SQP iteration completes and the arm leaves the circuit. The
+harness records it as a rate not met. QDLDL also averages just under one iteration at
+N = 256 and 1 kHz and at N = 512 and 500 Hz, and still tracks within 1.8 cm there.
+GBD-PCG completes more iterations than in the paper at every N ≥ 128.
+
+### Figure-eight workspace A/B (same source, not the paper task)
+
+Internal SQP time per control update, medians of three repeats, from `tmp/timing/mpcgpu-fig8-20260930-202442`.
+Reused workspaces keep allocations, streams and cuBLAS handles; fresh ones rebuild them per
+solve, approximating the earlier code. Tracking is identical between the two modes.
+
+| N | PCG reused (µs) | PCG fresh (µs) | QDLDL reused (µs) | QDLDL fresh (µs) |
+| ---: | ---: | ---: | ---: | ---: |
+| 32 | 184 | 233 | 240 | 312 |
+| 64 | 178 | 227 | 310 | 396 |
+| 128 | 194 | 243 | 435 | 584 |
+| 256 | 215 | 278 | 716 | 987 |
+| 512 | 346 | 422 | 1388 | 1862 |
+
 ## Findings
 
 - **Gravity was the missing protocol input.** With −9.81 gravity and the paper's
@@ -118,16 +186,13 @@ error; every configuration here stays below that.
   `make icra` for both backends reproduced the numbers above exactly.
 - [ ] Optional variant with joint-limit terms, if physically valid motion is wanted.
 - [x] Paper-task timing manifest: `tools/timing.py prepare --task icra` builds the
-  Figure 4, 5 and 6 workloads (see [timing](timing.md)). Nothing has been executed.
-- [ ] Paper-task timing collection: linear-system time, controller iterations and
-  task quality for both backends in an assigned quiet window. Report them
-  separately and label the RTX 5090 / Core Ultra 9 285K / CUDA 13.2 host against
-  the paper's RTX 4090 / i9-12900K / CUDA 12.1. Exact old latency values are not
-  the replication target.
+  Figure 4, 5 and 6 workloads (see [timing](timing.md)).
+- [x] Paper-task timing collection on September 30 (tables above), labeled by host.
+- [ ] Attribute the larger-than-published PCG speedups before claiming them publicly.
 - [ ] Add current results beside the published ones on the website, labeled by
   hardware and method, only from matching experiment data.
 
 Exit criterion: the principal paper tasks are runnable and checked on the current
 stack; qualitative behavior and measured comparisons are explained and
-reproducible. Correctness is complete for the pick-and-place circuit; the
-performance comparison is not.
+reproducible. Correctness and the first timing collection are complete for the
+pick-and-place circuit. The larger-than-published speedups are not yet attributed.

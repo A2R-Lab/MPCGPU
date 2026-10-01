@@ -1,6 +1,7 @@
 # MPCGPU quiet-window handoff
 
-**No timing has been collected for this modernization candidate.**
+**First collection: September 30, 2026.** Results are in
+[the ICRA replication notes](icra-replication.md#timing-results-september-30-2026).
 Correctness work can run on the shared box; this launcher cannot.
 
 ## Coordinator fields
