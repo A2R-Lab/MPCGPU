@@ -81,7 +81,7 @@ Repeated trials are bit-identical: the signed-suite gates run two trials at N = 
 for each backend and compare state hashes. The paper reports about 10 cm average L1
 error; every configuration here stays below that.
 
-## Timing results (September 30, 2026)
+## Timing results (October 1, 2026)
 
 Collected in an assigned quiet window on the RTX 5090 / Core Ultra 9 285K / CUDA 13.2 host,
 source `04764ee`, receipt `bccb34a`, three independent repeats per workload. Raw samples,
@@ -93,28 +93,28 @@ not raw latency.
 
 | N | QDLDL (µs) | GBD-PCG (µs) | Speedup | Paper speedup | PCG mean L2 error (m) |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 32 | 88 | 50 | 1.8× | 1.0× | 0.0486 |
-| 64 | 162 | 54 | 3.0× | 1.5× | 0.0639 |
-| 128 | 275 | 49 | 5.6× | 1.9× | 0.0107 |
-| 256 | 552 | 57 | 9.7× | 3.6× | 0.0111 |
-| 512 | 1099 | 64 | 17.2× | 3.3× | 0.0135 |
+| 32 | 89 | 54 | 1.6× | 1.0× | 0.0407 |
+| 64 | 162 | 54 | 3.0× | 1.5× | 0.0627 |
+| 128 | 277 | 49 | 5.6× | 1.9× | 0.0108 |
+| 256 | 535 | 57 | 9.4× | 3.6× | 0.0110 |
+| 512 | 1074 | 63 | 17.1× | 3.3× | 0.0132 |
 
-Across repeats, each mean varies by at most 4.5% for PCG and 3.5% for QDLDL, except QDLDL at
-N = 256 at 8.3%. GBD-PCG time stays nearly flat with horizon here, so the speedups are much
+Across the three repeats, the per-repeat means spread by at most 2.8% of their mean for PCG and
+6.6% for QDLDL. The tables are printed by `tools/icra_tables.py` from the run directory. GBD-PCG time stays nearly flat with horizon here, so the speedups are much
 larger than published. [The attribution](speedup-attribution.md) traces this to fewer PCG iterations
 per solve, from controller fixes; GLASS and the new GPU contribute little.
 
 ### Figure 5: solve-time distribution at N = 128
 
-QDLDL: median 273 µs, fastest 266 µs, 99.9th percentile 305 µs.
-Its single slowest solve, 4555 µs, is an isolated outlier, so tails are compared with
-its 99.9th percentile.
+QDLDL: median 272 µs, fastest 266 µs, 99.9th percentile 313 µs, slowest 1559 µs. Tails are
+compared with the 99.9th percentile so that single outliers do not dominate; GBD-PCG at ε = 10⁻⁴
+has one such outlier (one solve of about 6.1 ms among 156 000), which is the 19.5× entry below.
 
 | ε | Median (µs) | Mean (µs) | ≥10× faster than fastest QDLDL | Paper | Slowest / QDLDL p99.9 | ≥2× QDLDL p99.9 | Mean L2 error (m) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 10⁻⁴ | 23 | 49 | 78% | 65% | 2.8× | 1.0% | 0.0107 |
-| 5·10⁻⁵ | 23 | 56 | 74% | 52% | 2.8× | 1.2% | 0.0118 |
-| 10⁻⁵ | 23 | 70 | 67% | 20% | 2.9× | 1.6% | 0.0140 |
+| 10⁻⁴ | 23 | 49 | 79% | 65% | 19.5× | 1.0% | 0.0108 |
+| 5·10⁻⁵ | 23 | 57 | 74% | 52% | 2.8× | 1.3% | 0.0118 |
+| 10⁻⁵ | 23 | 69 | 67% | 20% | 4.0× | 1.5% | 0.0141 |
 
 The paper's ordering holds: tighter tolerances shift mass out of the fast mode, and PCG
 keeps a slow mode near the QDLDL time.
@@ -123,12 +123,12 @@ keeps a slow mode near the QDLDL time.
 
 | Solver | Rate | N = 32 | 64 | 128 | 256 | 512 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| QDLDL | 250 Hz | 19.5 (21) | 14.0 (14) | 9.0 (8) | 5.0 (4) | 2.0 (2) |
-| QDLDL | 500 Hz | 9.2 (10) | 7.0 (6.5) | 4.0 (4) | 2.0 (2) | 1.0 (1) |
+| QDLDL | 250 Hz | 19.9 (21) | 14.0 (14) | 9.2 (8) | 5.0 (4) | 2.0 (2) |
+| QDLDL | 500 Hz | 9.3 (10) | 6.9 (6.5) | 4.0 (4) | 2.0 (2) | 1.0 (1) |
 | QDLDL | 1000 Hz | 4.0 (4) | 3.0 (3) | 2.0 (1) | 1.0 (X) | lost (X) |
-| GBD-PCG | 250 Hz | 22.0 (22.2) | 21.4 (19.7) | 18.3 (15.4) | 16.0 (5.2) | 10.1 (4.4) |
-| GBD-PCG | 500 Hz | 11.2 (10.3) | 10.9 (10.6) | 9.8 (8) | 8.7 (4.6) | 5.2 (3) |
-| GBD-PCG | 1000 Hz | 5.4 (4.9) | 5.3 (5.2) | 5.0 (3.7) | 4.3 (2.4) | 2.6 (1.7) |
+| GBD-PCG | 250 Hz | 21.7 (22.2) | 21.4 (19.7) | 18.3 (15.4) | 16.0 (5.2) | 10.2 (4.4) |
+| GBD-PCG | 500 Hz | 10.9 (10.3) | 10.9 (10.6) | 9.9 (8) | 8.7 (4.6) | 5.2 (3) |
+| GBD-PCG | 1000 Hz | 5.3 (4.9) | 5.3 (5.2) | 5.0 (3.7) | 4.3 (2.4) | 2.6 (1.7) |
 
 Paper values are in parentheses. "lost" marks QDLDL at N = 512 and 1 kHz: one QDLDL solve
 exceeds the 1 ms budget, no SQP iteration completes and the arm leaves the circuit. The
@@ -164,12 +164,13 @@ solve, approximating the earlier code. Tracking is identical between the two mod
 - **PCG tolerance matters at short horizons.** At N = 32 with the sweep's middle value,
   5·10⁻⁶, PCG passes within 11 cm of the second goal and fails the 5 cm visit check. The
   tighter values from the paper's own N = 32 sweep, 2.5·10⁻⁶ and 10⁻⁶, bring every goal
-  within 5 cm, so 2.5·10⁻⁶ is the N = 32 default since October 1, 2026. The N = 32 timing
-  cells in the table above were collected at 5·10⁻⁶ and will be re-collected at the new
-  default in the next timing window. This matches the paper's observation that looser
+  within 5 cm, so 2.5·10⁻⁶ is the N = 32 default since October 1, 2026, and the tables above
+  use it: against the earlier 5·10⁻⁶ run, N = 32 PCG needs 7.3 instead of 6.4 iterations per
+  solve (54 instead of 50 µs, 1.6× instead of 1.8× over QDLDL) and its mean tracking error
+  falls from 4.9 to 4.1 cm. This matches the paper's observation that looser
   tolerances trade tracking for speed.
 - **Inexact PCG steps end some SQP loops early.** The line search fails until ρ
-  exceeds its maximum on 355 to 2110 of about 5200 control updates; QDLDL has none.
+  exceeds its maximum on 24 to 1109 of 5204 control updates; QDLDL has none.
   Even so, PCG tracks more closely than QDLDL at N ≥ 128. The cause of that
   difference is not yet isolated.
 - **N = 64 tracks worse than N = 32** because the paper used a ten times larger
@@ -191,7 +192,8 @@ solve, approximating the earlier code. Tracking is identical between the two mod
   for the main integration candidate).
 - [x] Paper-task timing manifest: `tools/timing.py prepare --task icra` builds the
   Figure 4, 5 and 6 workloads (see the timing section of [development](development.md)).
-- [x] Paper-task timing collection on September 30 (tables above), labeled by host.
+- [x] Paper-task timing collection on October 1 (tables above; the September 30 collection
+  preceded the N = 32 tolerance change), labeled by host.
 - [x] Attribute the larger-than-published PCG speedups ([attribution](speedup-attribution.md), October 1).
 - [x] Website shows the current results with hardware and date; the paper holds the
   historical results.

@@ -1,9 +1,9 @@
 # Why the ICRA results moved (attribution, October 1, 2026)
 
-For review before the main merge. The September 30 timing on the RTX 5090 gave GBD-PCG
-average linear-system times of 50–64 µs at every horizon, against 75–360 µs in the paper.
-QDLDL on the CPU stayed within about 15% of the paper, so the speedup over QDLDL grew from
-1.0–3.6× to 1.8–17×. This document splits that change into its causes.
+The October 1, 2026 timing on the RTX 5090 gave GBD-PCG average linear-system times of
+49–63 µs at every horizon, against 75–360 µs in the paper. QDLDL on the CPU stayed within
+about 15% of the paper, so the speedup over QDLDL grew from 1.0–3.6× to 1.6–17×. This
+document splits that change into its causes.
 
 Average PCG solve time is iterations per solve times time per iteration, plus a fixed launch
 and copy-back cost. Each factor was measured separately.
@@ -60,7 +60,7 @@ cost is the slope between the two; the one-iteration solve is the fixed launch a
 Moving GBD-PCG onto GLASS (commit `bc60729`, its only change) cut the time per iteration by 0.7–4.6%,
 most at short and medium horizons. Later GBD-PCG changes, the relative tolerance, converged-start
 guard and safety checks, left it unchanged. The fixed cost of about 23 µs at N ≤ 256 is the same in
-every version, and it is most of today's 50–64 µs average because current solves need few iterations.
+every version, and it is most of today's 49–63 µs average because current solves need few iterations.
 
 ![Time per PCG iteration by kernel version](attribution-per-iteration.png)
 
@@ -69,21 +69,21 @@ every version, and it is most of today's 50–64 µs average because current sol
 The published code was rebuilt unchanged for this GPU and run exactly as in the paper: 500 Hz,
 2000 µs wall-clock SQP budget, linear-system timers, its middle tolerances, three repeats. Its
 speedups over QDLDL are 1.2–2.9×, the same range as the published 1.0–3.6× and far from the current
-code's 1.8–17×, so the new hardware does not explain the new results. Point by point it is close to the
+code's 1.6–17×, so the new hardware does not explain the new results. Point by point it is close to the
 published GBD-PCG times at N = 32, 128 and 512, faster at 64 and slower at 256. Its PCG time varies
 strongly between runs: at N = 128 the three repeats gave 333, 152 and 138 µs, against about 150 µs read
 from the published Figure 4. QDLDL on the CPU matches the published bars within about 15%.
 
 | N | Paper code PCG (µs, median [range]) | Paper code iterations | Current PCG (µs) | Current iterations | Paper code QDLDL (µs) | Current QDLDL (µs) | Paper code speedup | Current speedup | Published speedup |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 32 | 71 [71–72] | 10.9 | 50 | 6.4 | 86 | 88 | 1.2× | 1.8× | 1.0× |
+| 32 | 71 [71–72] | 10.9 | 54 | 7.3 | 86 | 89 | 1.2× | 1.6× | 1.0× |
 | 64 | 64 [62–65] | 9.2 | 54 | 7.0 | 144 | 162 | 2.2× | 3.0× | 1.5× |
-| 128 | 152 [138–333] | 25.8 | 49 | 5.6 | 276 | 275 | 1.8× | 5.6× | 1.9× |
-| 256 | 283 [253–305] | 42.3 | 57 | 6.2 | 543 | 552 | 1.9× | 9.7× | 3.6× |
-| 512 | 367 [362–391] | 41.8 | 64 | 5.2 | 1078 | 1099 | 2.9× | 17.2× | 3.3× |
+| 128 | 152 [138–333] | 25.8 | 49 | 5.6 | 276 | 277 | 1.8× | 5.6× | 1.9× |
+| 256 | 283 [253–305] | 42.3 | 57 | 6.2 | 543 | 535 | 1.9× | 9.4× | 3.6× |
+| 512 | 367 [362–391] | 41.8 | 63 | 5.1 | 1078 | 1074 | 2.9× | 17.1× | 3.3× |
 
-Current-code columns are means over the three repeats, the statistic the plots and the replication
-notes use; paper-code columns are medians with the range because of the N = 128 outlier.
+Current-code columns are means over the three repeats of the October 1 evening run (N = 32 at its
+2.5·10⁻⁶ default), the statistic the plots and the replication notes use; paper-code columns are medians with the range because of the N = 128 outlier.
 
 ![Published versus current code on this host](attribution-paper-vs-current.png)
 
