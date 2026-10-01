@@ -4,6 +4,8 @@
 Usage: summarize.py RESULTS_DIR CURRENT_ICRA_TIMING_DIR
 Prints Markdown tables: per-iteration kernel cost by version, and paper-era versus current
 linear-system times on the RTX 5090 next to the published RTX 4090 speedups.
+Current-code columns are means over the repeats, as in tools/plot_timing.py; paper-code columns
+are medians with the range, because its N=128 repeats include an outlier.
 """
 import collections
 import json
@@ -54,9 +56,9 @@ def paper_table(res: Path, current: Path):
             p.append(load(base / f"{n}_PCG_{PAPER_TOL[n]}_0_linsys_times.result").mean())
             it.append(load(base / f"{n}_PCG_{PAPER_TOL[n]}_0_pcg_iters.result").mean())
         cases = sorted(current.glob(f"icra-pcg-{n}-linsys-500hz-r*"))
-        cp = np.median([load(c / "icra/trial_0_linsys_times.result").mean() for c in cases])
-        ci = np.median([json.loads((c / "icra/summary.json").read_text())["linsys"]["mean_pcg_iters"] for c in cases])
-        cq = np.median([load(c / "icra/trial_0_linsys_times.result").mean()
+        cp = np.mean([load(c / "icra/trial_0_linsys_times.result").mean() for c in cases])
+        ci = np.mean([json.loads((c / "icra/summary.json").read_text())["linsys"]["mean_pcg_iters"] for c in cases])
+        cq = np.mean([load(c / "icra/trial_0_linsys_times.result").mean()
                         for c in current.glob(f"icra-qdldl-{n}-linsys-500hz-r*")])
         pm, qm = np.median(p), np.median(q)
         print(f"| {n} | {pm:.0f} [{min(p):.0f}–{max(p):.0f}] | {np.median(it):.1f} | {cp:.0f} | {ci:.1f} | {qm:.0f} | {cq:.0f} | "

@@ -76,11 +76,14 @@ from the published Figure 4. QDLDL on the CPU matches the published bars within 
 
 | N | Paper code PCG (µs, median [range]) | Paper code iterations | Current PCG (µs) | Current iterations | Paper code QDLDL (µs) | Current QDLDL (µs) | Paper code speedup | Current speedup | Published speedup |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 32 | 71 [71–72] | 10.9 | 50 | 6.3 | 86 | 88 | 1.2× | 1.8× | 1.0× |
+| 32 | 71 [71–72] | 10.9 | 50 | 6.4 | 86 | 88 | 1.2× | 1.8× | 1.0× |
 | 64 | 64 [62–65] | 9.2 | 54 | 7.0 | 144 | 162 | 2.2× | 3.0× | 1.5× |
-| 128 | 152 [138–333] | 25.8 | 49 | 5.6 | 276 | 274 | 1.8× | 5.5× | 1.9× |
-| 256 | 283 [253–305] | 42.3 | 56 | 6.1 | 543 | 546 | 1.9× | 9.7× | 3.6× |
-| 512 | 367 [362–391] | 41.8 | 64 | 5.3 | 1078 | 1098 | 2.9× | 17.1× | 3.3× |
+| 128 | 152 [138–333] | 25.8 | 49 | 5.6 | 276 | 275 | 1.8× | 5.6× | 1.9× |
+| 256 | 283 [253–305] | 42.3 | 57 | 6.2 | 543 | 552 | 1.9× | 9.7× | 3.6× |
+| 512 | 367 [362–391] | 41.8 | 64 | 5.2 | 1078 | 1099 | 2.9× | 17.2× | 3.3× |
+
+Current-code columns are means over the three repeats, the statistic the plots and the replication
+notes use; paper-code columns are medians with the range because of the N = 128 outlier.
 
 ![Published versus current code on this host](attribution-paper-vs-current.png)
 
