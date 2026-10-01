@@ -64,6 +64,9 @@ void ls_gato_compute_merit(uint32_t state_size,
             }
         }
         if(d_xs_goal != nullptr){ glass::block::copy<T>(state_size, &d_xs_goal[knot*state_size], s_x_goal_k); }
+        // The terminal knot has no control, but the cost reads its u slot with zero weight;
+        // zero it so stale shared memory (NaN/Inf) cannot turn the merit into 0 * NaN = NaN.
+        if (knot == knot_points - 1) { for (int i = thread_id; i < control_size; i += num_threads) s_xux_k[state_size + i] = static_cast<T>(0); }
         block.sync();
 
         Jk = mpcgpu_plant::trackingcost<T>(state_size, control_size, knot_points, s_xux_k, s_eePos_k_traj, s_x_goal_ptr, s_temp, d_robotModel);
@@ -131,6 +134,9 @@ void compute_merit(uint32_t state_size, uint32_t control_size, uint32_t knot_poi
             }
         }
         if(d_xs_goal != nullptr){ glass::block::copy<T>(state_size, &d_xs_goal[knot*state_size], s_x_goal_k); }
+        // The terminal knot has no control, but the cost reads its u slot with zero weight;
+        // zero it so stale shared memory (NaN/Inf) cannot turn the merit into 0 * NaN = NaN.
+        if (knot == knot_points - 1) { for (int i = thread_id; i < control_size; i += num_threads) s_xux_k[state_size + i] = static_cast<T>(0); }
 
         block.sync();
         Jk = mpcgpu_plant::trackingcost<T>(state_size, control_size, knot_points, s_xux_k, s_eePos_k_traj, s_x_goal_ptr, s_temp, d_robotModel);
