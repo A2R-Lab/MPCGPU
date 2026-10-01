@@ -22,6 +22,7 @@ import numpy as np
 
 INK, MUTED, LINE, ACCENT, GREEN, GOLD = "#153453", "#52657a", "#dce2df", "#316045", "#8fbf6a", "#d9a441"
 HORIZONS = [32, 64, 128, 256, 512]
+CURRENT_ICRA = None
 PUBLISHED_SPEEDUP = {32: 1.0, 64: 1.5, 128: 1.9, 256: 3.6, 512: 3.3}          # Figure 4 labels
 PUBLISHED_FIG6 = {("qdldl", 250): [21, 14, 8, 4, 2], ("qdldl", 500): [10, 6.5, 4, 2, 1],
                   ("qdldl", 1000): [4, 3, 1, None, None], ("pcg", 250): [22.2, 19.7, 15.4, 5.2, 4.4],
@@ -167,7 +168,39 @@ def attribution(res: Path, out: Path) -> dict:
     ax.legend(frameon=False)
     ax.set_title("GBD-PCG cost per iteration on identical systems (RTX 5090)", color=INK, fontsize=11, loc="left")
     save(fig, out, "attribution_per_iteration")
+    paper_vs_current(res, out)
     return summary
+
+
+PAPER_TOL = {32: "0.000005", 64: "0.000050", 128: "0.000100", 256: "0.000100", 512: "0.000100"}
+
+
+def paper_vs_current(res: Path, out: Path, current: Path | None = None):
+    """Mean GBD-PCG solve time and iterations: published code versus current code, both on this host."""
+    current = current or CURRENT_ICRA
+    paper_t, paper_i, cur_t, cur_i = [], [], [], []
+    for n in HORIZONS:
+        runs = sorted((res / "paper").glob("r*"))
+        paper_t.append(np.median([np.loadtxt(r / f"tmp/results/{n}_PCG_{PAPER_TOL[n]}_0_linsys_times.result").mean() for r in runs]))
+        paper_i.append(np.median([np.loadtxt(r / f"tmp/results/{n}_PCG_{PAPER_TOL[n]}_0_pcg_iters.result").mean() for r in runs]))
+        cases = sorted(current.glob(f"icra-pcg-{n}-linsys-500hz-r*"))
+        cur_t.append(np.median([linsys(c).mean() for c in cases]))
+        cur_i.append(np.median([json.loads((c / "icra/summary.json").read_text())["linsys"]["mean_pcg_iters"] for c in cases]))
+    x = np.arange(len(HORIZONS))
+    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+    ax.bar(x - 0.2, paper_t, 0.38, color=GOLD, label="Published code (2024)")
+    ax.bar(x + 0.2, cur_t, 0.38, color=INK, label="Current code")
+    for i in range(len(HORIZONS)):
+        ax.annotate(f"{paper_i[i]:.0f} it", (x[i] - 0.2, paper_t[i]), xytext=(0, 4), textcoords="offset points",
+                    ha="center", color=MUTED, fontsize=9)
+        ax.annotate(f"{cur_i[i]:.0f} it", (x[i] + 0.2, cur_t[i]), xytext=(0, 4), textcoords="offset points",
+                    ha="center", color=MUTED, fontsize=9)
+    ax.set_xticks(x, [str(n) for n in HORIZONS])
+    ax.set_xlabel("Trajectory length (knot points)")
+    ax.set_ylabel("Average GBD-PCG solve time (µs)")
+    ax.legend(frameon=False, loc="upper left")
+    ax.set_title("Same task and GPU: mean PCG iterations per solve labeled", color=INK, fontsize=11, loc="left")
+    save(fig, out, "attribution_paper_vs_current")
 
 
 def main():
@@ -178,6 +211,8 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+    global CURRENT_ICRA
+    CURRENT_ICRA = args.icra
     icra = verdicts(args.icra)
     figure4(icra, args.out)
     figure5(icra, args.out)

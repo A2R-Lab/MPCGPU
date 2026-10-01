@@ -5,9 +5,10 @@ from [MPCGPU (ICRA 2024)](https://arxiv.org/abs/2309.08079).
 The maintained GBD-PCG implementation lives [in this repository](GBD-PCG/).
 Dynamics come from **GRiD**; block linear algebra comes from **GLASS**.
 
-The development branch modernizes the iiwa14 implementation, validation and
-builds. The ICRA 2024 paper reports the original experiments; updated performance
-measurements will follow validation in a dedicated timing window.
+This version modernizes the iiwa14 implementation, validation and builds. The ICRA
+2024 paper reports the original experiments. Current measurements of the paper's
+pick-and-place task are in [the replication notes](docs/icra-replication.md), and
+[the attribution](docs/speedup-attribution.md) explains how they differ from the paper.
 
 ## Quickstart
 

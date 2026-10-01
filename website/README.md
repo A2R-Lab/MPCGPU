@@ -13,11 +13,12 @@ decision. Branch-linked quickstart files must be pushed before publication.
 
 ## Assets and provenance
 
-`assets/architecture.png`, `pick-place.png`, and `published-scaling.png` are
-figure-region renders of Figures 2, 3, and 4 from our ICRA 2024 paper,
-arXiv:2309.08079v3 (https://arxiv.org/pdf/2309.08079). The MPCGPU code,
-documentation, website and these figures are released under the repository's
-MIT license. Figure numbers identify the experiments and explain the visuals.
+`assets/architecture.png` and `pick-place.png` are figure-region renders of Figures 2 and 3
+from our ICRA 2024 paper, arXiv:2309.08079v3 (https://arxiv.org/pdf/2309.08079).
+`assets/current-linsys-time.png` and `current-sqp-iterations.png` are rendered by
+`tools/plot_timing.py` from the September 30, 2026 timing runs of the current code (see
+docs/icra-replication.md). The MPCGPU code, documentation, website and these figures are
+released under the repository's MIT license.
 
 Replace `pick-place.png` with a higher-resolution original when supplied. An
 optional video should have controls, a static poster, no forced autoplay, and
@@ -26,9 +27,8 @@ labels legible on mobile and use original vector exports where available.
 
 ## Result updates
 
-Present the published results with their ICRA 2024 methodology. Add updated
-measurements with their own hardware and protocol description after validation.
-New results need source and dependency SHAs, hardware/toolchain, reference and
-protocol hashes, repeat distributions, accuracy/quality checks, and a link to
-the run record. Follow [the ICRA replication plan](../docs/icra-replication.md) to restore the
-paper examples and document comparisons. Keep BibTeX visible without interaction.
+The results section shows the current code's measurements with their hardware and date.
+Historical results for the original code are in the paper, which the page links. Refresh
+the figures only from complete timing runs with source and dependency SHAs, hardware,
+protocol, repeat distributions and quality checks, and explain any change in
+docs/speedup-attribution.md. Keep BibTeX visible without interaction.
