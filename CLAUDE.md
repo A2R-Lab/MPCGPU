@@ -16,6 +16,9 @@ GRiD and GLASS are pinned submodules; do not edit their upstream code here.
   releases and website deployment until explicitly cleared.
 - The project page is `docs/index.html`; GitHub Pages serves `main` `/docs`, so any push to
   `main` that touches `docs/` republishes http://a2r-lab.org/MPCGPU/ (see docs/website.md).
+- Working notes, todo lists and handoffs go in the gitignored `docs/open-tasks/`; never commit
+  them elsewhere under `docs/`, which is published. Current todo SSOT:
+  `docs/open-tasks/open_todos_2026-10-01.md`.
 - Commit source -> full clean-source GPU receipt -> receipt commit -> authorized
   push -> green CI. Do not edit receipts, carry old results, or sign subsets.
 - Never reuse timing output after a failed run. Read docs/timing.md before timing.

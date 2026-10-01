@@ -12,3 +12,6 @@ __pycache__/
 .pytest_cache/
 build/
 *.build.json
+
+# Local working notes and todo lists (never committed; docs/ is the public website)
+docs/open-tasks/
