@@ -1,6 +1,6 @@
 # Current documentation
 
-The modernization candidate is on `modernize-grid-glass`. GBD-PCG is part of
+The modernized code is on `main`. GBD-PCG is part of
 this repository; GRiD/GLASS are pinned dependencies, not sibling working copies.
 
 - [Quickstart](../README.md): correctness demos, prerequisites and configuration.

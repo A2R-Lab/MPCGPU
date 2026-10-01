@@ -7,4 +7,4 @@
 [submodule "GRiD"]
 	path = GRiD
 	url = https://github.com/A2R-Lab/GRiD.git
-	branch = modernizing-tests
+	branch = main

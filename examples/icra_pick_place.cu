@@ -44,6 +44,7 @@ template<class V> double mean(const V& values) {
     return values.empty() ? 0.0 : std::accumulate(values.begin(), values.end(), 0.0) / values.size();
 }
 
+#ifndef MPCGPU_CORRECTNESS
 // {"count", "mean", "median", "p10", "p90", "max"} of timer samples in microseconds.
 std::string distribution(std::vector<double> values) {
     if (values.empty()) return "{\"count\": 0}";
@@ -54,6 +55,7 @@ std::string distribution(std::vector<double> values) {
              values.size(), mean(values), at(0.5), at(0.1), at(0.9), values.back());
     return text;
 }
+#endif
 }
 
 int main(int argc, char** argv) try {

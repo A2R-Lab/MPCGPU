@@ -16,7 +16,7 @@ NVIDIA GPU supporting cooperative launches. Choose the CUDA architecture for
 your GPU (the lab default below is `sm_120`). Builds are sequential.
 
 ```bash
-git clone --branch modernize-grid-glass --recurse-submodules https://github.com/A2R-Lab/MPCGPU.git
+git clone --recurse-submodules https://github.com/A2R-Lab/MPCGPU.git
 cd MPCGPU
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
