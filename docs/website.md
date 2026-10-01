@@ -1,15 +1,20 @@
 # MPCGPU project page
 
-Static HTML/CSS; no framework, third-party scripts, remote fonts, analytics, or
-build toolchain. Preview from the repository root:
+The page is `docs/index.html` with `docs/style.css` and `docs/assets/`: static HTML/CSS, no
+framework, third-party scripts, remote fonts, analytics or build toolchain.
+
+**Deployment is automatic.** GitHub Pages serves the `docs/` folder of `main`; every push to
+`main` that changes it republishes the site. `docs/.nojekyll` makes Pages serve the folder as
+is, so the Markdown documents beside the page are not run through Jekyll.
+
+Preview locally from the repository root before pushing:
 
 ```bash
-python3 -m http.server 8765 --bind 127.0.0.1 --directory website
+python3 -m http.server 8765 --bind 127.0.0.1 --directory docs
 ```
 
-Open http://127.0.0.1:8765. This is a local draft, not a deployed site.
-Publication and switching development URLs to main require a separate release
-decision. Branch-linked quickstart files must be pushed before publication.
+Open http://127.0.0.1:8765. `test/test_host.py` checks that every local link and image on the
+page resolves.
 
 ## Assets and provenance
 

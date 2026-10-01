@@ -11,7 +11,7 @@ this repository; GRiD/GLASS are pinned dependencies, not sibling working copies.
 - [Audit](audit-and-plan-2026-09-28.md): findings and original planned gates.
 - [Implementation status](implementation-status-2026-09-28.md): completed work,
   actual evidence and remaining blockers.
-- [Website](../website/README.md): local draft, provenance and publication checklist.
+- [Website](website.md): the project page in this folder, its provenance and how it deploys.
 
 ## Historical material
 

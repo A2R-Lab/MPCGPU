@@ -5,7 +5,7 @@ The project and figures are our work:
 Emre Adabag, Miloni Atal, William Gerard and Brian Plancher,
 “MPCGPU: Real-Time Nonlinear Model Predictive Control through Preconditioned
 Conjugate Gradient on the GPU”, ICRA 2024, arXiv:2309.08079.
-See website/README.md for figure numbers and source details.
+See docs/website.md for figure numbers and source details.
 
 Dependency distributions (including GRiD, GLASS, QDLDL and their bundled
 components) retain the license and copyright notices supplied with them.

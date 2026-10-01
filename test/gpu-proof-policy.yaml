@@ -4,7 +4,7 @@ max_age_days: 30
 min_schema: 3
 signer_mode: restricted
 allowed_signers: [plancherb1]
-required_fingerprint_paths: [include, tools, examples, test, Makefile, GBD-PCG, GRiD, GLASS, qdldl, pyproject.toml, requirements-dev.txt, .gitmodules, .github, website]
+required_fingerprint_paths: [include, tools, examples, test, Makefile, GBD-PCG, GRiD, GLASS, qdldl, pyproject.toml, requirements-dev.txt, .gitmodules, .github]
 required_fingerprint_excluded_paths: [gpu-proof.json]
 allow_carried: false
 required_test_manifest: test/expected_tests.txt

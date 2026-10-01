@@ -89,7 +89,7 @@ guarantee.
 - [Quiet-window timing handoff](docs/timing.md)
 - [ICRA example replication](docs/icra-replication.md)
 - [Audit and implementation plan](docs/audit-and-plan-2026-09-28.md)
-- [Local project website](website/README.md)
+- [Project website source](docs/website.md)
 
 ## Citation and license
 

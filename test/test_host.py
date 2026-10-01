@@ -121,13 +121,13 @@ def test_expected_collection_manifest():
 
 def test_website_local_links_and_assets():
     from bs4 import BeautifulSoup
-    page=BeautifulSoup((ROOT/'website/index.html').read_text(),'html.parser')
+    page=BeautifulSoup((ROOT/'docs/index.html').read_text(),'html.parser')
     ids={tag['id'] for tag in page.find_all(id=True)}
     for link in page.find_all('a',href=True):
         target=link['href']
         if target.startswith('#') and len(target)>1: assert target[1:] in ids
     for image in page.find_all('img'):
-        assert image.get('alt') and (ROOT/'website'/image['src']).is_file()
+        assert image.get('alt') and (ROOT/'docs'/image['src']).is_file()
     assert not page.find_all('script')
     assert 'GATO' not in page.get_text()
     citation = page.find('pre', id='bibtex')
