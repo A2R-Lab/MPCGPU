@@ -25,7 +25,8 @@
 // mapped page-locked host memory, so there is no device-to-host copy anywhere in a step; a
 // per-call workspace does not page-lock (too slow per call) and copies them back instead. The host synchronizes once per SQP step, to read the
 // merits and pick the step, and once at the end of the solve (the timing boundary), where the
-// linear-system statistics and the event-measured linear-system times are read back.
+// linear-system statistics are read back. TIME_LINSYS builds add the paper's two device syncs
+// around the linear-system segment so that metric keeps its definition.
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -67,8 +68,8 @@ template <class V> uint64_t graph_key_bits(const V& value) {
     uint64_t bits = 0; std::memcpy(&bits, &value, sizeof(V)); return bits;
 }
 
-// Workspace event slots used by the driver (TIME_LINSYS pairs follow from kEventLinsys).
-enum : size_t { kEventFork = 0, kEventJoin = 1 /* +8 */, kEventInitial = 9, kEventLinsys = 16 };
+// Workspace event slots used by the driver.
+enum : size_t { kEventFork = 0, kEventJoin = 1 /* +8 */, kEventInitial = 9 };
 
 template <typename T, class Backend>
 SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep,
@@ -140,7 +141,7 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     T h_merit_initial;
 
 #if TIME_LINSYS
-    uint32_t linsys_timed = 0;   // event pairs recorded (one per linear-system solve)
+    struct timespec linsys_start, linsys_end;
 #endif
 #if CONST_UPDATE_FREQ && !defined(MPCGPU_CORRECTNESS)
     struct timespec sqp_cur;
@@ -250,14 +251,18 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         if (sqpTimecheck()) break;
 
 #if TIME_LINSYS
-        // Linear-system time = elapsed between two events bracketing the solve on the main stream
-        // (read after the final sync); no host sync inside the step.
-        gpuErrchk(cudaEventRecord(workspace.event(kEventLinsys + 2*linsys_timed), ms));
+        // The paper's linear-system time: host wall between a device sync before and after the solve
+        // (ICRA Figures 4/5 and the site compare against it). These two syncs exist only in
+        // TIME_LINSYS builds; everything else in the step stays stream-ordered.
+        gpuErrchk(cudaDeviceSynchronize());
+        if (sqpTimecheck()) break;
+        clock_gettime(CLOCK_MONOTONIC, &linsys_start);
 #endif
         if (use_graph) workspace.launchGraph(1, ms); else seg_lin(ms);
 #if TIME_LINSYS
-        gpuErrchk(cudaEventRecord(workspace.event(kEventLinsys + 2*linsys_timed + 1), ms));
-        linsys_timed++;
+        gpuErrchk(cudaDeviceSynchronize());
+        clock_gettime(CLOCK_MONOTONIC, &linsys_end);
+        linsys_time_vec.push_back(time_delta_us_timespec(linsys_start, linsys_end));
 #endif
         if (sqpTimecheck()) break;
 
@@ -336,13 +341,6 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
 #endif
     backend.record(linsys_iter_vec, linsys_exit_vec);   // a solve whose step was cut short by the time budget
-#if TIME_LINSYS
-    for (uint32_t i = 0; i < linsys_timed; i++) {
-        float ms_elapsed = 0;
-        gpuErrchk(cudaEventElapsedTime(&ms_elapsed, workspace.event(kEventLinsys + 2*i), workspace.event(kEventLinsys + 2*i + 1)));
-        linsys_time_vec.push_back(1000.0*ms_elapsed);
-    }
-#endif
     return std::make_tuple(linsys_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, linsys_exit_vec);
 }
 

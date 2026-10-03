@@ -88,9 +88,9 @@ tolerances). A workspace now also owns one page-locked, device-mapped 4 KB arena
 stream, so constructing one per solve (`MPCGPU_NO_REUSE`, the parity gate's "fresh" mode) costs
 more than before; reuse the workspace.
 
-`linsys_times` (ICRA Figures 4/5, `TIME_LINSYS=1`) is the elapsed time between two CUDA events
-bracketing the linear-system segment on the main stream, read back after the final sync — the
-GPU time of the solve, not a host round trip. Before October 2026 it was host wall time between
-two device synchronizations, so older linsys numbers include two host syncs per step and are
-not comparable. SQP solve time is still host wall time from entry to the final sync.
+`linsys_times` (ICRA Figures 4/5, `TIME_LINSYS=1`) keeps the paper's definition: host wall time
+between a device synchronization before and after the linear-system segment, so those builds pay
+two extra host syncs per step that `TIME_LINSYS=0` builds (the ICRA iteration-count workloads,
+correctness builds) do not. SQP solve time is host wall time from entry to the final sync in
+every build.
 
