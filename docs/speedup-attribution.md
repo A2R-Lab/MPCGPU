@@ -87,6 +87,53 @@ Current-code columns are means over the three repeats of the October 1 evening r
 
 ![Published versus current code on this host](attribution-paper-vs-current.png)
 
+## 4. Fixed cost (October 3, 2026): host synchronization in the SQP step
+
+Section 2's one-iteration solve put the fixed launch and copy-back cost at about 23 µs per linear
+system. Profiling a whole SQP step (figure-eight task, N = 64, `nsys`) showed where the rest of a
+control update went: the KKT formation (37 µs) and Schur assembly (43 µs) dominate, PCG takes 6–19 µs,
+dz 4 µs and the eight line-search merits 19 µs running concurrently — about 123 µs of kernels in a
+178 µs step. The remaining 55 µs were host synchronization: two device syncs around the linear
+system, two blocking copies of the PCG statistics, an implicit sync plus a blocking copy for the
+merits, a redundant sync after setup, and a 17 µs initial-merit kernel run serially ahead of the KKT
+formation. None of it was kernel launch cost: the host finished enqueueing a step in about 30 µs.
+
+The SQP driver now runs the step on one stream with one host wait per step (after the merits, to
+pick the step and the next rho), the initial merit on a side stream beside the KKT formation, the
+line-search merits forked to eight streams and joined, the per-step segments captured once per
+reused workspace as CUDA graphs, and the few words the host needs (merits, PCG iteration count and
+exit flag) stored by the kernels straight into mapped page-locked host memory. Every STATE_HASH gate
+and the ICRA circuits are bit-identical to the previous driver; the figure-eight tracking results are
+identical to six digits in all twenty timing workloads.
+
+Figure-eight plan (`tools/timing.py`, three repeats, median internal SQP time per control update,
+reused workspace), previous driver (`main` 4317690, exclusive leg, October 3 00:16) versus the new
+driver (758bcd2, exclusive leg, October 3 01:43):
+
+| N | pcg before (µs) | pcg after (µs) | change | qdldl before (µs) | qdldl after (µs) | change |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 184.0 | 137.8 | -25% | 243.7 | 221.0 | -9% |
+| 64 | 178.4 | 133.5 | -25% | 302.5 | 275.8 | -9% |
+| 128 | 193.8 | 154.7 | -20% | 453.6 | 415.2 | -8% |
+| 256 | 214.7 | 188.6 | -12% | 753.7 | 716.3 | -5% |
+| 512 | 345.7 | 311.3 | -10% | 1447.3 | 1381.1 | -5% |
+
+The gain is a fixed amount per step, so it matters most at short horizons where the kernels are
+cheap. The per-call ("fresh") workspace workloads are unchanged within noise: a per-call workspace
+does not page-lock memory (that alone costs about 0.4 ms) and launches the segments directly.
+
+Two measurement notes. First, `linsys_times` (ICRA Figures 4/5) keeps the paper's definition, host
+wall time between a device sync before and after the linear system, so `TIME_LINSYS` builds still pay
+those two syncs per step; the figure-eight numbers above include them. Second, that linear-system
+time itself drops by about 13 µs per solve (23.4 → 10.5 µs at N = 64 on the figure-eight task) because
+the two blocking 4-byte copies of the PCG statistics that used to sit inside the timed region are gone.
+When the ICRA workloads are re-collected, expect the GBD-PCG bars in section 3 to move down by about
+that much and the Figure-6 iteration counts to rise; the kernels themselves are unchanged.
+
+Collection: both legs ran from `tools/timing.py` plans prepared from their own commits, each in a
+quiet window with no other process on the GPU (`a2rlab-timing-chain/runs/fixedcost-ab-20261003-001557`
+and `-014302`), three repeats per workload; all sixty repeats of each leg produced a verdict.
+
 ## Summary
 
 - **Iterations explain the change.** On the same machine and task, the current code needs 5–7 PCG
@@ -99,6 +146,8 @@ Current-code columns are means over the three repeats of the October 1 evening r
 - **GLASS made each iteration 0.7–4.6% cheaper.** That is a real but small part of the change.
 - **The hardware change is not the cause.** The published code on the RTX 5090 gives speedups in the
   published range, 1.2–2.9×.
+- **Host synchronization was the fixed cost** (section 4, October 3). Removing it shortens a control
+  update by 25% at N = 32–64 and 10% at N = 512 with bit-identical results; the kernels are unchanged.
 
 These are internal linear-system times on one host. The paper's reported speedups remain correct for
 the published code; the current speedups describe the current code.

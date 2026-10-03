@@ -89,6 +89,13 @@ summaries and provenance are in `tmp/timing/mpcgpu-icra-20260930-205239` (local,
 The paper used an RTX 4090, an i9-12900K and CUDA 12.1, and the model and EE frame have since been corrected. Compare ratios and trends,
 not raw latency.
 
+These tables predate the October 3, 2026 SQP-driver change (one host sync per step, graph-replayed
+segments, no copy-backs; [speedup-attribution.md](speedup-attribution.md) section 4). The PCG kernel
+is unchanged, but the linear-system time no longer includes two blocking statistics copies (about
+13 µs per solve on the figure-eight task) and each SQP step is shorter, so the Figure 4/5 bars should
+move down and the Figure 6 iteration counts up when these workloads are re-collected. Plans for that
+re-collection are prepared (`tmp/timing-prepared/icra-*`, local); the numbers below stand until then.
+
 ### Figure 4: average linear-system solve time at 500 Hz
 
 | N | QDLDL (µs) | GBD-PCG (µs) | Speedup | Paper speedup | PCG mean L2 error (m) |
