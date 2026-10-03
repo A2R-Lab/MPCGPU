@@ -81,47 +81,46 @@ Repeated trials are bit-identical: the signed-suite gates run two trials at N = 
 for each backend and compare state hashes. The paper reports about 10 cm average L1
 error; every configuration here stays below that.
 
-## Timing results (October 1, 2026)
+## Timing results (October 3, 2026)
 
-Collected in an assigned quiet window on the RTX 5090 / Core Ultra 9 285K / CUDA 13.2 host,
-source `04764ee`, receipt `bccb34a`, three independent repeats per workload. Raw samples,
-summaries and provenance are in `tmp/timing/mpcgpu-icra-20260930-205239` (local, not in Git).
-The paper used an RTX 4090, an i9-12900K and CUDA 12.1, and the model and EE frame have since been corrected. Compare ratios and trends,
-not raw latency.
-
-These tables predate the October 3, 2026 SQP-driver change (one host sync per step, graph-replayed
-segments, no copy-backs; [speedup-attribution.md](speedup-attribution.md) section 4). The PCG kernel
-is unchanged, but the linear-system time no longer includes two blocking statistics copies (about
-13 µs per solve on the figure-eight task) and each SQP step is shorter, so the Figure 4/5 bars should
-move down and the Figure 6 iteration counts up when these workloads are re-collected. Plans for that
-re-collection are prepared (`tmp/timing-prepared/icra-*`, local); the numbers below stand until then.
+Collected in an assigned exclusive window on the RTX 5090 / Core Ultra 9 285K / CUDA 13.2 host,
+source `758bcd2` (the October 3 SQP driver; the tree `main` carries), receipt `758bcd2`, three
+independent repeats per workload. Raw samples, summaries and provenance are in
+`tmp/timing/fixedcost-branch-20261003-115140` (local, not in Git). The same window first re-ran the
+previous driver (`4317690`, `tmp/timing/fixedcost-main-20261003-115140`), which reproduced the
+October 1 tables within 2 µs at every horizon; the differences below are the driver change
+([speedup-attribution.md](speedup-attribution.md) section 4): the linear-system time no longer
+includes two blocking statistics copies (−9 to −13 µs per solve) and each SQP step is shorter, so
+more iterations fit a control period. The PCG kernel is unchanged. The paper used an RTX 4090, an
+i9-12900K and CUDA 12.1, and the model and EE frame have since been corrected. Compare ratios and
+trends, not raw latency.
 
 ### Figure 4: average linear-system solve time at 500 Hz
 
 | N | QDLDL (µs) | GBD-PCG (µs) | Speedup | Paper speedup | PCG mean L2 error (m) |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 32 | 89 | 54 | 1.6× | 1.0× | 0.0407 |
-| 64 | 162 | 54 | 3.0× | 1.5× | 0.0627 |
-| 128 | 277 | 49 | 5.6× | 1.9× | 0.0108 |
-| 256 | 535 | 57 | 9.4× | 3.6× | 0.0110 |
-| 512 | 1074 | 63 | 17.1× | 3.3× | 0.0132 |
+| 32 | 89 | 42 | 2.1× | 1.0× | 0.0408 |
+| 64 | 160 | 42 | 3.8× | 1.5× | 0.0638 |
+| 128 | 273 | 38 | 7.1× | 1.9× | 0.0107 |
+| 256 | 534 | 48 | 11.2× | 3.6× | 0.0111 |
+| 512 | 1077 | 53 | 20.4× | 3.3× | 0.0133 |
 
-Across the three repeats, the per-repeat means spread by at most 2.8% of their mean for PCG and
-6.6% for QDLDL. The tables are printed by `tools/icra_tables.py` from the run directory. GBD-PCG time stays nearly flat with horizon here, so the speedups are much
+Across the three repeats, the per-repeat means spread by at most 8.0% of their mean for PCG and
+1.8% for QDLDL. Before the October 3 driver change the same workloads gave 55 / 54 / 49 / 57 / 65 µs
+(1.6–16.5×) in the same window. The tables are printed by `tools/icra_tables.py` from the run directory. GBD-PCG time stays nearly flat with horizon here, so the speedups are much
 larger than published. [The attribution](speedup-attribution.md) traces this to fewer PCG iterations
 per solve, from controller fixes; GLASS and the new GPU contribute little.
 
 ### Figure 5: solve-time distribution at N = 128
 
-QDLDL: median 272 µs, fastest 266 µs, 99.9th percentile 313 µs, slowest 1559 µs. Tails are
-compared with the 99.9th percentile so that single outliers do not dominate; GBD-PCG at ε = 10⁻⁴
-has one such outlier (one solve of about 6.1 ms among 156 000), which is the 19.5× entry below.
+QDLDL: median 272 µs, fastest 267 µs, 99.9th percentile 299 µs, slowest 981 µs. Tails are
+compared with the 99.9th percentile so that single outliers do not dominate.
 
 | ε | Median (µs) | Mean (µs) | ≥10× faster than fastest QDLDL | Paper | Slowest / QDLDL p99.9 | ≥2× QDLDL p99.9 | Mean L2 error (m) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 10⁻⁴ | 23 | 49 | 79% | 65% | 19.5× | 1.0% | 0.0108 |
-| 5·10⁻⁵ | 23 | 57 | 74% | 52% | 2.8× | 1.3% | 0.0118 |
-| 10⁻⁵ | 23 | 69 | 67% | 20% | 4.0× | 1.5% | 0.0141 |
+| 10⁻⁴ | 11 | 38 | 83% | 65% | 2.8× | 1.0% | 0.0107 |
+| 5·10⁻⁵ | 11 | 45 | 79% | 52% | 2.8× | 1.2% | 0.0121 |
+| 10⁻⁵ | 15 | 58 | 73% | 20% | 2.8× | 1.4% | 0.0140 |
 
 The paper's ordering holds: tighter tolerances shift mass out of the fast mode, and PCG
 keeps a slow mode near the QDLDL time.
@@ -130,32 +129,38 @@ keeps a slow mode near the QDLDL time.
 
 | Solver | Rate | N = 32 | 64 | 128 | 256 | 512 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| QDLDL | 250 Hz | 19.9 (21) | 14.0 (14) | 9.2 (8) | 5.0 (4) | 2.0 (2) |
-| QDLDL | 500 Hz | 9.3 (10) | 6.9 (6.5) | 4.0 (4) | 2.0 (2) | 1.0 (1) |
+| QDLDL | 250 Hz | 18.7 (21) | 13.5 (14) | 9.6 (8) | 5.0 (4) | 2.2 (2) |
+| QDLDL | 500 Hz | 9.0 (10) | 6.8 (6.5) | 4.6 (4) | 2.0 (2) | 1.0 (1) |
 | QDLDL | 1000 Hz | 4.0 (4) | 3.0 (3) | 2.0 (1) | 1.0 (X) | lost (X) |
-| GBD-PCG | 250 Hz | 21.7 (22.2) | 21.4 (19.7) | 18.3 (15.4) | 16.0 (5.2) | 10.2 (4.4) |
-| GBD-PCG | 500 Hz | 10.9 (10.3) | 10.9 (10.6) | 9.9 (8) | 8.7 (4.6) | 5.2 (3) |
-| GBD-PCG | 1000 Hz | 5.3 (4.9) | 5.3 (5.2) | 5.0 (3.7) | 4.3 (2.4) | 2.6 (1.7) |
+| GBD-PCG | 250 Hz | 24.3 (22.2) | 24.0 (19.7) | 20.0 (15.4) | 17.0 (5.2) | 10.6 (4.4) |
+| GBD-PCG | 500 Hz | 12.4 (10.3) | 12.5 (10.6) | 10.9 (8) | 9.3 (4.6) | 5.4 (3) |
+| GBD-PCG | 1000 Hz | 6.2 (4.9) | 6.3 (5.2) | 5.7 (3.7) | 4.9 (2.4) | 2.7 (1.7) |
 
 Paper values are in parentheses. "lost" marks QDLDL at N = 512 and 1 kHz: one QDLDL solve
 exceeds the 1 ms budget, no SQP iteration completes and the arm leaves the circuit. The
 harness records it as a rate not met. QDLDL also averages just under one iteration at
 N = 256 and 1 kHz and at N = 512 and 500 Hz, and still tracks within 1.8 cm there.
-GBD-PCG completes more iterations than in the paper at every N ≥ 128.
+GBD-PCG completes more iterations than in the paper at every horizon and rate (before the
+October 3 driver change it did so at N ≥ 128; the shorter step adds about one iteration per
+period at 500 Hz).
 
 ### Figure-eight workspace A/B (same source, not the paper task)
 
-Internal SQP time per control update, medians of three repeats, from `tmp/timing/mpcgpu-fig8-20260930-202442`.
-Reused workspaces keep allocations, streams and cuBLAS handles; fresh ones rebuild them per
-solve, approximating the earlier code. Tracking is identical between the two modes.
+Internal SQP time per control update, medians of three repeats, from
+`tmp/timing/fixedcost-branch-20261003-014302` (October 3 driver, exclusive window). Reused
+workspaces keep allocations, streams, cuBLAS handles and — since October 3 — the page-locked
+result arena and the captured launch graphs; fresh ones rebuild everything per solve,
+approximating the earlier code (a per-call workspace does not page-lock or capture graphs).
+Tracking is identical between the two modes. The previous driver measured 184 / 178 / 194 / 215 /
+346 µs reused and 236 / 231 / 247 / 282 / 430 µs fresh for PCG in the same kind of window.
 
 | N | PCG reused (µs) | PCG fresh (µs) | QDLDL reused (µs) | QDLDL fresh (µs) |
 | ---: | ---: | ---: | ---: | ---: |
-| 32 | 184 | 233 | 240 | 312 |
-| 64 | 178 | 227 | 310 | 396 |
-| 128 | 194 | 243 | 435 | 584 |
-| 256 | 215 | 278 | 716 | 987 |
-| 512 | 346 | 422 | 1388 | 1862 |
+| 32 | 138 | 239 | 221 | 333 |
+| 64 | 134 | 235 | 276 | 418 |
+| 128 | 155 | 242 | 415 | 608 |
+| 256 | 189 | 279 | 716 | 1014 |
+| 512 | 311 | 422 | 1381 | 1905 |
 
 ## Findings
 
@@ -172,8 +177,8 @@ solve, approximating the earlier code. Tracking is identical between the two mod
   5·10⁻⁶, PCG passes within 11 cm of the second goal and fails the 5 cm visit check. The
   tighter values from the paper's own N = 32 sweep, 2.5·10⁻⁶ and 10⁻⁶, bring every goal
   within 5 cm, so 2.5·10⁻⁶ is the N = 32 default since October 1, 2026, and the tables above
-  use it: against the earlier 5·10⁻⁶ run, N = 32 PCG needs 7.3 instead of 6.4 iterations per
-  solve (54 instead of 50 µs, 1.6× instead of 1.8× over QDLDL) and its mean tracking error
+  use it: against the earlier 5·10⁻⁶ run (October 1 driver), N = 32 PCG needs 7.3 instead of 6.4
+  iterations per solve (54 instead of 50 µs then, 1.6× instead of 1.8× over QDLDL) and its mean tracking error
   falls from 4.9 to 4.1 cm. This matches the paper's observation that looser
   tolerances trade tracking for speed.
 - **Inexact PCG steps end some SQP loops early.** The line search fails until ρ
@@ -199,7 +204,8 @@ solve, approximating the earlier code. Tracking is identical between the two mod
   for the main integration candidate).
 - [x] Paper-task timing manifest: `tools/timing.py prepare --task icra` builds the
   Figure 4, 5 and 6 workloads (see the timing section of [development](development.md)).
-- [x] Paper-task timing collection on October 1 (tables above; the September 30 collection
+- [x] Paper-task timing re-collected on October 3 with the fixed-cost driver (tables above).
+- [x] Paper-task timing collection on October 1 (the September 30 collection
   preceded the N = 32 tolerance change), labeled by host.
 - [x] Attribute the larger-than-published PCG speedups ([attribution](speedup-attribution.md), October 1).
 - [x] Website shows the current results with hardware and date; the paper holds the

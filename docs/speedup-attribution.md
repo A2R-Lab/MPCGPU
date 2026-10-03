@@ -1,9 +1,10 @@
-# Why the ICRA results moved (attribution, October 1, 2026)
+# Why the ICRA results moved (attribution, October 1–3, 2026)
 
 The October 1, 2026 timing on the RTX 5090 gave GBD-PCG average linear-system times of
 49–63 µs at every horizon, against 75–360 µs in the paper. QDLDL on the CPU stayed within
 about 15% of the paper, so the speedup over QDLDL grew from 1.0–3.6× to 1.6–17×. This
-document splits that change into its causes.
+document splits that change into its causes. Section 4 adds the October 3 driver change,
+after which the same workloads give 38–53 µs and 2.1–20× ([current tables](icra-replication.md)).
 
 Average PCG solve time is iterations per solve times time per iteration, plus a fixed launch
 and copy-back cost. Each factor was measured separately.
@@ -127,8 +128,10 @@ wall time between a device sync before and after the linear system, so `TIME_LIN
 those two syncs per step; the figure-eight numbers above include them. Second, that linear-system
 time itself drops by about 13 µs per solve (23.4 → 10.5 µs at N = 64 on the figure-eight task) because
 the two blocking 4-byte copies of the PCG statistics that used to sit inside the timed region are gone.
-When the ICRA workloads are re-collected, expect the GBD-PCG bars in section 3 to move down by about
-that much and the Figure-6 iteration counts to rise; the kernels themselves are unchanged.
+Re-collecting the ICRA workloads in the same window (October 3, both drivers back to back,
+[icra-replication.md](icra-replication.md)) showed exactly that: GBD-PCG 55 / 54 / 49 / 57 / 65 µs
+→ 42 / 42 / 38 / 48 / 53 µs at N = 32…512 (−9 to −13 µs), speedups 1.6–16.5× → 2.1–20.4×, and about
+one more SQP iteration per 500 Hz period; the kernels themselves are unchanged.
 
 Collection: both legs ran from `tools/timing.py` plans prepared from their own commits, each in a
 quiet window with no other process on the GPU (`a2rlab-timing-chain/runs/fixedcost-ab-20261003-001557`
