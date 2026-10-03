@@ -22,9 +22,9 @@ struct PcgBackend {
     uint32_t* d_pcg_iters = nullptr;
     bool* d_pcg_exit = nullptr;
     struct Stats { uint32_t iters; uint32_t exit; };   // the kernel stores these into mapped host memory
-    Stats* d_stats = nullptr;      // device alias of h_stats
+    Stats* d_stats = nullptr;      // device alias of h_stats, or a device slot when copying back
     Stats* h_stats = nullptr;      // valid after the host sync that follows the solve
-    bool pending = false;
+    bool pending = false, copy_back = false;
     void* args[13];
 
     explicit PcgBackend(pcg_config<T>& c) : config(c) {}
@@ -37,7 +37,9 @@ struct PcgBackend {
         d_v_temp = workspace.device<T>(knots);
         d_eta_new_temp = workspace.device<T>(knots);
         h_stats = workspace.mapped<Stats>(1, &d_stats);
+        copy_back = workspace.copies_needed();
         *h_stats = Stats{0, 0};                                  // the kernel writes one exit byte; the rest stays zero
+        if (copy_back) gpuErrchk(cudaMemsetAsync(d_stats, 0, sizeof(Stats), workspace.main_stream()));
         d_pcg_iters = &d_stats->iters;
         d_pcg_exit = reinterpret_cast<bool*>(&d_stats->exit);
         pending = false;
@@ -63,7 +65,10 @@ struct PcgBackend {
         key.push_back(graph_key_bits(config.pcg_exit_tol));
         key.push_back(graph_key_bits(config.pcg_rel_tol));
     }
-    void copyStats(cudaStream_t) { pending = true; }   // the kernel already stored them into h_stats
+    void copyStats(cudaStream_t stream) {   // a reused workspace: the kernel already stored them into h_stats
+        if (copy_back) gpuErrchk(cudaMemcpyAsync(h_stats, d_stats, sizeof(Stats), cudaMemcpyDeviceToHost, stream));
+        pending = true;
+    }
     // After a host sync that covers the solve: its iteration count and exit flag, once.
     void record(std::vector<int>& iter_vec, std::vector<bool>& exit_vec) {
         if (!pending) return;

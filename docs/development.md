@@ -79,11 +79,14 @@ Everything else is stream-ordered. The eight merits fork to the workspace's side
 join; the initial merit runs on a ninth stream beside the KKT formation. The kernels store the
 words the host needs (merits, PCG iteration count and exit flag) straight into mapped page-locked
 host memory, so no device-to-host copy sits inside a step; rho reaches the Schur kernels through a
-device scalar that an asynchronous copy updates each step. With the pcg backend the three segments
-of a step (KKT+Schur, PCG, dz+merits) are captured once per workspace as CUDA graphs and replayed
-(`-DMPCGPU_GRAPH=0` launches them directly; `DUMP_KKT` builds always do, so the dumps can read
-between launches). The qdldl backend launches directly because its solve is host work. A change
-of caller pointers or PCG tolerances re-captures (the sim warm-starts with tighter tolerances).
+device scalar that an asynchronous copy updates each step. With the pcg backend and a reused
+workspace the three segments of a step (KKT+Schur, PCG, dz+merits) are captured once per workspace
+as CUDA graphs and replayed (`-DMPCGPU_GRAPH=0` launches them directly; `DUMP_KKT` builds and a
+per-call workspace always do). The qdldl backend launches directly because its solve is host work.
+A change of caller pointers or PCG tolerances re-captures (the sim warm-starts with tighter
+tolerances). A workspace now also owns one page-locked, device-mapped 4 KB arena and a ninth
+stream, so constructing one per solve (`MPCGPU_NO_REUSE`, the parity gate's "fresh" mode) costs
+more than before; reuse the workspace.
 
 `linsys_times` (ICRA Figures 4/5, `TIME_LINSYS=1`) is the elapsed time between two CUDA events
 bracketing the linear-system segment on the main stream, read back after the final sync — the

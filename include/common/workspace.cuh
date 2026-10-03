@@ -19,9 +19,18 @@ inline void checkCuda(cudaError_t status) {
 // for a given backend. No global/static cache and no process-lifetime resources.
 class SqpWorkspace {
     struct Allocation { void* pointer; size_t bytes; };
-    struct MappedAllocation { void* host; void* device; size_t bytes; };
-    std::vector<Allocation> device_, host_, pinned_;
-    std::vector<MappedAllocation> mapped_;
+    struct HostSlot { size_t offset, bytes; };
+    std::vector<Allocation> device_, host_;
+    // One host arena per workspace for the driver's few result/parameter words. A caller-provided
+    // (reused) workspace page-locks and device-maps it once (kernels then store straight into host
+    // memory); page-locking costs ~0.4 ms, so a per-call workspace uses pageable memory instead and
+    // the driver copies the words back explicitly (`copies_needed()`).
+    static constexpr size_t kArenaBytes = 4096, kArenaAlign = 64;
+    void* arena_host_ = nullptr; void* arena_device_ = nullptr;
+    bool arena_locked_ = false;
+    size_t arena_used_ = 0;
+    std::vector<HostSlot> pinned_, mapped_;
+    std::vector<void*> mapped_device_;        // pageable mode: a device slot per mapped() slot
     std::vector<cudaEvent_t> events_;
     cudaStream_t side_ = nullptr;
     cudaGraphExec_t graphs_[3] = {nullptr, nullptr, nullptr};
@@ -62,6 +71,8 @@ public:
         backend_ = backend;
         device_cursor_ = host_cursor_ = pinned_cursor_ = mapped_cursor_ = 0;
     }
+    // True when kernels cannot store into the host slots (pageable arena): the driver copies back.
+    bool copies_needed() const { return !arena_locked_; }
     template<class T> T* device(size_t count) {
         const size_t bytes = count*sizeof(T);
         if (device_cursor_ == device_.size()) {
@@ -90,13 +101,11 @@ public:
     template<class T> T* pinned(size_t count) {
         const size_t bytes = count*sizeof(T);
         if (pinned_cursor_ == pinned_.size()) {
-            void* pointer; checkCuda(cudaMallocHost(&pointer, bytes));
-            try { pinned_.push_back({pointer,bytes}); }
-            catch (...) { cudaFreeHost(pointer); throw; }
+            pinned_.push_back(carve(bytes));
         }
         auto slot = pinned_[pinned_cursor_++];
         if (slot.bytes != bytes) throw std::invalid_argument("Workspace pinned layout changed");
-        return static_cast<T*>(slot.pointer);
+        return reinterpret_cast<T*>(static_cast<char*>(arena_host_) + slot.offset);
     }
     // Streams: streams[0] is the main solver stream (also line-search stream 0), streams[1..7]
     // the other line-search streams, side the initial-merit stream. All are blocking streams,
@@ -128,18 +137,18 @@ public:
     template<class T> T* mapped(size_t count, T** device) {
         const size_t bytes = count*sizeof(T);
         if (mapped_cursor_ == mapped_.size()) {
-            void* host; checkCuda(cudaHostAlloc(&host, bytes, cudaHostAllocMapped));
-            void* dev = nullptr;
-            try {
-                checkCuda(cudaHostGetDevicePointer(&dev, host, 0));
-                mapped_.push_back({host, dev, bytes});
-            } catch (...) { cudaFreeHost(host); throw; }
+            mapped_.push_back(carve(bytes));
+            if (!arena_locked_) { void* d; checkCuda(cudaMalloc(&d, bytes)); mapped_device_.push_back(d); }
         }
-        auto slot = mapped_[mapped_cursor_++];
+        auto slot = mapped_[mapped_cursor_];
         if (slot.bytes != bytes) throw std::invalid_argument("Workspace mapped layout changed");
-        *device = static_cast<T*>(slot.device);
-        return static_cast<T*>(slot.host);
+        *device = arena_locked_ ? reinterpret_cast<T*>(static_cast<char*>(arena_device_) + slot.offset)
+                                : static_cast<T*>(mapped_device_[mapped_cursor_]);
+        mapped_cursor_++;
+        return reinterpret_cast<T*>(static_cast<char*>(arena_host_) + slot.offset);
     }
+    bool owned_by_caller = false;   // set by the driver for a caller-provided (reused) workspace
+
     // Timing events, created on first use and kept for the workspace's lifetime.
     cudaEvent_t event(size_t index) {
         while (events_.size() <= index) {
@@ -150,6 +159,22 @@ public:
     }
     size_t deviceAllocations() const { return device_.size(); }
 private:
+    HostSlot carve(size_t bytes) {
+        if (!arena_host_) {
+            if (owned_by_caller) {
+                checkCuda(cudaHostAlloc(&arena_host_, kArenaBytes, cudaHostAllocMapped));
+                checkCuda(cudaHostGetDevicePointer(&arena_device_, arena_host_, 0));
+                arena_locked_ = true;
+            } else {
+                arena_host_ = std::malloc(kArenaBytes);
+                if (!arena_host_) throw std::bad_alloc();
+            }
+        }
+        const size_t offset = (arena_used_ + kArenaAlign - 1) / kArenaAlign * kArenaAlign;
+        if (offset + bytes > kArenaBytes) throw std::length_error("Workspace host arena exhausted");
+        arena_used_ = offset + bytes;
+        return {offset, bytes};
+    }
     void release() noexcept {
         int previous = device_id_;
         cudaGetDevice(&previous);
@@ -160,8 +185,10 @@ private:
         if (side_) { cudaStreamDestroy(side_); side_ = nullptr; }
         for (auto slot : device_) cudaFree(slot.pointer);
         for (auto slot : host_) std::free(slot.pointer);
-        for (auto slot : pinned_) cudaFreeHost(slot.pointer);
-        for (auto slot : mapped_) cudaFreeHost(slot.host);
+        if (arena_host_) { if (arena_locked_) cudaFreeHost(arena_host_); else std::free(arena_host_); }
+        arena_host_ = arena_device_ = nullptr; arena_used_ = 0; arena_locked_ = false;
+        for (auto d : mapped_device_) cudaFree(d);
+        mapped_device_.clear();
         for (auto e : events_) cudaEventDestroy(e);
         device_.clear(); host_.clear(); pinned_.clear(); mapped_.clear(); events_.clear();
         cudaSetDevice(previous);

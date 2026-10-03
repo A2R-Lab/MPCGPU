@@ -17,11 +17,13 @@
 // merits fork to the workspace's side streams and join back; the initial merit runs on a ninth
 // stream alongside the KKT formation. One SQP step is three segments — pre (KKT, Schur),
 // linsys (the solve), post (dz, line-search merits) — that the pcg
-// backend records once per workspace as CUDA graphs and replays (MPCGPU_GRAPH, default on;
-// off for DUMP_KKT and for the host-side qdldl solve, which launches the same segments directly).
-// The kernels store the words the host needs (eight line-search merits, the initial merit, the
-// PCG iteration count and exit flag) straight into mapped page-locked host memory, so there is no
-// device-to-host copy anywhere in a step. The host synchronizes once per SQP step, to read the
+// backend records once per caller-provided (reused) workspace as CUDA graphs and replays
+// (MPCGPU_GRAPH, default on; a per-call workspace, DUMP_KKT and the host-side qdldl solve launch
+// the same segments directly).
+// With a caller-provided (reused) workspace the kernels store the words the host needs (eight
+// line-search merits, the initial merit, the PCG iteration count and exit flag) straight into
+// mapped page-locked host memory, so there is no device-to-host copy anywhere in a step; a
+// per-call workspace does not page-lock (too slow per call) and copies them back instead. The host synchronizes once per SQP step, to read the
 // merits and pick the step, and once at the end of the solve (the timing boundary), where the
 // linear-system statistics and the event-measured linear-system times are read back.
 #include <algorithm>
@@ -83,6 +85,7 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     if (!reuse) { owned = std::make_unique<SqpWorkspace>(state_size, control_size, knot_points); reuse = owned.get(); }
     SqpWorkspace& workspace = *reuse;
     workspace.begin(state_size, control_size, knot_points, Backend::kind);
+    workspace.owned_by_caller = !owned;
 
     std::vector<int> linsys_iter_vec;
     std::vector<bool> linsys_exit_vec;
@@ -156,6 +159,8 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         state_size, control_size, knot_points, d_xu, d_eePos_traj, static_cast<T>(10), timestep,
         d_dynMem_const, d_merit_temp, d_xs_goal);
     reduce_merit<T><<<1, MERIT_THREADS, 0, side>>>(knot_points, d_merit_temp, d_merit_initial);
+    if (workspace.copies_needed())
+        gpuErrchk(cudaMemcpyAsync(h_merit_initial_slot, d_merit_initial, sizeof(T), cudaMemcpyDeviceToHost, side));
     gpuErrchk(cudaEventRecord(workspace.event(kEventInitial), side));
     gpuErrchk(cudaPeekAtLastError());
     bool merit_initial_read = false;
@@ -188,8 +193,12 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         }
         for (uint32_t p = 0; p < num_alphas; p++)
             gpuErrchk(cudaStreamWaitEvent(s, workspace.event(kEventJoin + p), 0));
+        if (workspace.copies_needed())
+            gpuErrchk(cudaMemcpyAsync(h_merit_news, d_merit_news, num_alphas*sizeof(T), cudaMemcpyDeviceToHost, s));
     };
-    constexpr bool use_graph = MPCGPU_GRAPH && Backend::graphable;
+    // Graphs pay off only when the workspace outlives the call: a per-call workspace would capture
+    // three graphs per solve, so it launches the segments directly.
+    const bool use_graph = MPCGPU_GRAPH && Backend::graphable && workspace.owned_by_caller;
     if (use_graph) {
         // Everything the captured launches hold by value: caller pointers, the timestep, the
         // backend's parameters (the sim warm-starts with tighter PCG tolerances, then switches).
