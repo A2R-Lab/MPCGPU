@@ -591,10 +591,11 @@ void form_S_gamma_Pinv_kernel(
     T *d_S,
     T *d_Pinv, 
     T *d_gamma,
-    T rho
+    const T *d_rho          // device scalar: the SQP driver updates it per step (graph-replayable)
 ){
 
     extern __shared__ T s_temp[ ];
+    const T rho = *d_rho;
 
     for(unsigned blockrow=blockIdx.x; blockrow<knot_points; blockrow+=gridDim.x){
         form_S_gamma_and_jacobi_Pinv_blockrow<T>(
@@ -645,7 +646,8 @@ void form_schur_system(
     T *d_S, 
     T *d_Pinv, 
     T *d_gamma,            
-    T rho
+    const T *d_rho,
+    cudaStream_t stream = 0
 ){
     const uint32_t s_temp_size = sizeof(T)*(8 * state_size*state_size +
                                             7 * state_size + 
@@ -666,8 +668,8 @@ void form_schur_system(
         (void *) &d_S,
         (void *) &d_Pinv,
         (void *) &d_gamma,
-        (void *) &rho
+        (void *) &d_rho
     };
 
-    gpuErrchk(cudaLaunchCooperativeKernel(kernel, knot_points, SCHUR_THREADS, args, s_temp_size));
+    gpuErrchk(cudaLaunchCooperativeKernel(kernel, knot_points, SCHUR_THREADS, args, s_temp_size, stream));
 }

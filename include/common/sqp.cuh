@@ -4,20 +4,31 @@
 // KKT formation, dz recovery, merit line search and rho schedule, is identical for both and
 // lives here once. A backend provides:
 //   static constexpr int kind;                       workspace backend tag (slot layout)
+//   static constexpr bool graphable;                 its solve is device-only work (capturable)
 //   void setup(SqpWorkspace&, s, c, N, d_S, d_gamma, d_lambda);   its workspace slots, in a fixed order
-//   void formSchur(s, c, N, d_G, d_C, d_g, d_c, d_S, d_gamma, rho);
-//   void solve(d_lambda);                            writes d_lambda (enqueued; no host sync required)
-//   void collect(iter_vec, exit_vec);                after the driver's final sync: its per-step statistics
+//   void formSchur(s, c, N, d_G, d_C, d_g, d_c, d_S, d_gamma, rho, d_rho, stream);
+//   void solve(d_lambda, stream);                    writes d_lambda (enqueued on `stream`)
+//   void copyStats(stream);                          its statistics for this solve become readable after the next host sync
+//   void graphKey(std::vector<uint64_t>&);           append every by-value launch argument its graphs freeze
+//   void record(iter_vec, exit_vec);                 after a host sync: push the copied statistics
 //   template<class Dump> void dumpSchur(Dump);       DUMP_KKT only: backend-specific matrices
 //
-// Host synchronization is kept to the decision points: one blocking copy of the eight line-search
-// merits per SQP step (the host picks the step) and one device sync at the end of the solve (the
-// timing boundary; statistics are read after it). Everything else is stream-ordered on the legacy
-// stream — the eight line-search streams are blocking streams, so the merit copy waits for them —
-// and the backend's statistics and the linear-system timing events are read back only at the end.
+// Launch structure. All solver work runs on the workspace's main stream; the eight line-search
+// merits fork to the workspace's side streams and join back; the initial merit runs on a ninth
+// stream alongside the KKT formation. One SQP step is three segments — pre (KKT, Schur),
+// linsys (the solve), post (dz, line-search merits) — that the pcg
+// backend records once per workspace as CUDA graphs and replays (MPCGPU_GRAPH, default on;
+// off for DUMP_KKT and for the host-side qdldl solve, which launches the same segments directly).
+// The kernels store the words the host needs (eight line-search merits, the initial merit, the
+// PCG iteration count and exit flag) straight into mapped page-locked host memory, so there is no
+// device-to-host copy anywhere in a step. The host synchronizes once per SQP step, to read the
+// merits and pick the step, and once at the end of the solve (the timing boundary), where the
+// linear-system statistics and the event-measured linear-system times are read back.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <tuple>
@@ -34,11 +45,28 @@
 #include "utils/dump.hpp"
 #endif
 
+#ifndef MPCGPU_GRAPH
+#define MPCGPU_GRAPH 1
+#endif
+#ifdef DUMP_KKT          // the dumps synchronize and read between launches; replay would hide them
+#undef MPCGPU_GRAPH
+#define MPCGPU_GRAPH 0
+#endif
+
 namespace mpcgpu {
 
 // (linear-system iterations per SQP step, linear-system times, SQP wall time, SQP steps,
 //  rho stayed below its maximum, linear-system exit flags)
 using SqpStats = std::tuple<std::vector<int>, std::vector<double>, double, uint32_t, bool, std::vector<bool>>;
+
+// Bit pattern of a by-value launch argument, for the graph key.
+template <class V> uint64_t graph_key_bits(const V& value) {
+    static_assert(sizeof(V) <= sizeof(uint64_t), "key values are at most 64 bits");
+    uint64_t bits = 0; std::memcpy(&bits, &value, sizeof(V)); return bits;
+}
+
+// Workspace event slots used by the driver (TIME_LINSYS pairs follow from kEventLinsys).
+enum : size_t { kEventFork = 0, kEventJoin = 1 /* +8 */, kEventInitial = 9, kEventLinsys = 16 };
 
 template <typename T, class Backend>
 SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_points, float timestep,
@@ -79,6 +107,8 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     T min_merit, alphafinal;
     uint32_t line_search_step = 0;
     auto& streams = workspace.streams;
+    cudaStream_t ms = workspace.main_stream();      // every solver launch; cuBLAS is bound to it
+    cudaStream_t side = workspace.side_stream();    // the initial merit, alongside the KKT formation
     auto handle = workspace.handle;
     uint32_t sqp_iter = 0;
     T drho = 1.0, rho_factor = RHO_FACTOR, rho_max = RHO_MAX, rho_min = RHO_MIN;
@@ -94,14 +124,14 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     gpuErrchk(cudaPeekAtLastError());
     T* d_dz = workspace.device<T>(dz_n);
     T* d_xs = workspace.device<T>(state_size);
-    gpuErrchk(cudaMemcpy(d_xs, d_xu, state_size*sizeof(T), cudaMemcpyDeviceToDevice));
-    T* d_merit_news = workspace.device<T>(8);
+    gpuErrchk(cudaMemcpyAsync(d_xs, d_xu, state_size*sizeof(T), cudaMemcpyDeviceToDevice, ms));
     T* d_merit_temp = workspace.device<T>(8*knot_points);
-    T* d_merit_initial = workspace.device<T>(1);
-    gpuErrchk(cudaMemset(d_merit_initial, 0, sizeof(T)));
-    // Pinned slots first (shared), then the backend's: the targets of the asynchronous copies.
-    T* h_merit_news = workspace.pinned<T>(num_alphas);
-    T* h_merit_initial_slot = workspace.pinned<T>(1);
+    T* d_rho = workspace.device<T>(1);                       // the Schur kernels read rho from here
+    // Pinned/mapped slots first (shared), then the backend's.
+    T* h_rho = workspace.pinned<T>(SQP_MAX_ITER);           // one slot per step: the copy may still be in flight
+    T *d_merit_news, *d_merit_initial;                       // kernels store these into host memory
+    T* h_merit_news = workspace.mapped<T>(num_alphas, &d_merit_news);
+    T* h_merit_initial_slot = workspace.mapped<T>(1, &d_merit_initial);
     backend.setup(workspace, state_size, control_size, knot_points, d_S, d_gamma, d_lambda);
     gpuErrchk(cudaPeekAtLastError());
     T h_merit_initial;
@@ -119,15 +149,61 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     auto sqpTimecheck = [&]() { return false; };
 #endif
 
-    // Deterministic merit: per-knot temp (no atomicAdd) + fixed-order reduce.
-    compute_merit<T><<<knot_points, MERIT_THREADS, merit_smem_size>>>(
+    // Initial merit on the side stream, overlapping the first KKT formation. Deterministic:
+    // per-knot temp (no atomicAdd) + fixed-order reduce. It shares d_merit_temp with the
+    // line-search merits, so the side stream joins the main stream before those launch.
+    compute_merit<T><<<knot_points, MERIT_THREADS, merit_smem_size, side>>>(
         state_size, control_size, knot_points, d_xu, d_eePos_traj, static_cast<T>(10), timestep,
         d_dynMem_const, d_merit_temp, d_xs_goal);
-    reduce_merit<T><<<1, MERIT_THREADS>>>(knot_points, d_merit_temp, d_merit_initial);
-    // lands before the first line-search merit copy completes (same stream); read after it
-    gpuErrchk(cudaMemcpyAsync(h_merit_initial_slot, d_merit_initial, sizeof(T), cudaMemcpyDeviceToHost));
+    reduce_merit<T><<<1, MERIT_THREADS, 0, side>>>(knot_points, d_merit_temp, d_merit_initial);
+    gpuErrchk(cudaEventRecord(workspace.event(kEventInitial), side));
     gpuErrchk(cudaPeekAtLastError());
     bool merit_initial_read = false;
+
+    // The three segments of one SQP step. Captured once per workspace into graphs (pcg) or
+    // launched directly (qdldl, DUMP_KKT). Pointers and sizes are fixed per workspace+caller.
+    auto seg_pre = [&](cudaStream_t s) {
+        generate_kkt_submatrices<T, MPCGPU_INTEGRATOR><<<knot_points, KKT_THREADS, 2*get_kkt_smem_size<T>(state_size, control_size), s>>>(
+            state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_dynMem_const,
+            timestep, d_eePos_traj, d_xs, d_xu, d_xs_goal);
+        backend.formSchur(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_S, d_gamma,
+                          rho, d_rho, s);
+    };
+    auto seg_lin = [&](cudaStream_t s) {
+        backend.solve(d_lambda, s);
+        backend.copyStats(s);
+    };
+    auto seg_post = [&](cudaStream_t s) {
+        compute_dz(state_size, control_size, knot_points, d_Ginv_dense, d_C_dense, d_g, d_lambda, d_dz, s);
+        gpuErrchk(cudaEventRecord(workspace.event(kEventFork), s));
+        for (uint32_t p = 0; p < num_alphas; p++) {
+            void* kernelArgs[] = {
+                (void*)&state_size, (void*)&control_size, (void*)&knot_points, (void*)&d_xs, (void*)&d_xu,
+                (void*)&d_eePos_traj, (void*)&mu, (void*)&timestep, (void*)&d_dynMem_const, (void*)&d_dz,
+                (void*)&p, (void*)&d_merit_news, (void*)&d_merit_temp, (void*)&d_xs_goal};
+            gpuErrchk(cudaStreamWaitEvent(streams[p], workspace.event(kEventFork), 0));
+            gpuErrchk(cudaLaunchCooperativeKernel(ls_merit_kernel, knot_points, MERIT_THREADS, kernelArgs,
+                                                  get_merit_smem_size<T>(state_size, knot_points), streams[p]));
+            gpuErrchk(cudaEventRecord(workspace.event(kEventJoin + p), streams[p]));
+        }
+        for (uint32_t p = 0; p < num_alphas; p++)
+            gpuErrchk(cudaStreamWaitEvent(s, workspace.event(kEventJoin + p), 0));
+    };
+    constexpr bool use_graph = MPCGPU_GRAPH && Backend::graphable;
+    if (use_graph) {
+        // Everything the captured launches hold by value: caller pointers, the timestep, the
+        // backend's parameters (the sim warm-starts with tighter PCG tolerances, then switches).
+        std::vector<uint64_t> key = {graph_key_bits(d_eePos_traj), graph_key_bits(d_lambda), graph_key_bits(d_xu),
+                                     graph_key_bits(d_dynMem_const), graph_key_bits(d_xs_goal), graph_key_bits(timestep)};
+        backend.graphKey(key);
+        if (!workspace.graphsMatch(key)) {
+            workspace.destroyGraphs();
+            workspace.captureGraph(0, ms, [&]{ seg_pre(ms); });
+            workspace.captureGraph(1, ms, [&]{ seg_lin(ms); });
+            workspace.captureGraph(2, ms, [&]{ seg_post(ms); });
+            workspace.setGraphKey(key);
+        }
+    }
 
 #ifdef DUMP_KKT
     // Capture one solve (DUMP_KKT_AT_SOLVE, counted across the run) into MPCGPU_DUMP_DIR for
@@ -141,13 +217,9 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
 #endif
 
     for (uint32_t sqpiter = 0; sqpiter < SQP_MAX_ITER; sqpiter++) {
-        generate_kkt_submatrices<T, MPCGPU_INTEGRATOR><<<knot_points, KKT_THREADS, 2*get_kkt_smem_size<T>(state_size, control_size)>>>(
-            state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_dynMem_const,
-            timestep, d_eePos_traj, d_xs, d_xu, d_xs_goal);
-        gpuErrchk(cudaPeekAtLastError());
-        if (sqpTimecheck()) break;
-
-        backend.formSchur(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_S, d_gamma, rho);
+        h_rho[sqpiter] = rho;
+        gpuErrchk(cudaMemcpyAsync(d_rho, &h_rho[sqpiter], sizeof(T), cudaMemcpyHostToDevice, ms));
+        if (use_graph) workspace.launchGraph(0, ms); else seg_pre(ms);
         gpuErrchk(cudaPeekAtLastError());
 #ifdef DUMP_KKT
         dump_this_solve = (dumped++ == DUMP_KKT_AT_SOLVE);
@@ -169,20 +241,20 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         if (sqpTimecheck()) break;
 
 #if TIME_LINSYS
-        // Linear-system time = elapsed between two events bracketing the solve on the legacy stream
+        // Linear-system time = elapsed between two events bracketing the solve on the main stream
         // (read after the final sync); no host sync inside the step.
-        gpuErrchk(cudaEventRecord(workspace.event(2*linsys_timed), 0));
+        gpuErrchk(cudaEventRecord(workspace.event(kEventLinsys + 2*linsys_timed), ms));
 #endif
-        backend.solve(d_lambda);
+        if (use_graph) workspace.launchGraph(1, ms); else seg_lin(ms);
 #if TIME_LINSYS
-        gpuErrchk(cudaEventRecord(workspace.event(2*linsys_timed + 1), 0));
+        gpuErrchk(cudaEventRecord(workspace.event(kEventLinsys + 2*linsys_timed + 1), ms));
         linsys_timed++;
 #endif
         if (sqpTimecheck()) break;
 
-        compute_dz(state_size, control_size, knot_points, d_Ginv_dense, d_C_dense, d_g, d_lambda, d_dz);
+        if (sqpiter == 0) gpuErrchk(cudaStreamWaitEvent(ms, workspace.event(kEventInitial), 0));   // d_merit_temp handoff
+        if (use_graph) workspace.launchGraph(2, ms); else seg_post(ms);
         gpuErrchk(cudaPeekAtLastError());
-        if (sqpTimecheck()) break;
 #ifdef DUMP_KKT
         if (dump_this_solve) {
             gpuErrchk(cudaDeviceSynchronize());
@@ -192,20 +264,10 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
             printf("[DUMP_KKT] wrote MPCGPU_DUMP_DIR/mpc_{lambda1,Ginv,dz}.bin (post-solve)\n");
         }
 #endif
-
-        for (uint32_t p = 0; p < num_alphas; p++) {
-            void* kernelArgs[] = {
-                (void*)&state_size, (void*)&control_size, (void*)&knot_points, (void*)&d_xs, (void*)&d_xu,
-                (void*)&d_eePos_traj, (void*)&mu, (void*)&timestep, (void*)&d_dynMem_const, (void*)&d_dz,
-                (void*)&p, (void*)&d_merit_news, (void*)&d_merit_temp, (void*)&d_xs_goal};
-            gpuErrchk(cudaLaunchCooperativeKernel(ls_merit_kernel, knot_points, MERIT_THREADS, kernelArgs,
-                                                  get_merit_smem_size<T>(state_size, knot_points), streams[p]));
-        }
         if (sqpTimecheck()) break;
-        gpuErrchk(cudaPeekAtLastError());
-        // The decision point: a blocking copy on the legacy stream waits for the eight line-search
-        // streams (blocking streams) and for every earlier launch; pinned target, no staging.
-        gpuErrchk(cudaMemcpy(h_merit_news, d_merit_news, num_alphas*sizeof(T), cudaMemcpyDeviceToHost));
+        // The decision point: the only host wait inside a step.
+        gpuErrchk(cudaStreamSynchronize(ms));
+        backend.record(linsys_iter_vec, linsys_exit_vec);
         if (!merit_initial_read) { h_merit_initial = *h_merit_initial_slot; merit_initial_read = true; }
         if (sqpTimecheck()) break;
 
@@ -264,12 +326,12 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     clock_gettime(CLOCK_MONOTONIC, &sqp_solve_end);
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
 #endif
-    backend.collect(linsys_iter_vec, linsys_exit_vec);
+    backend.record(linsys_iter_vec, linsys_exit_vec);   // a solve whose step was cut short by the time budget
 #if TIME_LINSYS
     for (uint32_t i = 0; i < linsys_timed; i++) {
-        float ms = 0;
-        gpuErrchk(cudaEventElapsedTime(&ms, workspace.event(2*i), workspace.event(2*i + 1)));
-        linsys_time_vec.push_back(1000.0*ms);
+        float ms_elapsed = 0;
+        gpuErrchk(cudaEventElapsedTime(&ms_elapsed, workspace.event(kEventLinsys + 2*i), workspace.event(kEventLinsys + 2*i + 1)));
+        linsys_time_vec.push_back(1000.0*ms_elapsed);
     }
 #endif
     return std::make_tuple(linsys_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, linsys_exit_vec);

@@ -28,6 +28,7 @@ template <typename T>
 struct QdldlBackend {
     static_assert(std::is_same_v<T, QDLDL_float>, "QDLDL and solver precision must match");
     static constexpr int kind = 1;
+    static constexpr bool graphable = false;   // the solve is host work
     QDLDL_int An = 0;
     int nnz = 0;
     T* d_gamma = nullptr;
@@ -74,17 +75,20 @@ struct QdldlBackend {
     }
 
     void formSchur(uint32_t state_size, uint32_t control_size, uint32_t knots, T* d_G, T* d_C, T* d_g, T* d_c,
-                   T*, T* gamma, T rho) {
-        form_schur_system_qdldl<T>(state_size, control_size, knots, d_G, d_C, d_g, d_c, d_val, gamma, rho);
+                   T*, T* gamma, T rho, const T*, cudaStream_t stream) {
+        form_schur_system_qdldl<T>(state_size, control_size, knots, d_G, d_C, d_g, d_c, d_val, gamma, rho, stream);
     }
 
-    void solve(T* d_lambda) {   // a direct solve: the copies synchronize the host by nature
-        gpuErrchk(cudaMemcpy(h_val, d_val, nnz*sizeof(T), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(h_gamma, d_gamma, An*sizeof(T), cudaMemcpyDeviceToHost));
+    void solve(T* d_lambda, cudaStream_t stream) {   // a direct solve: the host waits for the Schur system
+        gpuErrchk(cudaMemcpyAsync(h_val, d_val, nnz*sizeof(T), cudaMemcpyDeviceToHost, stream));
+        gpuErrchk(cudaMemcpyAsync(h_gamma, d_gamma, An*sizeof(T), cudaMemcpyDeviceToHost, stream));
+        gpuErrchk(cudaStreamSynchronize(stream));
         qdldl_solve_schur(An, h_col_ptr, h_row_ind, h_val, h_gamma, h_lambda, Lp, Li, Lx, D, Dinv, Lnz, etree, bwork, iwork, fwork);
-        gpuErrchk(cudaMemcpy(d_lambda, h_lambda, An*sizeof(T), cudaMemcpyHostToDevice));
+        gpuErrchk(cudaMemcpyAsync(d_lambda, h_lambda, An*sizeof(T), cudaMemcpyHostToDevice, stream));
     }
-    void collect(std::vector<int>&, std::vector<bool>&) {}   // no iterations to report
+    void graphKey(std::vector<uint64_t>&) {}
+    void copyStats(cudaStream_t) {}                          // no iterations to report
+    void record(std::vector<int>&, std::vector<bool>&) {}
 
 #ifdef DUMP_KKT
     template <class Dump> void dumpSchur(Dump dump) { dump("mpc_S_csc.bin", d_val, nnz); }

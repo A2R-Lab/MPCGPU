@@ -69,3 +69,25 @@ workspace comparison. Any source change invalidates a prepared plan, and the run
 signed receipt first. Each run directory keeps raw per-solve samples. The speedup attribution uses
 `tools/attribution/prepare.sh` (builds only) and `run.sh` (timing); see
 [speedup-attribution.md](speedup-attribution.md).
+
+### What one solve launches
+
+The SQP driver (`include/common/sqp.cuh`) runs on the workspace's main stream and
+synchronizes the host twice per SQP step at most: once after the eight line-search merits (the
+host picks the step and the next rho) and once at the end of the solve (the timing boundary).
+Everything else is stream-ordered. The eight merits fork to the workspace's side streams and
+join; the initial merit runs on a ninth stream beside the KKT formation. The kernels store the
+words the host needs (merits, PCG iteration count and exit flag) straight into mapped page-locked
+host memory, so no device-to-host copy sits inside a step; rho reaches the Schur kernels through a
+device scalar that an asynchronous copy updates each step. With the pcg backend the three segments
+of a step (KKT+Schur, PCG, dz+merits) are captured once per workspace as CUDA graphs and replayed
+(`-DMPCGPU_GRAPH=0` launches them directly; `DUMP_KKT` builds always do, so the dumps can read
+between launches). The qdldl backend launches directly because its solve is host work. A change
+of caller pointers or PCG tolerances re-captures (the sim warm-starts with tighter tolerances).
+
+`linsys_times` (ICRA Figures 4/5, `TIME_LINSYS=1`) is the elapsed time between two CUDA events
+bracketing the linear-system segment on the main stream, read back after the final sync — the
+GPU time of the solve, not a host round trip. Before October 2026 it was host wall time between
+two device synchronizations, so older linsys numbers include two host syncs per step and are
+not comparable. SQP solve time is still host wall time from entry to the final sync.
+

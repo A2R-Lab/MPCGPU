@@ -13,6 +13,7 @@ namespace mpcgpu {
 template <typename T>
 struct PcgBackend {
     static constexpr int kind = 0;
+    static constexpr bool graphable = true;
     pcg_config<T>& config;
     uint32_t knot_points = 0;
     size_t smem = 0;
@@ -20,9 +21,10 @@ struct PcgBackend {
     T *d_Pinv = nullptr, *d_r = nullptr, *d_p = nullptr, *d_v_temp = nullptr, *d_eta_new_temp = nullptr;
     uint32_t* d_pcg_iters = nullptr;
     bool* d_pcg_exit = nullptr;
-    struct Stats { uint32_t iters; uint32_t exit; };   // one device slot, one copy per solve
-    Stats* h_stats = nullptr;
-    uint32_t solves = 0;
+    struct Stats { uint32_t iters; uint32_t exit; };   // the kernel stores these into mapped host memory
+    Stats* d_stats = nullptr;      // device alias of h_stats
+    Stats* h_stats = nullptr;      // valid after the host sync that follows the solve
+    bool pending = false;
     void* args[13];
 
     explicit PcgBackend(pcg_config<T>& c) : config(c) {}
@@ -34,12 +36,11 @@ struct PcgBackend {
         d_p = workspace.device<T>(state_size*knots);
         d_v_temp = workspace.device<T>(knots);
         d_eta_new_temp = workspace.device<T>(knots);
-        Stats* d_stats = workspace.device<Stats>(1);
+        h_stats = workspace.mapped<Stats>(1, &d_stats);
+        *h_stats = Stats{0, 0};                                  // the kernel writes one exit byte; the rest stays zero
         d_pcg_iters = &d_stats->iters;
-        d_pcg_exit = reinterpret_cast<bool*>(&d_stats->exit);   // the kernel writes one byte; the rest stays zero
-        gpuErrchk(cudaMemsetAsync(d_stats, 0, sizeof(Stats)));
-        h_stats = workspace.pinned<Stats>(SQP_MAX_ITER);
-        solves = 0;
+        d_pcg_exit = reinterpret_cast<bool*>(&d_stats->exit);
+        pending = false;
         smem = pcgSharedMemSize<T>(state_size, knots);
         void* a[13] = {(void*)&d_S, (void*)&d_Pinv, (void*)&d_gamma, (void*)&d_lambda, (void*)&d_r, (void*)&d_p,
                        (void*)&d_v_temp, (void*)&d_eta_new_temp, (void*)&d_pcg_iters, (void*)&d_pcg_exit,
@@ -48,25 +49,27 @@ struct PcgBackend {
     }
 
     void formSchur(uint32_t state_size, uint32_t control_size, uint32_t knots, T* d_G, T* d_C, T* d_g, T* d_c,
-                   T* S, T* gamma, T rho) {
-        form_schur_system<T>(state_size, control_size, knots, d_G, d_C, d_g, d_c, S, d_Pinv, gamma, rho);
+                   T* S, T* gamma, T, const T* d_rho, cudaStream_t stream) {
+        form_schur_system<T>(state_size, control_size, knots, d_G, d_C, d_g, d_c, S, d_Pinv, gamma, d_rho, stream);
     }
 
-    // Enqueue the solve and the copy of its statistics; nothing here waits on the device.
-    void solve(T*) {
-        gpuErrchk(cudaLaunchCooperativeKernel((void*) pcg<T, STATE_SIZE, KNOT_POINTS>, knot_points, PCG_NUM_THREADS, args, smem));
-        if (solves < SQP_MAX_ITER)
-            gpuErrchk(cudaMemcpyAsync(&h_stats[solves], d_pcg_iters, sizeof(Stats), cudaMemcpyDeviceToHost));
-        solves++;
+    // Enqueued only; nothing here waits on the device.
+    void solve(T*, cudaStream_t stream) {
+        gpuErrchk(cudaLaunchCooperativeKernel((void*) pcg<T, STATE_SIZE, KNOT_POINTS>, knot_points, PCG_NUM_THREADS, args, smem, stream));
         gpuErrchk(cudaPeekAtLastError());
     }
-
-    // After the driver's final device sync: the iteration counts and exit flags of this call's solves.
-    void collect(std::vector<int>& iter_vec, std::vector<bool>& exit_vec) {
-        for (uint32_t i = 0; i < std::min(solves, (uint32_t)SQP_MAX_ITER); i++) {
-            iter_vec.push_back((int)h_stats[i].iters);
-            exit_vec.push_back(h_stats[i].exit != 0);
-        }
+    void graphKey(std::vector<uint64_t>& key) {   // the kernel takes these by value
+        key.push_back(graph_key_bits(config.pcg_max_iter));
+        key.push_back(graph_key_bits(config.pcg_exit_tol));
+        key.push_back(graph_key_bits(config.pcg_rel_tol));
+    }
+    void copyStats(cudaStream_t) { pending = true; }   // the kernel already stored them into h_stats
+    // After a host sync that covers the solve: its iteration count and exit flag, once.
+    void record(std::vector<int>& iter_vec, std::vector<bool>& exit_vec) {
+        if (!pending) return;
+        iter_vec.push_back((int)h_stats->iters);
+        exit_vec.push_back(h_stats->exit != 0);
+        pending = false;
     }
 
 #ifdef DUMP_KKT

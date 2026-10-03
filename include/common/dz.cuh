@@ -110,9 +110,10 @@ void compute_dz_kernel(uint32_t state_size, uint32_t control_size, uint32_t knot
 
 
 template <typename T>
-void compute_dz(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *d_G_dense, T *d_C_dense, T *d_g_val, T *d_lambda, T *d_dz){
+void compute_dz(uint32_t state_size, uint32_t control_size, uint32_t knot_points, T *d_G_dense, T *d_C_dense, T *d_g_val, T *d_lambda, T *d_dz,
+                cudaStream_t stream = 0){
     
-    compute_dz_kernel<<<knot_points, DZ_THREADS, sizeof(T)*(2*state_size*state_size+state_size)>>>(
+    compute_dz_kernel<<<knot_points, DZ_THREADS, sizeof(T)*(2*state_size*state_size+state_size), stream>>>(
         state_size, 
         control_size, 
         knot_points, 

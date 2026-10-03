@@ -330,7 +330,7 @@ template <typename T>
 void form_schur_system_qdldl(uint32_t state_size, uint32_t control_size, uint32_t knot_points,
                 T *d_G_dense, T *d_C_dense, T *d_g, T *d_c, 
                 QDLDL_float *d_val, T *d_gamma,
-                T rho)
+                T rho, cudaStream_t stream = 0)
 {
     const uint32_t s_temp_size =sizeof(T)*(8 * state_size*state_size+   
                                 7 * state_size+ 
@@ -338,6 +338,6 @@ void form_schur_system_qdldl(uint32_t state_size, uint32_t control_size, uint32_
                                 3 * control_size + 2 * control_size * control_size + 3);
 
     // form Schur, Pinv
-    form_schur_qdl_kernel<T><<<knot_points, SCHUR_THREADS, s_temp_size>>>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_val, d_gamma, rho);
+    form_schur_qdl_kernel<T><<<knot_points, SCHUR_THREADS, s_temp_size, stream>>>(state_size, control_size, knot_points, d_G_dense, d_C_dense, d_g, d_c, d_val, d_gamma, rho);
     
 }

@@ -1,6 +1,8 @@
 #pragma once
 #include <array>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -17,9 +19,15 @@ inline void checkCuda(cudaError_t status) {
 // for a given backend. No global/static cache and no process-lifetime resources.
 class SqpWorkspace {
     struct Allocation { void* pointer; size_t bytes; };
+    struct MappedAllocation { void* host; void* device; size_t bytes; };
     std::vector<Allocation> device_, host_, pinned_;
+    std::vector<MappedAllocation> mapped_;
     std::vector<cudaEvent_t> events_;
-    size_t device_cursor_ = 0, host_cursor_ = 0, pinned_cursor_ = 0;
+    cudaStream_t side_ = nullptr;
+    cudaGraphExec_t graphs_[3] = {nullptr, nullptr, nullptr};
+    std::vector<uint64_t> graph_key_;      // every by-value launch argument the graphs froze
+    bool graphs_ready_ = false;
+    size_t device_cursor_ = 0, host_cursor_ = 0, pinned_cursor_ = 0, mapped_cursor_ = 0;
     unsigned states_, controls_, knots_;
     int device_id_;
     int backend_ = -1;
@@ -34,8 +42,11 @@ public:
         checkCuda(cudaGetDevice(&device_id_));
         try {
             for (auto& stream : streams) checkCuda(cudaStreamCreate(&stream));
+            checkCuda(cudaStreamCreate(&side_));
             if (cublasCreate(&handle) != CUBLAS_STATUS_SUCCESS)
                 throw std::runtime_error("cuBLAS initialization failed");
+            if (cublasSetStream(handle, streams[0]) != CUBLAS_STATUS_SUCCESS)   // cuBLAS follows the main stream
+                throw std::runtime_error("cuBLAS stream binding failed");
         } catch (...) { release(); throw; }
     }
     ~SqpWorkspace() { release(); }
@@ -49,7 +60,7 @@ public:
         if (backend_ != -1 && backend != backend_)
             throw std::invalid_argument("Workspace backend changed");
         backend_ = backend;
-        device_cursor_ = host_cursor_ = pinned_cursor_ = 0;
+        device_cursor_ = host_cursor_ = pinned_cursor_ = mapped_cursor_ = 0;
     }
     template<class T> T* device(size_t count) {
         const size_t bytes = count*sizeof(T);
@@ -87,6 +98,48 @@ public:
         if (slot.bytes != bytes) throw std::invalid_argument("Workspace pinned layout changed");
         return static_cast<T*>(slot.pointer);
     }
+    // Streams: streams[0] is the main solver stream (also line-search stream 0), streams[1..7]
+    // the other line-search streams, side the initial-merit stream. All are blocking streams,
+    // so work the caller enqueues on the legacy stream stays ordered with the solve.
+    cudaStream_t main_stream() const { return streams[0]; }
+    cudaStream_t side_stream() const { return side_; }
+
+    // Replayable SQP-step segments (pcg backend): captured once per workspace for one set of
+    // caller pointers; a different caller pointer set re-captures.
+    bool graphsMatch(const std::vector<uint64_t>& key) const { return graphs_ready_ && key == graph_key_; }
+    void setGraphKey(const std::vector<uint64_t>& key) { graph_key_ = key; graphs_ready_ = true; }
+    template<class Body> void captureGraph(int index, cudaStream_t stream, Body&& body) {
+        cudaGraph_t graph = nullptr;
+        checkCuda(cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal));
+        body();
+        checkCuda(cudaStreamEndCapture(stream, &graph));
+        try { checkCuda(cudaGraphInstantiate(&graphs_[index], graph, 0)); }
+        catch (...) { cudaGraphDestroy(graph); throw; }
+        checkCuda(cudaGraphDestroy(graph));
+    }
+    void launchGraph(int index, cudaStream_t stream) { checkCuda(cudaGraphLaunch(graphs_[index], stream)); }
+    void destroyGraphs() noexcept {
+        for (auto& g : graphs_) if (g) { cudaGraphExecDestroy(g); g = nullptr; }
+        graphs_ready_ = false;
+    }
+    // Mapped page-locked slots: kernels store their few result words (merits, PCG statistics)
+    // straight into host memory, so no device-to-host copy sits between a launch and the host's
+    // read after the stream sync. Returns the host pointer; `*device` receives the device alias.
+    template<class T> T* mapped(size_t count, T** device) {
+        const size_t bytes = count*sizeof(T);
+        if (mapped_cursor_ == mapped_.size()) {
+            void* host; checkCuda(cudaHostAlloc(&host, bytes, cudaHostAllocMapped));
+            void* dev = nullptr;
+            try {
+                checkCuda(cudaHostGetDevicePointer(&dev, host, 0));
+                mapped_.push_back({host, dev, bytes});
+            } catch (...) { cudaFreeHost(host); throw; }
+        }
+        auto slot = mapped_[mapped_cursor_++];
+        if (slot.bytes != bytes) throw std::invalid_argument("Workspace mapped layout changed");
+        *device = static_cast<T*>(slot.device);
+        return static_cast<T*>(slot.host);
+    }
     // Timing events, created on first use and kept for the workspace's lifetime.
     cudaEvent_t event(size_t index) {
         while (events_.size() <= index) {
@@ -101,13 +154,16 @@ private:
         int previous = device_id_;
         cudaGetDevice(&previous);
         cudaSetDevice(device_id_);
+        destroyGraphs();
         if (handle) { cublasDestroy(handle); handle = nullptr; }
         for (auto& stream : streams) if (stream) { cudaStreamDestroy(stream); stream = nullptr; }
+        if (side_) { cudaStreamDestroy(side_); side_ = nullptr; }
         for (auto slot : device_) cudaFree(slot.pointer);
         for (auto slot : host_) std::free(slot.pointer);
         for (auto slot : pinned_) cudaFreeHost(slot.pointer);
+        for (auto slot : mapped_) cudaFreeHost(slot.host);
         for (auto e : events_) cudaEventDestroy(e);
-        device_.clear(); host_.clear(); pinned_.clear(); events_.clear();
+        device_.clear(); host_.clear(); pinned_.clear(); mapped_.clear(); events_.clear();
         cudaSetDevice(previous);
     }
 };
