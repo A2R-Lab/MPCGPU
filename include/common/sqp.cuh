@@ -6,8 +6,15 @@
 //   static constexpr int kind;                       workspace backend tag (slot layout)
 //   void setup(SqpWorkspace&, s, c, N, d_S, d_gamma, d_lambda);   its workspace slots, in a fixed order
 //   void formSchur(s, c, N, d_G, d_C, d_g, d_c, d_S, d_gamma, rho);
-//   void solve(d_lambda, iter_vec, exit_vec);        writes d_lambda; records iterations if it has any
+//   void solve(d_lambda);                            writes d_lambda (enqueued; no host sync required)
+//   void collect(iter_vec, exit_vec);                after the driver's final sync: its per-step statistics
 //   template<class Dump> void dumpSchur(Dump);       DUMP_KKT only: backend-specific matrices
+//
+// Host synchronization is kept to the decision points: one blocking copy of the eight line-search
+// merits per SQP step (the host picks the step) and one device sync at the end of the solve (the
+// timing boundary; statistics are read after it). Everything else is stream-ordered on the legacy
+// stream — the eight line-search streams are blocking streams, so the merit copy waits for them —
+// and the backend's statistics and the linear-system timing events are read back only at the end.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -67,10 +74,9 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     // line search over alpha = -2^-p, p = 0..7, one stream each
     const float mu = 10.0f;
     const uint32_t num_alphas = 8;
-    T h_merit_news[num_alphas];
     void* ls_merit_kernel = (void*) ls_gato_compute_merit<T>;
     const size_t merit_smem_size = get_merit_smem_size<T>(state_size, control_size);
-    T h_merit_initial, min_merit, alphafinal;
+    T min_merit, alphafinal;
     uint32_t line_search_step = 0;
     auto& streams = workspace.streams;
     auto handle = workspace.handle;
@@ -93,12 +99,15 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     T* d_merit_temp = workspace.device<T>(8*knot_points);
     T* d_merit_initial = workspace.device<T>(1);
     gpuErrchk(cudaMemset(d_merit_initial, 0, sizeof(T)));
+    // Pinned slots first (shared), then the backend's: the targets of the asynchronous copies.
+    T* h_merit_news = workspace.pinned<T>(num_alphas);
+    T* h_merit_initial_slot = workspace.pinned<T>(1);
     backend.setup(workspace, state_size, control_size, knot_points, d_S, d_gamma, d_lambda);
     gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
+    T h_merit_initial;
 
 #if TIME_LINSYS
-    struct timespec linsys_start, linsys_end;
+    uint32_t linsys_timed = 0;   // event pairs recorded (one per linear-system solve)
 #endif
 #if CONST_UPDATE_FREQ && !defined(MPCGPU_CORRECTNESS)
     struct timespec sqp_cur;
@@ -115,8 +124,10 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         state_size, control_size, knot_points, d_xu, d_eePos_traj, static_cast<T>(10), timestep,
         d_dynMem_const, d_merit_temp, d_xs_goal);
     reduce_merit<T><<<1, MERIT_THREADS>>>(knot_points, d_merit_temp, d_merit_initial);
-    gpuErrchk(cudaMemcpyAsync(&h_merit_initial, d_merit_initial, sizeof(T), cudaMemcpyDeviceToHost));
+    // lands before the first line-search merit copy completes (same stream); read after it
+    gpuErrchk(cudaMemcpyAsync(h_merit_initial_slot, d_merit_initial, sizeof(T), cudaMemcpyDeviceToHost));
     gpuErrchk(cudaPeekAtLastError());
+    bool merit_initial_read = false;
 
 #ifdef DUMP_KKT
     // Capture one solve (DUMP_KKT_AT_SOLVE, counted across the run) into MPCGPU_DUMP_DIR for
@@ -158,15 +169,14 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         if (sqpTimecheck()) break;
 
 #if TIME_LINSYS
-        gpuErrchk(cudaDeviceSynchronize());
-        if (sqpTimecheck()) break;
-        clock_gettime(CLOCK_MONOTONIC, &linsys_start);
+        // Linear-system time = elapsed between two events bracketing the solve on the legacy stream
+        // (read after the final sync); no host sync inside the step.
+        gpuErrchk(cudaEventRecord(workspace.event(2*linsys_timed), 0));
 #endif
-        backend.solve(d_lambda, linsys_iter_vec, linsys_exit_vec);
+        backend.solve(d_lambda);
 #if TIME_LINSYS
-        gpuErrchk(cudaDeviceSynchronize());
-        clock_gettime(CLOCK_MONOTONIC, &linsys_end);
-        linsys_time_vec.push_back(time_delta_us_timespec(linsys_start, linsys_end));
+        gpuErrchk(cudaEventRecord(workspace.event(2*linsys_timed + 1), 0));
+        linsys_timed++;
 #endif
         if (sqpTimecheck()) break;
 
@@ -193,8 +203,10 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         }
         if (sqpTimecheck()) break;
         gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
-        cudaMemcpy(h_merit_news, d_merit_news, 8*sizeof(T), cudaMemcpyDeviceToHost);
+        // The decision point: a blocking copy on the legacy stream waits for the eight line-search
+        // streams (blocking streams) and for every earlier launch; pinned target, no staging.
+        gpuErrchk(cudaMemcpy(h_merit_news, d_merit_news, num_alphas*sizeof(T), cudaMemcpyDeviceToHost));
+        if (!merit_initial_read) { h_merit_initial = *h_merit_initial_slot; merit_initial_read = true; }
         if (sqpTimecheck()) break;
 
         line_search_step = 0;
@@ -251,6 +263,14 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
 #else
     clock_gettime(CLOCK_MONOTONIC, &sqp_solve_end);
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
+#endif
+    backend.collect(linsys_iter_vec, linsys_exit_vec);
+#if TIME_LINSYS
+    for (uint32_t i = 0; i < linsys_timed; i++) {
+        float ms = 0;
+        gpuErrchk(cudaEventElapsedTime(&ms, workspace.event(2*i), workspace.event(2*i + 1)));
+        linsys_time_vec.push_back(1000.0*ms);
+    }
 #endif
     return std::make_tuple(linsys_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, linsys_exit_vec);
 }

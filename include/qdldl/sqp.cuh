@@ -78,12 +78,13 @@ struct QdldlBackend {
         form_schur_system_qdldl<T>(state_size, control_size, knots, d_G, d_C, d_g, d_c, d_val, gamma, rho);
     }
 
-    void solve(T* d_lambda, std::vector<int>&, std::vector<bool>&) {   // a direct solve records no iterations
+    void solve(T* d_lambda) {   // a direct solve: the copies synchronize the host by nature
         gpuErrchk(cudaMemcpy(h_val, d_val, nnz*sizeof(T), cudaMemcpyDeviceToHost));
         gpuErrchk(cudaMemcpy(h_gamma, d_gamma, An*sizeof(T), cudaMemcpyDeviceToHost));
         qdldl_solve_schur(An, h_col_ptr, h_row_ind, h_val, h_gamma, h_lambda, Lp, Li, Lx, D, Dinv, Lnz, etree, bwork, iwork, fwork);
         gpuErrchk(cudaMemcpy(d_lambda, h_lambda, An*sizeof(T), cudaMemcpyHostToDevice));
     }
+    void collect(std::vector<int>&, std::vector<bool>&) {}   // no iterations to report
 
 #ifdef DUMP_KKT
     template <class Dump> void dumpSchur(Dump dump) { dump("mpc_S_csc.bin", d_val, nnz); }

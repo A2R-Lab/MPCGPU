@@ -17,8 +17,9 @@ inline void checkCuda(cudaError_t status) {
 // for a given backend. No global/static cache and no process-lifetime resources.
 class SqpWorkspace {
     struct Allocation { void* pointer; size_t bytes; };
-    std::vector<Allocation> device_, host_;
-    size_t device_cursor_ = 0, host_cursor_ = 0;
+    std::vector<Allocation> device_, host_, pinned_;
+    std::vector<cudaEvent_t> events_;
+    size_t device_cursor_ = 0, host_cursor_ = 0, pinned_cursor_ = 0;
     unsigned states_, controls_, knots_;
     int device_id_;
     int backend_ = -1;
@@ -48,7 +49,7 @@ public:
         if (backend_ != -1 && backend != backend_)
             throw std::invalid_argument("Workspace backend changed");
         backend_ = backend;
-        device_cursor_ = host_cursor_ = 0;
+        device_cursor_ = host_cursor_ = pinned_cursor_ = 0;
     }
     template<class T> T* device(size_t count) {
         const size_t bytes = count*sizeof(T);
@@ -73,6 +74,27 @@ public:
         if (slot.bytes != bytes) throw std::invalid_argument("Workspace host layout changed");
         return static_cast<T*>(slot.pointer);
     }
+    // Page-locked host slots: the targets of the driver's asynchronous device-to-host copies
+    // (merit values, linear-system statistics), so a copy never stages through pageable memory.
+    template<class T> T* pinned(size_t count) {
+        const size_t bytes = count*sizeof(T);
+        if (pinned_cursor_ == pinned_.size()) {
+            void* pointer; checkCuda(cudaMallocHost(&pointer, bytes));
+            try { pinned_.push_back({pointer,bytes}); }
+            catch (...) { cudaFreeHost(pointer); throw; }
+        }
+        auto slot = pinned_[pinned_cursor_++];
+        if (slot.bytes != bytes) throw std::invalid_argument("Workspace pinned layout changed");
+        return static_cast<T*>(slot.pointer);
+    }
+    // Timing events, created on first use and kept for the workspace's lifetime.
+    cudaEvent_t event(size_t index) {
+        while (events_.size() <= index) {
+            cudaEvent_t e; checkCuda(cudaEventCreate(&e));
+            events_.push_back(e);
+        }
+        return events_[index];
+    }
     size_t deviceAllocations() const { return device_.size(); }
 private:
     void release() noexcept {
@@ -83,7 +105,9 @@ private:
         for (auto& stream : streams) if (stream) { cudaStreamDestroy(stream); stream = nullptr; }
         for (auto slot : device_) cudaFree(slot.pointer);
         for (auto slot : host_) std::free(slot.pointer);
-        device_.clear(); host_.clear();
+        for (auto slot : pinned_) cudaFreeHost(slot.pointer);
+        for (auto e : events_) cudaEventDestroy(e);
+        device_.clear(); host_.clear(); pinned_.clear(); events_.clear();
         cudaSetDevice(previous);
     }
 };

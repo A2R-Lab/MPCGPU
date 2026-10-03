@@ -20,6 +20,9 @@ struct PcgBackend {
     T *d_Pinv = nullptr, *d_r = nullptr, *d_p = nullptr, *d_v_temp = nullptr, *d_eta_new_temp = nullptr;
     uint32_t* d_pcg_iters = nullptr;
     bool* d_pcg_exit = nullptr;
+    struct Stats { uint32_t iters; uint32_t exit; };   // one device slot, one copy per solve
+    Stats* h_stats = nullptr;
+    uint32_t solves = 0;
     void* args[13];
 
     explicit PcgBackend(pcg_config<T>& c) : config(c) {}
@@ -31,8 +34,12 @@ struct PcgBackend {
         d_p = workspace.device<T>(state_size*knots);
         d_v_temp = workspace.device<T>(knots);
         d_eta_new_temp = workspace.device<T>(knots);
-        d_pcg_iters = workspace.device<uint32_t>(1);
-        d_pcg_exit = workspace.device<bool>(1);
+        Stats* d_stats = workspace.device<Stats>(1);
+        d_pcg_iters = &d_stats->iters;
+        d_pcg_exit = reinterpret_cast<bool*>(&d_stats->exit);   // the kernel writes one byte; the rest stays zero
+        gpuErrchk(cudaMemsetAsync(d_stats, 0, sizeof(Stats)));
+        h_stats = workspace.pinned<Stats>(SQP_MAX_ITER);
+        solves = 0;
         smem = pcgSharedMemSize<T>(state_size, knots);
         void* a[13] = {(void*)&d_S, (void*)&d_Pinv, (void*)&d_gamma, (void*)&d_lambda, (void*)&d_r, (void*)&d_p,
                        (void*)&d_v_temp, (void*)&d_eta_new_temp, (void*)&d_pcg_iters, (void*)&d_pcg_exit,
@@ -45,14 +52,21 @@ struct PcgBackend {
         form_schur_system<T>(state_size, control_size, knots, d_G, d_C, d_g, d_c, S, d_Pinv, gamma, rho);
     }
 
-    void solve(T*, std::vector<int>& iter_vec, std::vector<bool>& exit_vec) {
+    // Enqueue the solve and the copy of its statistics; nothing here waits on the device.
+    void solve(T*) {
         gpuErrchk(cudaLaunchCooperativeKernel((void*) pcg<T, STATE_SIZE, KNOT_POINTS>, knot_points, PCG_NUM_THREADS, args, smem));
-        uint32_t iterations; bool exit;
-        gpuErrchk(cudaMemcpy(&iterations, d_pcg_iters, sizeof(uint32_t), cudaMemcpyDeviceToHost));
-        gpuErrchk(cudaMemcpy(&exit, d_pcg_exit, sizeof(bool), cudaMemcpyDeviceToHost));
+        if (solves < SQP_MAX_ITER)
+            gpuErrchk(cudaMemcpyAsync(&h_stats[solves], d_pcg_iters, sizeof(Stats), cudaMemcpyDeviceToHost));
+        solves++;
         gpuErrchk(cudaPeekAtLastError());
-        iter_vec.push_back(iterations);
-        exit_vec.push_back(exit);
+    }
+
+    // After the driver's final device sync: the iteration counts and exit flags of this call's solves.
+    void collect(std::vector<int>& iter_vec, std::vector<bool>& exit_vec) {
+        for (uint32_t i = 0; i < std::min(solves, (uint32_t)SQP_MAX_ITER); i++) {
+            iter_vec.push_back((int)h_stats[i].iters);
+            exit_vec.push_back(h_stats[i].exit != 0);
+        }
     }
 
 #ifdef DUMP_KKT
