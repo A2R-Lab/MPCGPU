@@ -61,7 +61,7 @@ cost is the slope between the two; the one-iteration solve is the fixed launch a
 Moving GBD-PCG onto GLASS (commit `bc60729`, its only change) cut the time per iteration by 0.7–4.6%,
 most at short and medium horizons. Later GBD-PCG changes, the relative tolerance, converged-start
 guard and safety checks, left it unchanged. The fixed cost of about 23 µs at N ≤ 256 is the same in
-every version, and it is most of today's 49–63 µs average because current solves need few iterations.
+every version, and it was most of the October 1 49–63 µs average because current solves need few iterations.
 
 ![Time per PCG iteration by kernel version](attribution-per-iteration.png)
 
