@@ -59,6 +59,15 @@ within 1 cm, and mean L2 error under 10 cm. The fixture files are described in
 
 ## Correctness evidence (September 28, 2026)
 
+October 4 follow-up: after the graph-statistics repair, the full signed suite
+passes both backends at N = 64 with repeated trials. Additional timer-disabled
+single trials at N = 32, 128, 256 and 512 pass all task-quality checks for both
+backends, including N = 32 PCG with the current tighter default tolerance.
+These are simulated goal-tracking checks, not feasibility certificates: all
+eight additional trials exceed URDF velocity limits (peak ratios 4.18–6.67),
+and four also exceed position limits. The historical table below retains its
+original date and settings; performance after the telemetry fix awaits timing.
+
 One trial per configuration, default tolerances, correctness builds on the RTX 5090 host.
 Errors are end-effector position errors in meters; the approach column is the worst of
 the five closest approaches. Early exits count control updates whose SQP loop ended

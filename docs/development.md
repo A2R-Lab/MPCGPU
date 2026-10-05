@@ -93,8 +93,11 @@ creation and enable graph replay.
 `linsys_times` (ICRA Figures 4/5, `TIME_LINSYS=1`) keeps the paper's definition: host wall time
 between a device synchronization before and after the linear-system segment, so those builds pay
 two extra host syncs per step that `TIME_LINSYS=0` builds (the ICRA iteration-count workloads,
-correctness builds) do not. SQP solve time is host wall time from entry to the final sync in
-timing builds; correctness builds report zero instead of measuring solver time.
+correctness builds) do not. SQP timing starts after the entry device barrier and
+ends after the final synchronization. It includes per-call workspace creation
+when used, but excludes time waiting in that initial barrier and caller work.
+It is not complete API-call latency. Correctness builds report zero instead of
+measuring solver time.
 
 Graph replay must preserve host bookkeeping as well as trajectories. The
 statistics parity gate runs multiple SQP steps/calls with graphs on, graphs off
