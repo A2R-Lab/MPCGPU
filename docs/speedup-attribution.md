@@ -1,5 +1,11 @@
 # Why the ICRA results moved (attribution, October 1–3, 2026)
 
+October 4 audit: the October 3 graph driver lost PCG iteration/exit telemetry
+on replay. Its per-solve PCG statistics cannot support new attribution claims.
+Earlier pre-graph iteration studies below remain historical evidence; current
+driver timing and statistics must be recollected after the bookkeeping fix.
+The latency and trajectory streams are separate from the faulty telemetry.
+
 The October 1, 2026 timing on the RTX 5090 gave GBD-PCG average linear-system times of
 49–63 µs at every horizon, against 75–360 µs in the paper. QDLDL on the CPU stayed within
 about 15% of the paper, so the speedup over QDLDL grew from 1.0–3.6× to 1.6–17×. This

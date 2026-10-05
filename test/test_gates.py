@@ -104,6 +104,32 @@ def test_workspace_contract(binary):
     assert "PASS" in run(binary("workspace"))
 
 
+def test_graph_replay_statistics(binary, tmp_path):
+    """Multiple calls/steps, warm-up tolerance recapture, graphs on/off and fresh.
+
+    The deterministic profile has no timer cutoff: every linear solve contributes
+    exactly one entry, including zero-iteration solves. Trajectory parity alone
+    did not catch host bookkeeping lost during graph replay.
+    """
+    results = []
+    for mode, flags in (("graph", ""), ("direct", "-DMPCGPU_GRAPH=0"),
+                        ("fresh", "-DMPCGPU_NO_REUSE=1")):
+        prefix = tmp_path / mode
+        output = run(binary("pcg", extra="-DSQP_MAX_ITER=3 -DSAVE_DATA=1 " + flags,
+                            output=str(tmp_path / (mode + ".exe"))),
+                     "examples/trajfiles/0_0", prefix)
+        arrays = [np.loadtxt(str(prefix) + "_0_" + name + ".result", ndmin=1)
+                  for name in ("pcg_iters", "pcg_exits", "sqp_iters")]
+        assert len(arrays[2]) > 2 and np.max(arrays[2]) > 1
+        assert len(arrays[0]) == len(arrays[1]) == int(arrays[2].sum())
+        assert np.isfinite(arrays[0]).all() and np.max(arrays[0]) > 0
+        results.append((re.search(r"STATE_HASH\s+(\S+)", output)[1], arrays))
+    for state_hash, arrays in results[1:]:
+        assert state_hash == results[0][0]
+        for actual, expected in zip(arrays, results[0][1]):
+            np.testing.assert_array_equal(actual, expected)
+
+
 def test_independent_model_oracle(binary):
     import pinocchio as pin
     model = pin.buildModelFromUrdf(str(ROOT/"tools/iiwa14.urdf"))

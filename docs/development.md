@@ -42,7 +42,7 @@ restricted signer, no carried evidence, exact fingerprint scope.
 
 1. Run/review correctness; commit source and dependency gitlinks.
 2. Run `test/run_gpu_proof.sh` in a capped scope on the GPU host. It refuses
-   selection arguments and dirty trees; it does not install packages.
+   selection arguments, `PYTEST_ADDOPTS` and dirty trees; it does not install packages.
 3. Verify with `.venv/bin/gpu-proof verify --receipt gpu-proof.json --repo . --policy
    test/gpu-proof-policy.yaml --expected-skips test/expected_skips.txt --require-gpu`.
 4. Commit the generated receipt. Push only when authorized; check host and
@@ -92,5 +92,10 @@ more than before; reuse the workspace.
 between a device synchronization before and after the linear-system segment, so those builds pay
 two extra host syncs per step that `TIME_LINSYS=0` builds (the ICRA iteration-count workloads,
 correctness builds) do not. SQP solve time is host wall time from entry to the final sync in
-every build.
+timing builds; correctness builds report zero instead of measuring solver time.
 
+Graph replay must preserve host bookkeeping as well as trajectories. The
+statistics parity gate runs multiple SQP steps/calls with graphs on, graphs off
+and fresh workspaces. Timing validation rejects incomplete PCG iteration/exit
+streams and reports internal-SQP deadline misses separately from tracking.
+An accepted simulated circuit is not evidence of meeting real-time deadlines.

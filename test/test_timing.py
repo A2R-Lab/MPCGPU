@@ -19,7 +19,7 @@ def test_timing_metrics(tmp_path,failure):
     if failure=='short': samples=samples[:3]
     if failure!='missing': Path(str(prefix)+'_0_sqp_times.result').write_text('\n'.join(samples))
     for name in ('pcg_iters','pcg_exits','sqp_iters','sqp_exits'):
-        Path(str(prefix)+f'_0_{name}.result').write_text('1\n0\n')
+        Path(str(prefix)+f'_0_{name}.result').write_text('1\n'*100)
     log='RESULT offsets=1202 mean=.03 max=.05 final=.01'
     if failure=='divergent': log=log.replace('max=.05','max=2')
     if failure=='none': assert timing.metrics(log,prefix)['median_us']==2
@@ -59,13 +59,14 @@ def test_qdldl_empty_pcg_metrics(tmp_path):
 
 @pytest.mark.parametrize('failure',['none','untimed','partial','divergent','nan','samples'])
 def test_icra_timing_metrics(tmp_path,failure):
-    summary={'config':{'timers':failure!='untimed'},'offsets':666,'reference_rows':666 if failure!='partial' else 667,
+    summary={'config':{'timers':failure!='untimed', 'control_period_us':2000},'offsets':666,'reference_rows':666 if failure!='partial' else 667,
              'control_updates':5204,'l2_error_m':{'mean':.02,'max':.1 if failure!='divergent' else 2,'final':.001},
-             'sqp':{'mean_iters':8,'rho_exits':0},'linsys':{'mean_pcg_iters':6},
+             'sqp':{'mean_iters':8,'rho_exits':0},'linsys':{'mean_pcg_iters':6,'solves':40000},
              'timing_us':{'linsys':{'count':40000 if failure!='samples' else 3,'median':50},
                           'sqp':{'count':5204,'median':1900}}}
     if failure=='nan': summary['l2_error_m']['mean']=float('nan')
     path=tmp_path/'summary.json'; path.write_text(json.dumps(summary))
+    raw_icra(tmp_path, 5204, 40000, 'pcg')
     workload={'kind':'linsys','backend':'pcg'}
     if failure=='none': assert timing.icra_metrics(path,workload)['median_us']==1900
     else:
@@ -78,13 +79,41 @@ def test_icra_timing_metrics(tmp_path,failure):
     ('iters',1.0,1.6,'error'),        # divergence with a full iteration per step is a failure
     ('linsys',0.0,1.6,'error')])      # linear-system workloads never excuse divergence
 def test_icra_rate_not_met(tmp_path,kind,iters,max_error,expect):
-    summary={'config':{'timers':True},'offsets':666,'reference_rows':666,'control_updates':10408,
+    summary={'config':{'timers':True,'control_period_us':1000},'offsets':666,'reference_rows':666,'control_updates':10408,
              'l2_error_m':{'mean':.8,'max':max_error,'final':1.0},'sqp':{'mean_iters':iters,'rho_exits':0},
              'linsys':{'mean_pcg_iters':0},'timing_us':{'linsys':{'count':500,'median':1200},
                                                         'sqp':{'count':10408,'median':1238}}}
     path=tmp_path/'summary.json'; path.write_text(json.dumps(summary))
+    raw_icra(tmp_path, 10408, 0, 'qdldl')
     workload={'kind':kind,'backend':'qdldl'}
     if expect=='error':
         with pytest.raises(ValueError): timing.icra_metrics(path,workload)
     else:
         assert timing.icra_metrics(path,workload)['rate_not_met'] is (expect=='flagged')
+
+
+def raw_icra(directory, updates, solves, backend):
+    values = {'sqp_iters': [solves // updates] * updates, 'sqp_exits': [1]*updates,
+              'pcg_iters': [6]*solves if backend == 'pcg' else [],
+              'pcg_exits': [0]*solves if backend == 'pcg' else [],
+              'sqp_times': [1900]*updates}
+    for name, data in values.items():
+        (directory/f'trial_0_{name}.result').write_text('\n'.join(map(str,data)))
+
+
+@pytest.mark.parametrize('failure', ['capture-only', 'missing-exit', 'wrong-timed-count', 'fractional', 'bad-flag'])
+def test_statistics_reject_incomplete_graph_telemetry(failure):
+    streams = dict(sqp_iters=[3,3], sqp_exits=[1,1], pcg_iters=[4]*6, pcg_exits=[0]*6)
+    timed = 6
+    if failure == 'capture-only': streams['pcg_iters'] = streams['pcg_exits'] = [0]
+    if failure == 'missing-exit': streams['pcg_exits'].pop()
+    if failure == 'wrong-timed-count': timed = 7
+    if failure == 'fractional': streams['pcg_iters'][0] = .5
+    if failure == 'bad-flag': streams['pcg_exits'][0] = 2
+    with pytest.raises(ValueError): timing.validate_statistics(streams,2,'pcg',timed)
+
+
+def test_deadlines_are_independent_of_tracking():
+    result = timing.deadline_metrics([900,1100,1500],1000)
+    assert result['misses'] == 2 and result['miss_fraction'] == 2/3
+    assert 'internal SQP' in result['boundary']

@@ -111,15 +111,48 @@ def metrics(log, prefix, backend='pcg'):
               'p90_us': ordered[math.ceil(.9*len(ordered))-1],
               'tracking_mean_l2': quality[0], 'tracking_max_l2': quality[1],
               'tracking_final_l2': quality[2]}
+    streams = {}
     for name in ('pcg_iters', 'pcg_exits', 'sqp_iters', 'sqp_exits'):
         values = [float(x) for x in Path(str(prefix)+f'_0_{name}.result').read_text().split()]
+        streams[name] = values
         if backend == 'qdldl' and name.startswith('pcg_') and not values:
             result[name+'_mean'] = None  # Direct solver has no PCG iteration/exit stream.
             continue
         if not values or not all(math.isfinite(x) for x in values):
             raise ValueError(f'Invalid {name} samples')
         result[name+'_mean'] = statistics.mean(values)
+    validate_statistics(streams, len(samples), backend)
     return result
+
+
+def validate_statistics(streams, updates, backend, timed_linsys=None):
+    for name in ('sqp_iters', 'sqp_exits'):
+        if len(streams[name]) != updates:
+            raise ValueError(f'Incomplete {name} stream')
+    for name, values in streams.items():
+        if any(not math.isfinite(v) or v < 0 or int(v) != v for v in values):
+            raise ValueError(f'Invalid {name} values')
+        if name.endswith('exits') and any(v not in (0, 1) for v in values):
+            raise ValueError(f'Invalid {name} flags')
+    if backend == 'pcg':
+        count = len(streams['pcg_iters'])
+        completed = sum(streams['sqp_iters'])
+        # A budget cutoff can interrupt at most one launched linear solve per update.
+        if count != len(streams['pcg_exits']) or not completed <= count <= completed + updates:
+            raise ValueError('Incomplete PCG statistics stream')
+        if timed_linsys is not None and count != timed_linsys:
+            raise ValueError('PCG statistics count differs from timed linear solves')
+    elif streams['pcg_iters'] or streams['pcg_exits']:
+        raise ValueError('QDLDL must not report PCG statistics')
+
+
+def deadline_metrics(samples, period_us):
+    if period_us <= 0 or not samples or not all(math.isfinite(v) and v > 0 for v in samples):
+        raise ValueError('Invalid deadline samples/period')
+    misses = sum(v > period_us for v in samples)
+    return {'boundary': 'internal SQP only; excludes controller overhead',
+            'period_us': period_us, 'samples': len(samples), 'misses': misses,
+            'miss_fraction': misses / len(samples), 'max_us': max(samples)}
 
 
 def icra_metrics(summary_path, workload):
@@ -141,11 +174,27 @@ def icra_metrics(summary_path, workload):
         raise ValueError('Missing linear-system samples')
     if timing['sqp']['count'] != summary['control_updates']:
         raise ValueError('Incomplete SQP sample collection')
+    directory = Path(summary_path).parent
+    streams = {name: [float(v) for v in (directory / f'trial_0_{name}.result').read_text().split()]
+               for name in ('pcg_iters', 'pcg_exits', 'sqp_iters', 'sqp_exits')}
+    validate_statistics(streams, summary['control_updates'], workload['backend'],
+                        timing['linsys']['count'] if workload['kind'] == 'linsys' else None)
+    if workload['backend'] == 'pcg':
+        values = streams['pcg_iters']
+        if summary['linsys']['solves'] != len(values):
+            raise ValueError('PCG summary count differs from raw statistics')
+        if not math.isclose(summary['linsys']['mean_pcg_iters'], statistics.mean(values) if values else 0,
+                            rel_tol=1e-5, abs_tol=1e-6):
+            raise ValueError('PCG summary mean differs from raw statistics')
+    samples = [float(v) for v in (directory / 'trial_0_sqp_times.result').read_text().split()]
+    if len(samples) != summary['control_updates']:
+        raise ValueError('Incomplete raw SQP samples')
+    deadlines = deadline_metrics(samples, summary['config']['control_period_us'])
     return {'tracking_mean_l2': error['mean'], 'tracking_max_l2': error['max'], 'tracking_final_l2': error['final'],
             'sqp_iters_mean': summary['sqp']['mean_iters'], 'sqp_rho_exits': summary['sqp']['rho_exits'],
             'linsys_us': timing['linsys'], 'sqp_us': timing['sqp'], 'median_us': timing['sqp']['median'],
             'pcg_iters_mean': summary['linsys']['mean_pcg_iters'] if workload['backend'] == 'pcg' else None,
-            'rate_not_met': rate_not_met}
+            'rate_not_met': rate_not_met, 'internal_sqp_deadlines': deadlines}
 
 
 def validate(plan):

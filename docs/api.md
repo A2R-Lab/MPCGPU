@@ -18,7 +18,7 @@ EE-position error; old L1 final-error values are not interchangeable.
 The header-based SQP entry points retain their existing arguments with an
 optional final `mpcgpu::SqpWorkspace*`. Omit it for an owned temporary workspace.
 The tracking driver reuses one workspace for all solves. It owns device and
-host scratch, eight streams and a cuBLAS handle, and caches QDLDL's symbolic
+host scratch, nine streams and a cuBLAS handle, and caches QDLDL's symbolic
 structure. Numerical factorization and solve state are recomputed per call.
 
 A workspace is bound to one backend, dimension tuple and current CUDA device.

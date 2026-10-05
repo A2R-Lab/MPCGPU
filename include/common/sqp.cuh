@@ -165,6 +165,9 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     gpuErrchk(cudaEventRecord(workspace.event(kEventInitial), side));
     gpuErrchk(cudaPeekAtLastError());
     bool merit_initial_read = false;
+    // Host bookkeeping must follow actual launches, never graph capture: capture
+    // executes host code once, whereas replay executes only device operations.
+    bool linsys_pending = false;
 
     // The three segments of one SQP step. Captured once per workspace into graphs (pcg) or
     // launched directly (qdldl, DUMP_KKT). Pointers and sizes are fixed per workspace+caller.
@@ -259,6 +262,7 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         clock_gettime(CLOCK_MONOTONIC, &linsys_start);
 #endif
         if (use_graph) workspace.launchGraph(1, ms); else seg_lin(ms);
+        linsys_pending = true;
 #if TIME_LINSYS
         gpuErrchk(cudaDeviceSynchronize());
         clock_gettime(CLOCK_MONOTONIC, &linsys_end);
@@ -282,6 +286,7 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
         // The decision point: the only host wait inside a step.
         gpuErrchk(cudaStreamSynchronize(ms));
         backend.record(linsys_iter_vec, linsys_exit_vec);
+        linsys_pending = false;
         if (!merit_initial_read) { h_merit_initial = *h_merit_initial_slot; merit_initial_read = true; }
         if (sqpTimecheck()) break;
 
@@ -340,7 +345,7 @@ SqpStats sqpSolve(uint32_t state_size, uint32_t control_size, uint32_t knot_poin
     clock_gettime(CLOCK_MONOTONIC, &sqp_solve_end);
     double sqp_solve_time = time_delta_us_timespec(sqp_solve_start, sqp_solve_end);
 #endif
-    backend.record(linsys_iter_vec, linsys_exit_vec);   // a solve whose step was cut short by the time budget
+    if (linsys_pending) backend.record(linsys_iter_vec, linsys_exit_vec); // budget interrupted a launched step
     return std::make_tuple(linsys_iter_vec, linsys_time_vec, sqp_solve_time, sqp_iter, sqp_time_exit, linsys_exit_vec);
 }
 

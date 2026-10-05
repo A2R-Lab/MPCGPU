@@ -89,3 +89,10 @@ test/test_timing.py::test_timing_metrics[missing]
 test/test_timing.py::test_timing_metrics[nan]
 test/test_timing.py::test_timing_metrics[none]
 test/test_timing.py::test_timing_metrics[short]
+test/test_gates.py::test_graph_replay_statistics
+test/test_timing.py::test_statistics_reject_incomplete_graph_telemetry[capture-only]
+test/test_timing.py::test_statistics_reject_incomplete_graph_telemetry[missing-exit]
+test/test_timing.py::test_statistics_reject_incomplete_graph_telemetry[wrong-timed-count]
+test/test_timing.py::test_statistics_reject_incomplete_graph_telemetry[fractional]
+test/test_timing.py::test_statistics_reject_incomplete_graph_telemetry[bad-flag]
+test/test_timing.py::test_deadlines_are_independent_of_tracking

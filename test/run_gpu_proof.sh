@@ -2,8 +2,8 @@
 # Full, clean-source correctness receipt. No timing or dependency installation.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if [[ $# -ne 0 ]]; then
-    echo "Receipt must cover the full suite; selection arguments are forbidden." >&2
+if [[ $# -ne 0 || -n "${PYTEST_ADDOPTS:-}" ]]; then
+    echo "Receipt must cover the full suite; selection arguments/PYTEST_ADDOPTS are forbidden." >&2
     exit 1
 fi
 if [[ -n "$(git status --porcelain --ignore-submodules=untracked)" ]]; then

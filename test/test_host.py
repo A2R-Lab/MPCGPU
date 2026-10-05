@@ -115,9 +115,11 @@ def test_builder_configuration_cache(tmp_path, monkeypatch):
 
 
 def test_receipt_refuses_partial_collection():
-    result = subprocess.run(["bash", "test/run_gpu_proof.sh", "-k", "one_test"], cwd=ROOT,
-                            capture_output=True, text=True)
-    assert result.returncode != 0 and "full suite" in result.stderr
+    for args, addopts in ((["-k", "one_test"], ""), ([], "-k one_test")):
+        result = subprocess.run(["bash", "test/run_gpu_proof.sh", *args], cwd=ROOT,
+                                env={**os.environ, "PYTEST_ADDOPTS": addopts},
+                                capture_output=True, text=True)
+        assert result.returncode != 0 and "full suite" in result.stderr
 
 
 def test_expected_collection_manifest():

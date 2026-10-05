@@ -83,6 +83,20 @@ error; every configuration here stays below that.
 
 ## Timing results (October 3, 2026)
 
+Audit correction (October 4): the graph driver dropped PCG iteration/exit
+statistics on replay. All 66 PCG run summaries in the October 3 ICRA collection
+contain only one such entry. These telemetry fields are invalid; the separate
+linear-system duration, SQP duration/iteration and trajectory streams remain
+available. The repaired driver requires a new quiet-window collection before
+these tables can describe its performance. Historical raw files are unchanged.
+
+The iteration-rate grid uses fixed simulation periods and a soft wall-clock SQP
+budget, not measured complete-controller deadlines. In the saved N512/1 kHz PCG
+repeat 0, internal SQP alone averages 1174.9 µs and exceeds 1000 µs in 9962 of
+10407 updates (95.7%). Tracking at this simulated rate does not establish real
+1 kHz operation. The timing validator now reports internal-SQP deadline misses
+separately from tracking success; complete-call latency is still to be measured.
+
 Collected in an assigned exclusive window on the RTX 5090 / Core Ultra 9 285K / CUDA 13.2 host,
 source `758bcd2` (the October 3 SQP driver; the tree `main` carries), receipt `758bcd2`, three
 independent repeats per workload. Raw samples, summaries and provenance are in
