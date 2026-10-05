@@ -73,8 +73,8 @@ signed receipt first. Each run directory keeps raw per-solve samples. The speedu
 ### What one solve launches
 
 The SQP driver (`include/common/sqp.cuh`) runs on the workspace's main stream and
-synchronizes the host twice per SQP step at most: once after the eight line-search merits (the
-host picks the step and the next rho) and once at the end of the solve (the timing boundary).
+synchronizes the host after the eight line-search merits in each SQP step (the
+host picks the step and the next rho), and once at the end of the solve (the timing boundary).
 Everything else is stream-ordered. The eight merits fork to the workspace's side streams and
 join; the initial merit runs on a ninth stream beside the KKT formation. The kernels store the
 words the host needs (merits, PCG iteration count and exit flag) straight into mapped page-locked
@@ -84,9 +84,11 @@ workspace the three segments of a step (KKT+Schur, PCG, dz+merits) are captured 
 as CUDA graphs and replayed (`-DMPCGPU_GRAPH=0` launches them directly; `DUMP_KKT` builds and a
 per-call workspace always do). The qdldl backend launches directly because its solve is host work.
 A change of caller pointers or PCG tolerances re-captures (the sim warm-starts with tighter
-tolerances). A workspace now also owns one page-locked, device-mapped 4 KB arena and a ninth
-stream, so constructing one per solve (`MPCGPU_NO_REUSE`, the parity gate's "fresh" mode) costs
-more than before; reuse the workspace.
+tolerances). A caller-reused workspace owns one page-locked, device-mapped 4 KB
+arena and nine streams. Per-call workspaces (`MPCGPU_NO_REUSE`, the parity gate's
+"fresh" mode) use pageable host memory, explicit copy-backs and direct launches;
+they do not pay the page-locking cost. Reuse a workspace to amortize resource
+creation and enable graph replay.
 
 `linsys_times` (ICRA Figures 4/5, `TIME_LINSYS=1`) keeps the paper's definition: host wall time
 between a device synchronization before and after the linear-system segment, so those builds pay
