@@ -56,7 +56,9 @@ test/test_host.py::test_builder_configuration_cache
 test/test_host.py::test_codegen_reproducible
 test/test_host.py::test_dependency_pins
 test/test_host.py::test_expected_collection_manifest
-test/test_host.py::test_gbd_pcg_glass_pin_lockstep
+test/test_host.py::test_grid_glass_pin_lockstep
+test/test_host.py::test_gbd_pcg_uses_consumer_glass[gbd-api]
+test/test_host.py::test_gbd_pcg_uses_consumer_glass[pcg]
 test/test_host.py::test_icra_fixture_provenance
 test/test_host.py::test_receipt_policy
 test/test_host.py::test_receipt_refuses_partial_collection

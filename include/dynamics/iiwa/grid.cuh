@@ -424,8 +424,8 @@ namespace grid {
     const int END_EFFECTOR_POSE_DYNAMIC_SHARED_MEM_COUNT = 197;
     const int END_EFFECTOR_POSE_GRADIENT_DYNAMIC_SHARED_MEM_COUNT = 391;
     const int END_EFFECTOR_POSE_HESSIAN_DYNAMIC_SHARED_MEM_COUNT = 755;
-    const int IDSVA_SO_DYNAMIC_SHARED_MEM_COUNT = 5649;
-    const int FDSVA_SO_DYNAMIC_SHARED_MEM_COUNT = 7182;
+    const int IDSVA_SO_DYNAMIC_SHARED_MEM_COUNT = 5187;
+    const int FDSVA_SO_DYNAMIC_SHARED_MEM_COUNT = 6720;
     const int MAX_PERF_LEVEL_THREADS = 352;
     
     // Resource-tier API (v2.0): each emitted kernel/_device/_inner takes a
@@ -524,8 +524,8 @@ namespace grid {
     template <> struct launch_cfg<GRID_ALGO_END_EFFECTOR_POSE> { static constexpr int TIER = TIER_LITE; static constexpr int THREADS = ((128) < tier_max_threads<TIER_LITE>()) ? (128) : tier_max_threads<TIER_LITE>(); };
     template <> struct launch_cfg<GRID_ALGO_END_EFFECTOR_POSE_GRADIENT> { static constexpr int TIER = TIER_MINIMAL; static constexpr int THREADS = ((320) < tier_max_threads<TIER_MINIMAL>()) ? (320) : tier_max_threads<TIER_MINIMAL>(); };
     template <> struct launch_cfg<GRID_ALGO_END_EFFECTOR_POSE_HESSIAN> { static constexpr int TIER = TIER_MINIMAL; static constexpr int THREADS = ((224) < tier_max_threads<TIER_MINIMAL>()) ? (224) : tier_max_threads<TIER_MINIMAL>(); };
-    template <> struct launch_cfg<GRID_ALGO_IDSVA_SO> { static constexpr int TIER = TIER_SHARED; static constexpr int THREADS = ((320) < tier_max_threads<TIER_SHARED>()) ? (320) : tier_max_threads<TIER_SHARED>(); };
-    template <> struct launch_cfg<GRID_ALGO_IDSVA_SO_BODY_FRAME> { static constexpr int TIER = TIER_LITE; static constexpr int THREADS = ((352) < tier_max_threads<TIER_LITE>()) ? (352) : tier_max_threads<TIER_LITE>(); };
+    template <> struct launch_cfg<GRID_ALGO_IDSVA_SO> { static constexpr int TIER = TIER_LITE; static constexpr int THREADS = ((256) < tier_max_threads<TIER_LITE>()) ? (256) : tier_max_threads<TIER_LITE>(); };
+    template <> struct launch_cfg<GRID_ALGO_IDSVA_SO_BODY_FRAME> { static constexpr int TIER = TIER_LITE; static constexpr int THREADS = ((256) < tier_max_threads<TIER_LITE>()) ? (256) : tier_max_threads<TIER_LITE>(); };
     template <> struct launch_cfg<GRID_ALGO_IDSVA_SO_WORLD_FRAME> { static constexpr int TIER = TIER_LITE; static constexpr int THREADS = ((80) < tier_max_threads<TIER_LITE>()) ? (80) : tier_max_threads<TIER_LITE>(); };
     template <> struct launch_cfg<GRID_ALGO_FDSVA_SO> { static constexpr int TIER = TIER_SHARED; static constexpr int THREADS = ((192) < tier_max_threads<TIER_SHARED>()) ? (192) : tier_max_threads<TIER_SHARED>(); };
     template <> struct launch_cfg<GRID_ALGO_INTEGRATOR> { static constexpr int TIER = TIER_MINIMAL; static constexpr int THREADS = ((128) < tier_max_threads<TIER_MINIMAL>()) ? (128) : tier_max_threads<TIER_MINIMAL>(); };
@@ -605,9 +605,9 @@ namespace grid {
     template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t DCCRBA_DYNAMIC_SHARED_MEM_BYTES() { return (TIER == TIER_SHARED) ? grid_shared_arena_bytes<T>(1272, TOPOLOGY_HELPERS_COUNT, GRID_EE_LINALG_SHARED_BYTES<T>()) : (TIER == TIER_LITE) ? grid_shared_arena_bytes<T>(1272, TOPOLOGY_HELPERS_COUNT, GRID_EE_LINALG_SHARED_BYTES<T>()) : grid_shared_arena_bytes<T>(684, TOPOLOGY_HELPERS_COUNT, GRID_EE_LINALG_SHARED_BYTES<T>()); }
     template <int TIER> __host__ __device__ constexpr bool DCCRBA_OUTPUT_IN_SMEM() { return (TIER == TIER_SHARED) ? true : (TIER == TIER_LITE) ? true : false; }
     template <int TIER> __host__ __device__ constexpr bool DCCRBA_J_IN_SMEM() { return (TIER == TIER_SHARED) ? true : (TIER == TIER_LITE) ? true : false; }
-    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t IDSVA_SO_BODY_FRAME_DYNAMIC_SHARED_MEM_BYTES() { return (TIER == TIER_SHARED) ? grid_shared_arena_bytes<T>(5641, TOPOLOGY_HELPERS_COUNT) : (TIER == TIER_LITE) ? grid_shared_arena_bytes<T>(5641, TOPOLOGY_HELPERS_COUNT) : grid_shared_arena_bytes<T>(525, TOPOLOGY_HELPERS_COUNT); }
-    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t IDSVA_SO_WORLD_FRAME_DYNAMIC_SHARED_MEM_BYTES() { return (TIER == TIER_SHARED) ? grid_shared_arena_bytes<T>(5641, TOPOLOGY_HELPERS_COUNT) : (TIER == TIER_LITE) ? grid_shared_arena_bytes<T>(5641, TOPOLOGY_HELPERS_COUNT) : grid_shared_arena_bytes<T>(525, TOPOLOGY_HELPERS_COUNT); }
-    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t FDSVA_SO_DYNAMIC_SHARED_MEM_BYTES() { return (TIER == TIER_SHARED) ? grid_shared_arena_bytes<T>(7174, TOPOLOGY_HELPERS_COUNT) : (TIER == TIER_LITE) ? grid_shared_arena_bytes<T>(7174, TOPOLOGY_HELPERS_COUNT) : grid_shared_arena_bytes<T>(686, TOPOLOGY_HELPERS_COUNT); }
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t IDSVA_SO_BODY_FRAME_DYNAMIC_SHARED_MEM_BYTES() { return (TIER == TIER_SHARED) ? grid_shared_arena_bytes<T>(5179, TOPOLOGY_HELPERS_COUNT) : (TIER == TIER_LITE) ? grid_shared_arena_bytes<T>(5179, TOPOLOGY_HELPERS_COUNT) : grid_shared_arena_bytes<T>(525, TOPOLOGY_HELPERS_COUNT); }
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t IDSVA_SO_WORLD_FRAME_DYNAMIC_SHARED_MEM_BYTES() { return (TIER == TIER_SHARED) ? grid_shared_arena_bytes<T>(5179, TOPOLOGY_HELPERS_COUNT) : (TIER == TIER_LITE) ? grid_shared_arena_bytes<T>(5179, TOPOLOGY_HELPERS_COUNT) : grid_shared_arena_bytes<T>(525, TOPOLOGY_HELPERS_COUNT); }
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t FDSVA_SO_DYNAMIC_SHARED_MEM_BYTES() { return (TIER == TIER_SHARED) ? grid_shared_arena_bytes<T>(6712, TOPOLOGY_HELPERS_COUNT) : (TIER == TIER_LITE) ? grid_shared_arena_bytes<T>(6712, TOPOLOGY_HELPERS_COUNT) : grid_shared_arena_bytes<T>(686, TOPOLOGY_HELPERS_COUNT); }
     // Per-tier scratch sizes for fdsva_so_contract (inline-CUDA users only — the host launchers always use TIER_SHARED).
     // At TIER_SHARED the 4*NV^3 inner scratch lives in s_temp; at TIER_LITE/MINIMAL it moves to d_workspace, freeing shared memory for the caller's outer kernel.
     // fdsva_so_contract scratch sizing, keyed on the INNER's placement choice
@@ -672,15 +672,15 @@ namespace grid {
             : grid_shared_arena_bytes<T>(630, TOPOLOGY_HELPERS_COUNT, GRID_LINALG_NVIDIA_MAX_HELPER_BYTES<T>());
     }
     template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t INVERSE_DYNAMICS_GRADIENT_DEVICE_INLINE_WORKSPACE_BYTES() { return (TIER == TIER_SHARED) ? static_cast<size_t>(0) : sizeof(T) * static_cast<size_t>(1722); }
-    // Per-tier sizes for idsva_so_device (inline-CUDA users only). At TIER_SHARED temp lives in s_temp; at TIER_LITE/MINIMAL it moves to d_workspace, freeing 3744*sizeof(T) bytes of smem. Frame picked at codegen time: body_frame.
+    // Per-tier sizes for idsva_so_device (inline-CUDA users only). At TIER_SHARED temp lives in s_temp; at TIER_LITE/MINIMAL it moves to d_workspace, freeing 3282*sizeof(T) bytes of smem. Frame picked at codegen time: body_frame.
     template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t IDSVA_SO_DEVICE_INLINE_SMEM_BYTES() {
         return (TIER == TIER_SHARED)
-            ? grid_shared_arena_bytes<T>(4248, TOPOLOGY_HELPERS_COUNT)
+            ? grid_shared_arena_bytes<T>(3786, TOPOLOGY_HELPERS_COUNT)
             : grid_shared_arena_bytes<T>(504, TOPOLOGY_HELPERS_COUNT);
     }
-    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t IDSVA_SO_DEVICE_INLINE_WORKSPACE_BYTES() { return (TIER == TIER_SHARED) ? static_cast<size_t>(0) : sizeof(T) * static_cast<size_t>(3744); }
+    template <typename T, int TIER = GRID_DEFAULT_RESOURCE_TIER> __host__ __device__ constexpr size_t IDSVA_SO_DEVICE_INLINE_WORKSPACE_BYTES() { return (TIER == TIER_SHARED) ? static_cast<size_t>(0) : sizeof(T) * static_cast<size_t>(3282); }
     template <typename T> __host__ __device__ constexpr size_t GRID_GRAD_WORKSPACE_BYTES_PER_TIMESTEP() { return sizeof(T) * static_cast<size_t>(2604); }
-    template <typename T> __host__ __device__ constexpr size_t GRID_SO_WORKSPACE_BYTES_PER_TIMESTEP() { return sizeof(T) * static_cast<size_t>(3744); }
+    template <typename T> __host__ __device__ constexpr size_t GRID_SO_WORKSPACE_BYTES_PER_TIMESTEP() { return sizeof(T) * static_cast<size_t>(3282); }
     template <typename T> __host__ __device__ constexpr size_t GRID_FDSVA_SO_SPILL_BYTES_PER_TIMESTEP() { return sizeof(T) * static_cast<size_t>(147); }
     template <typename T> __host__ __device__ constexpr size_t GRID_FDSVA_SO_SPILL_OFFSET_BYTES() { return GRID_GRAD_WORKSPACE_BYTES_PER_TIMESTEP<T>() + GRID_SO_WORKSPACE_BYTES_PER_TIMESTEP<T>(); }
     template <typename T> __host__ __device__ constexpr size_t GRID_WORKSPACE_BYTES_PER_TIMESTEP() { return GRID_GRAD_WORKSPACE_BYTES_PER_TIMESTEP<T>() + GRID_SO_WORKSPACE_BYTES_PER_TIMESTEP<T>() + GRID_FDSVA_SO_SPILL_BYTES_PER_TIMESTEP<T>(); }
@@ -827,7 +827,7 @@ namespace grid {
     
     // vendor_glass=False: GLASS is NOT vendored. The consumer's include path
     // must provide the top-level glass.cuh (included in this header's prelude);
-    // the generator was run against GLASS revision 8ce68a29bceb30c7764c9391d517a182d061697d.
+    // the generator was run against GLASS revision 9e57178ca146fa1cecae7e27c22260603b993aa6.
     namespace glass = ::glass;
     
     /**
@@ -3529,7 +3529,6 @@ namespace grid {
             s_XmatsHom[101] = static_cast<T>(-s_temp[6]);
             s_XmatsHom[102] = static_cast<T>(s_temp[13]);
         }
-        __syncthreads();
         if(threadIdx.x == 0 && threadIdx.y == 0){
             // dX_hom[0]
             s_dXmatsHom[0] = static_cast<T>(-s_temp[0]);

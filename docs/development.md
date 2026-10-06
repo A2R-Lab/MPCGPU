@@ -6,8 +6,11 @@ Never import models, Python environments or generated files from a sibling repo.
 
 GBD-PCG is a submodule developed in [its own repository](https://github.com/A2R-Lab/GBD-PCG).
 MPCGPU compiles it against the top-level GLASS pin (`-IGLASS -IGBD-PCG/include`); the nested
-`GBD-PCG/GLASS` submodule is unused here and a host test requires its pin to equal the
-top-level one. To change GBD-PCG: commit upstream, bump the gitlink and
+`GBD-PCG/GLASS` submodule is unused here and may retain its standalone pin. Host tests
+check the compiler's explicit top-level override; the full GPU suite tests GBD-PCG
+with that override. This receipt does not attest the standalone build. GRiD's
+nested GLASS pin must match the top-level pin used to compile its generated header.
+To change GBD-PCG itself: commit upstream, bump the gitlink and
 tools/dependencies.json here, then run the receipt.
 
 ## Build and generation

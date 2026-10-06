@@ -28,12 +28,35 @@ def test_dependency_pins():
         assert actual == expected, f"{name}: update the reviewed dependency manifest with the pin"
 
 
-def test_gbd_pcg_glass_pin_lockstep():
-    # MPCGPU compiles GBD-PCG against its own top-level GLASS; the submodule's nested GLASS pin
-    # must be the same commit so the standalone GBD-PCG build sees what the receipt attested.
-    nested = subprocess.check_output(["git", "-C", str(ROOT / "GBD-PCG"), "ls-tree", "HEAD", "GLASS"], text=True).split()[2]
+def test_grid_glass_pin_lockstep():
+    # Generated headers name the GLASS revision used by GRiD. Compile with that revision.
+    nested = subprocess.check_output(["git", "-C", str(ROOT / "GRiD"), "ls-tree", "HEAD", "external/GLASS"], text=True).split()[2]
     top = subprocess.check_output(["git", "-C", str(ROOT / "GLASS"), "rev-parse", "HEAD"], text=True).strip()
-    assert nested == top, "bump GBD-PCG's GLASS submodule and MPCGPU's GLASS pin together"
+    assert nested == top, "regenerate with GRiD and the top-level GLASS pin in agreement"
+
+
+@pytest.mark.parametrize("target", ["gbd-api", "pcg"])
+def test_gbd_pcg_uses_consumer_glass(target, tmp_path, monkeypatch):
+    # Standalone GBD-PCG pins its own GLASS. Our receipt covers the explicit
+    # consumer override, not an untested claim about that standalone build.
+    spec = importlib.util.spec_from_file_location("glass_override_builder", ROOT / "tools/build.py")
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    monkeypatch.setattr(builder, "ROOT", tmp_path)
+    source = tmp_path / builder.SOURCES[target]
+    source.parent.mkdir(parents=True)
+    source.write_text("source")
+    monkeypatch.setattr(builder, "source_digest", lambda: "reviewed-pins")
+    monkeypatch.setattr(builder.subprocess, "check_output", lambda *a, **kw: "compiler")
+    commands = []
+    def compile(command, **kwargs):
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"binary")
+    monkeypatch.setattr(builder.subprocess, "run", compile)
+    builder.build(target, output=tmp_path / "test.exe")
+    includes = [arg for arg in commands[0] if arg.startswith("-I")]
+    assert "-IGLASS" in includes and "-IGBD-PCG/include" in includes
+    assert not any("GBD-PCG/GLASS" in arg or "GRiD/external/GLASS" in arg for arg in includes)
 
 
 def test_receipt_policy():
