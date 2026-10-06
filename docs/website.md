@@ -21,7 +21,7 @@ page resolves.
 `assets/architecture.png` and `pick-place.png` are figure-region renders of Figures 2 and 3
 from our ICRA 2024 paper, arXiv:2309.08079v3 (https://arxiv.org/pdf/2309.08079).
 `assets/current-linsys-time.png` and `current-sqp-iterations.png` are rendered by
-`tools/plot_timing.py` from the October 3, 2026 timing runs of the current code (see
+`tools/plot_timing.py` from the October 5, 2026 timing runs of source `a684e78` (see
 docs/icra-replication.md). The MPCGPU code, documentation, website and these figures are
 released under the repository's MIT license.
 
@@ -32,7 +32,8 @@ labels legible on mobile and use original vector exports where available.
 
 ## Result updates
 
-The results section shows the current code's measurements with their hardware and date.
+The results section shows dated measurements with their source and hardware.
+They do not automatically describe the latest dependency pins.
 Historical results for the original code are in the paper, which the page links. Refresh
 the figures only from complete timing runs with source and dependency SHAs, hardware,
 protocol, repeat distributions and quality checks, and explain any change in

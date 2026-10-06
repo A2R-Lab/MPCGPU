@@ -49,6 +49,11 @@ Correctness disables native solver timers and removes wall-clock stopping;
 it must not be used to report speed. The timing profile preserves native SQP
 timestamps. Those times exclude some public-call setup/cleanup: report them as
 internal SQP time, not complete control-loop latency.
+The time budget is soft: elapsed-time checks can stop launching further work,
+but pending GPU work and final synchronization still have to finish. Callers
+must provide their own deadline policy and fallback; the example driver is not
+a hard real-time scheduler. The paper-replication cost also leaves joint limits
+disabled. Inspect trajectory limits separately from its goal-tracking report.
 
 Build modes share mathematical flags; `MPCGPU_NO_REUSE` is a diagnostic fresh
 workspace baseline. The shared builder selects position-only regularization

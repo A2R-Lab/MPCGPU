@@ -67,7 +67,7 @@ def figure4(v, out):
     ax.set_ylabel("Average linear-system solve time (µs)")
     ax.set_ylim(0, max(q) * 1.25)
     ax.legend(frameon=False, loc="upper left")
-    ax.set_title("ICRA pick-and-place, 500 Hz, current code on RTX 5090", color=INK, fontsize=11, loc="left")
+    ax.set_title("ICRA pick-and-place, nominal 500 Hz, RTX 5090", color=INK, fontsize=11, loc="left")
     save(fig, out, "icra_linsys_time")
 
 
@@ -116,7 +116,7 @@ def figure6(v, out):
         ax.set_title(label, color=INK, fontsize=11, loc="left")
         for spine in ax.spines.values():
             spine.set_visible(False)
-    fig.suptitle("Average SQP iterations per control step (current code; paper values below)", x=0.01,
+    fig.suptitle("Average SQP iterations under soft time budgets (paper values below)", x=0.01,
                  ha="left", color=INK, fontsize=11)
     fig.tight_layout()
     save(fig, out, "icra_sqp_iterations")

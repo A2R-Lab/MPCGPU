@@ -46,6 +46,8 @@ including zero gravity, then checks goal visits, final hold and tracking error.
 Output lands in `tmp/icra/<backend>-N<knots>/` with a trajectory plot. It is a
 correctness run with simulated 500 Hz control, not a timing measurement. See
 [the replication notes](docs/icra-replication.md) for sources and differences.
+The recovered paper protocol does not enforce joint limits. Passing its tracking
+checks is not a hardware-feasibility or deadline certificate.
 
 ## Validation and configuration
 
@@ -82,6 +84,12 @@ Python supports code generation and validation. See the API notes for the
 supported solver configurations and interfaces. GBD-PCG requires SPD systems
 and cooperative co-residency; its relative eta criterion is not a true-residual
 guarantee.
+
+Current scope is research software: synchronous C++ calls, one caller per
+workspace, and simulated tracking examples. Solver time budgets are soft;
+deadline-aware fallback and a joint-feasible demonstration remain development
+work. The latest timing evidence is dated October 5 and precedes the newest
+dependency pins; see the replication notes for provenance.
 
 - [Current documentation and limitations](docs/README.md)
 - [C++ ownership and solver contracts](docs/api.md)
