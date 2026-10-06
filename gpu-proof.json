@@ -20,7 +20,7 @@
   },
   "fingerprint": {
     "algorithm": "sha256-manifest-v2",
-    "digest": "8bc01a3eeb2f345214072cfea82d284dec6e99222a406411542184fcd0627e78",
+    "digest": "1970505c592edde788e1cd34934a8c40a444af87bf1844c887ddee9cb975178c",
     "excluded_paths": [
       "gpu-proof.json"
     ],
@@ -45,14 +45,14 @@
   "mode": "local",
   "repo": {
     "branch": "audit-followup-20261004",
-    "commit_sha": "657a1a0a140f3a45e752e753cc56c501a2d2d65e",
+    "commit_sha": "a5b4290a0bcd5a1f1ad464729ff9478af9f02db5",
     "dirty": false,
     "github_username": "plancherb1",
     "remote_url": "git@github.com:A2R-Lab/MPCGPU.git"
   },
   "schema_version": "3",
   "session": {
-    "ended_at": "2026-10-05T01:53:23Z",
+    "ended_at": "2026-10-06T00:09:02Z",
     "node_ids": [
       "test/test_gates.py::test_single_cost",
       "test/test_gates.py::test_terminal_cost",
@@ -111,7 +111,9 @@
       "test/test_gates.py::test_icra_pick_place[qdldl]",
       "test/test_host.py::test_codegen_reproducible",
       "test/test_host.py::test_dependency_pins",
-      "test/test_host.py::test_gbd_pcg_glass_pin_lockstep",
+      "test/test_host.py::test_grid_glass_pin_lockstep",
+      "test/test_host.py::test_gbd_pcg_uses_consumer_glass[gbd-api]",
+      "test/test_host.py::test_gbd_pcg_uses_consumer_glass[pcg]",
       "test/test_host.py::test_receipt_policy",
       "test/test_host.py::test_trajectory_validation[valid]",
       "test/test_host.py::test_trajectory_validation[missing]",
@@ -163,10 +165,10 @@
       "--gpu-proof-github-user",
       "plancherb1"
     ],
-    "started_at": "2026-10-05T01:45:05Z"
+    "started_at": "2026-10-06T00:03:22Z"
   },
   "signature": {
-    "value": "edmEkgoNAA5qLOyUX/4zTdOvN/B4krfaw5/v3SSrtfgZZ1KClsRXBicxR6QZriOE2BlYBn0kAWE/pFR9vH48Cw=="
+    "value": "CaGv0fzTHlsSK91NNXvwyR/ykoR4ULP4ASk4HSdrBzVlLdpsnO3cpx7jRPsnVG0k0tbHdJJyy0VU+0Aa/QDzAw=="
   },
   "signer": {
     "algorithm": "ed25519",
@@ -177,407 +179,421 @@
   "tests": [
     {
       "checks": [],
-      "duration_s": 0.2651,
+      "duration_s": 9.9658,
       "node_id": "test/test_gates.py::test_single_cost",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.2024,
+      "duration_s": 4.0522,
       "node_id": "test/test_gates.py::test_terminal_cost",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 6.5464,
+      "duration_s": 13.2335,
       "node_id": "test/test_gates.py::test_tracking[pcg]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 7.239,
+      "duration_s": 13.7215,
       "node_id": "test/test_gates.py::test_tracking[qdldl]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1742,
+      "duration_s": 3.8888,
       "node_id": "test/test_gates.py::test_fd_parity",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1721,
+      "duration_s": 2.5032,
       "node_id": "test/test_gates.py::test_gbd_spd[dims0]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1761,
+      "duration_s": 2.4905,
       "node_id": "test/test_gates.py::test_gbd_spd[dims1]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.179,
+      "duration_s": 2.5945,
       "node_id": "test/test_gates.py::test_gbd_spd[dims2]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1725,
+      "duration_s": 2.5113,
       "node_id": "test/test_gates.py::test_gbd_api[host-dims0-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1725,
+      "duration_s": 2.4654,
       "node_id": "test/test_gates.py::test_gbd_api[host-dims1-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1806,
+      "duration_s": 2.5062,
       "node_id": "test/test_gates.py::test_gbd_api[host-dims2-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1727,
+      "duration_s": 2.7156,
       "node_id": "test/test_gates.py::test_gbd_api[host-dims3-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1807,
+      "duration_s": 2.5554,
       "node_id": "test/test_gates.py::test_gbd_api[host-dims4-double]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1622,
+      "duration_s": 0.2872,
       "node_id": "test/test_gates.py::test_gbd_api[device-dims0-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1615,
+      "duration_s": 0.2362,
       "node_id": "test/test_gates.py::test_gbd_api[device-dims1-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1596,
+      "duration_s": 0.286,
       "node_id": "test/test_gates.py::test_gbd_api[device-dims2-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.161,
+      "duration_s": 0.2376,
       "node_id": "test/test_gates.py::test_gbd_api[device-dims3-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1626,
+      "duration_s": 0.2393,
       "node_id": "test/test_gates.py::test_gbd_api[device-dims4-double]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.156,
+      "duration_s": 0.2393,
       "node_id": "test/test_gates.py::test_gbd_api[zero-dims0-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1603,
+      "duration_s": 0.2371,
       "node_id": "test/test_gates.py::test_gbd_api[zero-dims1-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1693,
+      "duration_s": 0.2856,
       "node_id": "test/test_gates.py::test_gbd_api[zero-dims2-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1574,
+      "duration_s": 0.2357,
       "node_id": "test/test_gates.py::test_gbd_api[zero-dims3-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1605,
+      "duration_s": 0.2369,
       "node_id": "test/test_gates.py::test_gbd_api[zero-dims4-double]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1581,
+      "duration_s": 0.2856,
       "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims0-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1636,
+      "duration_s": 0.2339,
       "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims1-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1587,
+      "duration_s": 0.2834,
       "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims2-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1601,
+      "duration_s": 0.2847,
       "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims3-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1698,
+      "duration_s": 0.2339,
       "node_id": "test/test_gates.py::test_gbd_api[zero-exact-dims4-double]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.159,
+      "duration_s": 0.2847,
       "node_id": "test/test_gates.py::test_gbd_api[warm-dims0-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1589,
+      "duration_s": 0.2341,
       "node_id": "test/test_gates.py::test_gbd_api[warm-dims1-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1584,
+      "duration_s": 0.2357,
       "node_id": "test/test_gates.py::test_gbd_api[warm-dims2-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.157,
+      "duration_s": 0.2846,
       "node_id": "test/test_gates.py::test_gbd_api[warm-dims3-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1594,
+      "duration_s": 0.236,
       "node_id": "test/test_gates.py::test_gbd_api[warm-dims4-double]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1592,
+      "duration_s": 0.2366,
       "node_id": "test/test_gates.py::test_gbd_api[cap-dims0-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1606,
+      "duration_s": 0.2354,
       "node_id": "test/test_gates.py::test_gbd_api[cap-dims1-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1582,
+      "duration_s": 0.2351,
       "node_id": "test/test_gates.py::test_gbd_api[cap-dims2-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1585,
+      "duration_s": 0.2347,
       "node_id": "test/test_gates.py::test_gbd_api[cap-dims3-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1595,
+      "duration_s": 0.2363,
       "node_id": "test/test_gates.py::test_gbd_api[cap-dims4-double]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0017,
+      "duration_s": 0.0016,
       "node_id": "test/test_gates.py::test_gbd_api[invalid-dims0-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0014,
+      "duration_s": 0.0013,
       "node_id": "test/test_gates.py::test_gbd_api[invalid-dims1-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0013,
+      "duration_s": 0.0012,
       "node_id": "test/test_gates.py::test_gbd_api[invalid-dims2-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0013,
+      "duration_s": 0.0012,
       "node_id": "test/test_gates.py::test_gbd_api[invalid-dims3-float]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0011,
+      "duration_s": 0.0012,
       "node_id": "test/test_gates.py::test_gbd_api[invalid-dims4-double]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.1793,
+      "duration_s": 2.238,
       "node_id": "test/test_gates.py::test_gbd_matvec",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 26.0974,
+      "duration_s": 16.8435,
       "node_id": "test/test_gates.py::test_workspace_tracking_parity[pcg]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 26.21,
+      "duration_s": 18.2526,
       "node_id": "test/test_gates.py::test_workspace_tracking_parity[qdldl]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.2218,
+      "duration_s": 1.5753,
       "node_id": "test/test_gates.py::test_workspace_contract",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 64.1601,
+      "duration_s": 46.0536,
       "node_id": "test/test_gates.py::test_graph_replay_statistics",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.2107,
+      "duration_s": 4.7176,
       "node_id": "test/test_gates.py::test_independent_model_oracle",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 2.5501,
+      "duration_s": 3.0192,
       "node_id": "test/test_gates.py::test_gbd_residual_modes[-DPCG_TRUE_EXIT_CHECK_PERIOD=2]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 2.5682,
+      "duration_s": 3.096,
       "node_id": "test/test_gates.py::test_gbd_residual_modes[-DPCG_RESIDUAL_REPLACE_PERIOD=2]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 15.6767,
+      "duration_s": 16.0797,
       "node_id": "test/test_gates.py::test_real_schur_fixture",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.2101,
+      "duration_s": 2.8488,
       "node_id": "test/test_gates.py::test_icra_reference_targets",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 119.5297,
+      "duration_s": 79.2522,
       "node_id": "test/test_gates.py::test_icra_pick_place[pcg]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 218.827,
+      "duration_s": 72.997,
       "node_id": "test/test_gates.py::test_icra_pick_place[qdldl]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.5934,
+      "duration_s": 0.5887,
       "node_id": "test/test_host.py::test_codegen_reproducible",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0047,
+      "duration_s": 0.0044,
       "node_id": "test/test_host.py::test_dependency_pins",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0021,
-      "node_id": "test/test_host.py::test_gbd_pcg_glass_pin_lockstep",
+      "duration_s": 0.0019,
+      "node_id": "test/test_host.py::test_grid_glass_pin_lockstep",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0006,
+      "node_id": "test/test_host.py::test_gbd_pcg_uses_consumer_glass[gbd-api]",
+      "outcome": "passed",
+      "phase": "call"
+    },
+    {
+      "checks": [],
+      "duration_s": 0.0004,
+      "node_id": "test/test_host.py::test_gbd_pcg_uses_consumer_glass[pcg]",
       "outcome": "passed",
       "phase": "call"
     },
@@ -590,7 +606,7 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0015,
+      "duration_s": 0.0016,
       "node_id": "test/test_host.py::test_trajectory_validation[valid]",
       "outcome": "passed",
       "phase": "call"
@@ -604,7 +620,7 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0011,
+      "duration_s": 0.001,
       "node_id": "test/test_host.py::test_trajectory_validation[empty]",
       "outcome": "passed",
       "phase": "call"
@@ -618,28 +634,28 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0012,
+      "duration_s": 0.0011,
       "node_id": "test/test_host.py::test_trajectory_validation[nan]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0012,
+      "duration_s": 0.001,
       "node_id": "test/test_host.py::test_trajectory_validation[inf]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.001,
+      "duration_s": 0.0009,
       "node_id": "test/test_host.py::test_trajectory_validation[short]",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0011,
+      "duration_s": 0.001,
       "node_id": "test/test_host.py::test_trajectory_validation[mismatch]",
       "outcome": "passed",
       "phase": "call"
@@ -660,28 +676,28 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0044,
+      "duration_s": 0.0043,
       "node_id": "test/test_host.py::test_builder_configuration_cache",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0035,
+      "duration_s": 0.004,
       "node_id": "test/test_host.py::test_receipt_refuses_partial_collection",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.141,
+      "duration_s": 0.193,
       "node_id": "test/test_host.py::test_expected_collection_manifest",
       "outcome": "passed",
       "phase": "call"
     },
     {
       "checks": [],
-      "duration_s": 0.0238,
+      "duration_s": 0.024,
       "node_id": "test/test_host.py::test_website_local_links_and_assets",
       "outcome": "passed",
       "phase": "call"
@@ -695,7 +711,7 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0004,
+      "duration_s": 0.0005,
       "node_id": "test/test_timing.py::test_timing_metrics[none]",
       "outcome": "passed",
       "phase": "call"
@@ -751,7 +767,7 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0145,
+      "duration_s": 0.0144,
       "node_id": "test/test_timing.py::test_icra_timing_metrics[none]",
       "outcome": "passed",
       "phase": "call"
@@ -786,7 +802,7 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0031,
+      "duration_s": 0.0032,
       "node_id": "test/test_timing.py::test_icra_timing_metrics[samples]",
       "outcome": "passed",
       "phase": "call"
@@ -821,7 +837,7 @@
     },
     {
       "checks": [],
-      "duration_s": 0.0001,
+      "duration_s": 0.0,
       "node_id": "test/test_timing.py::test_statistics_reject_incomplete_graph_telemetry[capture-only]",
       "outcome": "passed",
       "phase": "call"
