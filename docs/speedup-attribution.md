@@ -10,7 +10,7 @@ The October 1, 2026 timing on the RTX 5090 gave GBD-PCG average linear-system ti
 49–63 µs at every horizon, against 75–360 µs in the paper. QDLDL on the CPU stayed within
 about 15% of the paper, so the speedup over QDLDL grew from 1.0–3.6× to 1.6–17×. This
 document splits that change into its causes. Section 4 adds the October 3 driver change,
-after which the same workloads give 38–53 µs and 2.1–20× ([current tables](icra-replication.md)).
+after which the same workloads give 38–52 µs and 2.0–21× ([current tables](icra-replication.md)).
 
 Average PCG solve time is iterations per solve times time per iteration, plus a fixed launch
 and copy-back cost. Each factor was measured separately.

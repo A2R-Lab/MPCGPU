@@ -88,8 +88,8 @@ guarantee.
 Current scope is research software: synchronous C++ calls, one caller per
 workspace, and simulated tracking examples. Solver time budgets are soft;
 deadline-aware fallback and a joint-feasible demonstration remain development
-work. The latest timing evidence is dated October 5 and precedes the newest
-dependency pins; see the replication notes for provenance.
+work. The latest timing evidence is dated October 6 and was collected on the
+released dependency pins; see the replication notes for provenance.
 
 - [Current documentation and limitations](docs/README.md)
 - [C++ ownership and solver contracts](docs/api.md)
