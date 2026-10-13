@@ -10,6 +10,18 @@ This version modernizes the iiwa14 implementation, validation and builds. The IC
 pick-and-place task are in [the replication notes](docs/icra-replication.md), and
 [the attribution](docs/speedup-attribution.md) explains how they differ from the paper.
 
+## Project status
+
+MPCGPU is maintained as the **ICRA 2024 artifact and a header-only CUDA/C++
+library** for single-problem, long-horizon PCG-based MPC: the code, the signed
+correctness receipt and the dated measurements describe exactly the pinned
+stack in this repository (GRiD `8dccbfa`, GLASS `9e57178`, GBD-PCG `f702a1a`,
+QDLDL `df48100`). Bug fixes and dependency pin updates land here with a fresh
+receipt; new solver capabilities do not. The A2R Lab's active trajectory
+optimization development — batched solves, Python and tensor-framework
+interfaces, constraints, new robots — is [GATO](https://github.com/A2R-Lab/GATO),
+which grew out of this code base. Neither project depends on the other.
+
 ## Quickstart
 
 Requires Linux, Python 3.11+, CMake, a C++17-capable CUDA toolkit, cuBLAS, and an

@@ -1,6 +1,9 @@
 # Documentation
 
 MPCGPU lives in this repository; GBD-PCG (its linear-system solver), GRiD and GLASS are pinned submodules.
+It is maintained as the ICRA 2024 artifact and a header-only library (see
+[Project status](../README.md#project-status)); fixes and pin updates are in
+scope, new solver capabilities are not.
 
 - [Quickstart](../README.md): correctness demos, prerequisites and configuration.
 - [API contracts](api.md): supported inputs, ownership, precision and limitations.
